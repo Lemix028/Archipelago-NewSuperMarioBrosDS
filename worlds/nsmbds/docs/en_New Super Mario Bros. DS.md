@@ -35,10 +35,10 @@ for overworld signs and may count toward your goal.
 ### Blocksanity
 
 Blocksanity adds up to over 1,100 Coin and Power-Up Blocks as extra checks. It is
-disabled by default because it greatly increases the size of the seed.
+disabled by default because it greatly increases the size of the seed. A few special blocks are still missing, such as hanging blocks.
 
-The flying-block room in World 6-2 (Over 120 blocks fyling in a row) can also be included. Its many blocks are
-kept safe for progression: most contain local filler or traps instead of
+The flying-block room in World 6-2 (Over 120 blocks flying in a row) can also be included. 
+Its many blocks are kept safe for progression: most contain local filler or traps instead of
 important advancement items.
 
 ## Goals
@@ -53,7 +53,7 @@ You can choose one of four victory conditions:
 | Completionist | Defeat Bowser and receive the chosen number of Star Coin items |
 
 Star Coins spent at signs still count toward Star Coin Hunt and Completionist.
-Only your current spending balance goes down.
+Only your current spending balance goes down. The overview section in the client shows the total amount received so far.
 
 ## Progression items
 
@@ -85,6 +85,8 @@ how access to the overworld signs works:
 Permits can lock the use of Mushrooms, Fire Flowers, Blue Shells, Mini
 Mushrooms, Mega Mushrooms, and the touchscreen reserve pocket. When a Permit
 option is enabled, you must find that Permit before using the ability.
+Power-Ups simply disappear when collected if you don't own the permit yet. 
+Item-based Power-Ups are queued up until you unlock the permit.
 
 ## Items you can receive
 
@@ -101,10 +103,9 @@ option is enabled, you must find that Permit before using the ability.
 | Coin Bundle | Adds 50 Coins |
 | Time Capsule | Adds 30 seconds to the current level |
 | Starman Lite | Grants five seconds of invincibility |
-| Trap Shield | Blocks the next trap; several charges can be stored |
+| Trap Shield | Blocks the next trap; several charges can be stored (Cyan Shield) |
 | Small Care Package | Adds time, Coins, and one life |
-| Life Insurance | Prevents the next death from consuming a life |
-| Nothing | Does nothing |
+| Life Insurance | Prevents the next death from consuming a life (Green Heart) |
 
 If your reserve pocket is full, a received Power-Up waits until it can be
 delivered. It is not lost.
