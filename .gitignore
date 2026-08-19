@@ -66,6 +66,7 @@ Output Logs/
 /datapackage
 /datapackage_export.json
 /custom_worlds
+/nsmbds/
 # stubgen output
 /out/
 

@@ -1,0 +1,32 @@
+"""Regression checks for maintainer-only native hook sources."""
+
+from __future__ import annotations
+
+import importlib.util
+import unittest
+from pathlib import Path
+
+from ..rom import BASE_ROM_MD5, BASE_ROM_SHA256, BASE_ROM_SIZE
+
+
+class TestNativeHookSources(unittest.TestCase):
+    def test_checked_in_native_artifacts_match_manifest(self) -> None:
+        source_root = Path(__file__).resolve().parents[1] / "src"
+        verifier_path = source_root / "verify_native_hooks.py"
+        spec = importlib.util.spec_from_file_location("nsmbds_verify_native_hooks", verifier_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(module.verify(), [])
+
+    def test_rom_verifier_matches_runtime_identity(self) -> None:
+        verifier_path = Path(__file__).resolve().parents[1] / "src" / "verify_base_rom.py"
+        spec = importlib.util.spec_from_file_location("nsmbds_verify_base_rom", verifier_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(module.EXPECTED_SIZE, BASE_ROM_SIZE)
+        self.assertEqual(module.EXPECTED_MD5.lower(), BASE_ROM_MD5.lower())
+        self.assertEqual(module.EXPECTED_SHA256.lower(), BASE_ROM_SHA256.lower())

@@ -1,0 +1,6 @@
+{
+  "star_coin_gate_hook_sha256": "0a590d57584dc7df085979b0baca37f110bbf31ea4aaafd5e2a21e0cbc495910",
+  "powerup_license_hook_sha256": "d487c2f5a4116898428d8838fd8185293bd8ce439d97710ea67ca3c29c1cddd2",
+  "native_hooks_bsdiff4_sha256": "8b910476a4db6d855f4b6a81c7988de850c49f1e5d27b0021339ccf87e2549d0",
+  "patched_rom_sha256": "5d2d7a7c64246c07e5f7e0a0ac206e60d072a4198060e0f10e26ea9582acf605"
+}
