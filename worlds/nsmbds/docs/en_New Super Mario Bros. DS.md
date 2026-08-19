@@ -37,9 +37,9 @@ for overworld signs and may count toward your goal.
 Blocksanity adds up to over 1,100 Coin and Power-Up Blocks as extra checks. It is
 disabled by default because it greatly increases the size of the seed. A few special blocks are still missing, such as hanging blocks.
 
-The flying-block room in World 6-2 (Over 120 blocks flying in a row) can also be included. 
-Its many blocks are kept safe for progression: most contain local filler or traps instead of
-important advancement items.
+The flying-block room in World 6-2 contains 128 flying-block checks and can also be included. 
+These checks never contain progression items for the local player, 
+and at most 16 can be global checks for other players. The remaining checks contain local filler or traps.
 
 ## Goals
 
@@ -166,10 +166,11 @@ lasts three seconds. Bonk Trap can optionally be allowed to kill Small Mario.
 
 ## Death Link
 
-Death Link shares deaths with other participating players. When enabled, your
-death can defeat them and their deaths can defeat you. Life Insurance can save
-a life locally; a separate option decides whether an insured death is still
-sent through Death Link.
+Death Link shares deaths with other participating players. 
+When enabled, your death can defeat them and their deaths can defeat you.  
+Life Insurance prevents the next local death from consuming a life. 
+The option Death Link: Trigger on Insured Deaths determines whether that insured death is still sent through Death Link. 
+It is disabled by default.
 
 ## Character palettes
 
@@ -185,7 +186,8 @@ randomizes every pixel.
 ## Client and emulator features
 
 The NSMBDS Client can launch BizHawk, the patched ROM, and the included Lua
-script for you. During play it shows your connection, received items, some more.
+script for you. During play it shows received items,
+checked locations, and notifications.
 
 The emulator also displays an activity feed in the lower-left corner.
 It shows checks and item transfers in real time, can be scrolled, and can be hidden with CTRL+SHIFT+H. Reconnecting may
