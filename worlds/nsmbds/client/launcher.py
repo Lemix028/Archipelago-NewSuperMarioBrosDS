@@ -67,6 +67,10 @@ def _set_nsmbds_value(name: str, value) -> None:
     settings = _settings()
     options = settings.nsmbds_options
     current = getattr(options, name)
+    if current is None:
+        setattr(options, name, value)
+        settings.save()
+        return
     value_type = type(current)
     setattr(options, name, value_type(value) if value_type is not bool else bool(value))
     settings.save()
@@ -152,7 +156,7 @@ def browse_for_rom() -> Path | None:
     """Select and remember an already-patched NSMBDS seed ROM."""
     from Utils import open_filename
 
-    current = _nsmbds_value("last_patched_rom", "")
+    current = _nsmbds_value("last_patched_rom", "") or ""
     chosen = open_filename(
         "Select Patched NSMBDS Seed ROM",
         [("Nintendo DS ROM", ["*.nds"]), ("All Files", ["*.*"])],

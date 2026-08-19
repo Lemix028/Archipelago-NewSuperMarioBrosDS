@@ -3,6 +3,8 @@ New Super Mario Bros. DS - Host Settings
 Defines host configuration variables for Archipelago server hosts.
 """
 
+from typing import Optional
+
 from settings import Group, OptionalUserFilePath
 
 
@@ -16,7 +18,7 @@ class NSMBDSSettings(Group):
         """Last patched NSMBDS seed ROM selected by the client launcher."""
         description = "Patched NSMBDS Seed ROM"
 
-    rom_file: RomFile = RomFile("")
-    last_patched_rom: LastPatchedRom = LastPatchedRom("")
+    rom_file: Optional[RomFile] = None
+    last_patched_rom: Optional[LastPatchedRom] = None
     auto_launch_game: bool = False
     allow_unsafe_nsmbds_options: bool = False
