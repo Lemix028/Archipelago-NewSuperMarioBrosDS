@@ -120,6 +120,10 @@ local function sideloading_tick()
             and state.input_trap_state.crazy_pixels_suspended then
             state.input_trap_state.resume_crazy_pixels()
         end
+        if context.active_mode == "screen_flip"
+            and state.input_trap_state.screen_flip_suspended then
+            state.input_trap_state.resume_screen_flip()
+        end
         -- Arm the expensive native hooks only after a fresh Down press.  A
         -- Ground Pound cannot impact before that input, so this captures exact
         -- one- and two-block hits without paying callback cost throughout the
@@ -157,6 +161,9 @@ local function sideloading_tick()
         -- Mario left the level: stop gameplay-only effects and hooks.
         if context.active_mode == "crazy_pixels" then
             state.input_trap_state.suspend_crazy_pixels()
+        end
+        if context.active_mode == "screen_flip" then
+            state.input_trap_state.suspend_screen_flip()
         end
         disable_gameplay_observer_hooks()
         blocksanity.reset_block_observer_state()

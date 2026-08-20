@@ -655,8 +655,30 @@ function state.input_trap_state.suspend_crazy_pixels()
     state.input_trap_state.crazy_pixels_original_bg = {}
 end
 
+function state.input_trap_state.resume_screen_flip()
+    if not state.input_trap_state.screen_flip_suspended then return end
+    if nds and nds.getscreenrotation and nds.setscreenrotation then
+        local ok, rotation = pcall(nds.getscreenrotation)
+        if ok and type(rotation) == "string" then
+            state.input_trap_state.original_rotation = rotation
+            local opposite = {
+                Rotate0 = "Rotate180", Rotate90 = "Rotate270",
+                Rotate180 = "Rotate0", Rotate270 = "Rotate90",
+            }
+            pcall(nds.setscreenrotation, opposite[rotation] or "Rotate180")
+        end
+    end
+    state.input_trap_state.screen_flip_suspended = false
+end
+
+function state.input_trap_state.suspend_screen_flip()
+    state.input_trap_state.restore_screen_rotation()
+    state.input_trap_state.screen_flip_suspended = true
+end
+
 function state.input_trap_state.finish_timed_trap()
     if context.active_mode == "screen_flip" then
+        state.input_trap_state.screen_flip_suspended = false
         state.input_trap_state.restore_screen_rotation()
     elseif context.active_mode == "crazy_pixels" then
         state.input_trap_state.suspend_crazy_pixels()
