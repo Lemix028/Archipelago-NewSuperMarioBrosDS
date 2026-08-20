@@ -8,6 +8,7 @@ local memory = require("nsmbds.memory")
 local constants = require("nsmbds.constants")
 local addresses = require("nsmbds.addresses")
 local state = require("nsmbds.state")
+local screen_geometry = require("nsmbds.screen_geometry")
 local context = state.context
 
 local LONG_TRAP_FRAMES = constants.LONG_TRAP_FRAMES
@@ -692,6 +693,64 @@ function state.input_trap_state.finish_timed_trap()
     if gui and gui.clearGraphics then gui.clearGraphics() end
 end
 
+
+local function render_spotlight()
+    local shade = 0xFA000000
+    local spot_w, spot_h = 60, 65
+    local cx, cy = 128, 150
+
+    local player = state.input_trap_state.active_player
+    if player then
+        local raw_x = _G.memory.read_s32_le(memory.to_domain_addr(player + constants.OBJECT_X_OFFSET))
+        local raw_y = _G.memory.read_s32_le(memory.to_domain_addr(player + constants.OBJECT_Y_OFFSET))
+        local camera_object = _G.memory.read_u32_le(memory.to_domain_addr(0x020CAA38))
+
+        if camera_object >= 0x02000000 and camera_object < 0x02400000 then
+            local camera_x = _G.memory.read_s32_le(memory.to_domain_addr(camera_object + 0xC0))
+            local camera_y = _G.memory.read_s32_le(memory.to_domain_addr(camera_object + 0xC4))
+            local stage_zoom = _G.memory.read_u16_le(memory.to_domain_addr(0x020CADB4))
+            if stage_zoom == 0 then stage_zoom = 4096 end
+
+            cx = math.floor((raw_x + camera_x) / stage_zoom)
+            cy = 180 - math.floor((raw_y + camera_y) / stage_zoom)
+        end
+    end
+
+    cx = math.max(0, math.min(255, cx))
+    cy = math.max(0, math.min(191, cy))
+
+    local native_x1 = math.max(0, math.floor(cx - spot_w / 2))
+    local native_x2 = math.min(255, math.floor(cx + spot_w / 2))
+    local native_y1 = math.max(0, math.floor(cy - spot_h / 2))
+    local native_y2 = math.min(191, math.floor(cy + spot_h / 2))
+
+    local powcnt1 = _G.memory.read_u16_le(0x04000304, memory.sys_bus_domain)
+    local gameplay_kind = (powcnt1 & 0x8000) ~= 0 and "top" or "bottom"
+    local screens = screen_geometry.get_screens()
+
+    for _, screen in ipairs(screens) do
+        if screen.kind == gameplay_kind then
+            local x1, y1, x2, y2 = screen_geometry.transform_rect(
+                screen, native_x1, native_y1, native_x2, native_y2
+            )
+
+            local left, top = screen.x, screen.y
+            local right = screen.x + screen.width - 1
+            local bottom = screen.y + screen.height - 1
+
+            x1 = math.max(left, math.min(right, x1))
+            x2 = math.max(left, math.min(right, x2))
+            y1 = math.max(top, math.min(bottom, y1))
+            y2 = math.max(top, math.min(bottom, y2))
+
+            if y1 > top then gui.drawBox(left, top, right, y1 - 1, shade, shade) end
+            if y2 < bottom then gui.drawBox(left, y2 + 1, right, bottom, shade, shade) end
+            if x1 > left then gui.drawBox(left, y1, x1 - 1, y2, shade, shade) end
+            if x2 < right then gui.drawBox(x2 + 1, y1, right, y2, shade, shade) end
+        end
+    end
+end
+
 function state.input_trap_state.draw_visual_trap()
     if not gui or not gui.drawBox then return end
 
@@ -712,70 +771,9 @@ function state.input_trap_state.draw_visual_trap()
             gui.drawBox(0, y, w - 1, y, 0x202B3A22, 0x202B3A22)
         end
     elseif context.active_mode == "spotlight" then
-        local shade = 0xFA000000
-
-        local screen_w, screen_h = 256, 192
-        local screen_x, screen_y = 0, 0
-
-        local layout = nds.getscreenlayout()
-        local gap = nds.getscreengap()
-        local inverted = nds.getscreeninvert()
-        local powcnt1 = _G.memory.read_u16_le(0x04000304, memory.sys_bus_domain)
-        local main_on_top = (powcnt1 & 0x8000) ~= 0
-        local main_is_first = main_on_top ~= inverted
-        if layout == "Vertical" and not main_is_first then
-            screen_y = screen_h + gap
-        elseif layout == "Horizontal" and not main_is_first then
-            screen_x = screen_w + gap
-        end
-
-        local spot_w = 60
-        local spot_h = 65
-
-        local offset_x = 0
-        local offset_y = 0
-
-        local cx = 128
-        local cy = 150
-
-        local player = state.input_trap_state.active_player
-        if player then
-            local raw_x = _G.memory.read_s32_le(memory.to_domain_addr(player + constants.OBJECT_X_OFFSET))
-            local raw_y = _G.memory.read_s32_le(memory.to_domain_addr(player + constants.OBJECT_Y_OFFSET))
-
-            local camera_object = _G.memory.read_u32_le(memory.to_domain_addr(0x020CAA38))
-            if camera_object >= 0x02000000 and camera_object < 0x02400000 then
-                local camera_x = _G.memory.read_s32_le(memory.to_domain_addr(camera_object + 0xC0))
-                local camera_y = _G.memory.read_s32_le(memory.to_domain_addr(camera_object + 0xC4))
-                local stage_zoom = _G.memory.read_u16_le(memory.to_domain_addr(0x020CADB4))
-                if stage_zoom == 0 then stage_zoom = 4096 end
-
-                cx = math.floor((raw_x + camera_x) / stage_zoom) + offset_x
-                local camera_term = (raw_y + camera_y) / stage_zoom
-                cy = 180 - math.floor(camera_term) + offset_y
-            end
-            cx = math.max(0, math.min(screen_w - 1, cx))
-            cy = math.max(0, math.min(screen_h - 1, cy))
-        end
-
-        local x1 = math.max(0, math.min(screen_w - 1, math.floor(cx - spot_w / 2)))
-        local x2 = math.max(0, math.min(screen_w - 1, math.floor(cx + spot_w / 2)))
-        local y1 = math.max(0, math.min(screen_h - 1, math.floor(cy - spot_h / 2)))
-        local y2 = math.max(0, math.min(screen_h - 1, math.floor(cy + spot_h / 2)))
-
-        if y1 > 0 then
-            gui.drawBox(screen_x, screen_y, screen_x + screen_w - 1, screen_y + y1 - 1, shade, shade)
-        end
-        if y2 < screen_h - 1 then
-            gui.drawBox(screen_x, screen_y + y2 + 1, screen_x + screen_w - 1, screen_y + screen_h - 1, shade, shade)
-        end
-        if x1 > 0 then
-            gui.drawBox(screen_x, screen_y + y1, screen_x + x1 - 1, screen_y + y2, shade, shade)
-        end
-        if x2 < screen_w - 1 then
-            gui.drawBox(screen_x + x2 + 1, screen_y + y1, screen_x + screen_w - 1, screen_y + screen_h - 1, shade, shade)
-        end
+         render_spotlight()
     end
+       
 end
 
 
