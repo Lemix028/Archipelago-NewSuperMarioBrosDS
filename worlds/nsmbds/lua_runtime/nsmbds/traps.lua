@@ -17,6 +17,8 @@ local BASE_MAX_SPEED = constants.BASE_MAX_SPEED
 local HYPER_TARGET = constants.HYPER_TARGET
 local SLOW_TARGET = constants.SLOW_TARGET
 local ICE_GRIP_COMPENSATION = constants.ICE_GRIP_COMPENSATION
+local input_filter_hook_warning_printed = false
+local memory_input_filter_hooks_initialized = false
 
 local function clear_byte_flag(value, flag)
     if math.floor(value / flag) % 2 == 1 then
@@ -78,23 +80,18 @@ end
 local function clear_jump_buttons_at(address)
     local original_low = _G.memory.readbyte(address)
     local original_high = _G.memory.readbyte(address + 1)
-    local low = original_low
+    local low = clear_byte_flag(original_low, 0x01) -- A always jumps.
     local high = original_high
 
-    -- A is always jump. B and X swap between jump and dash.
-    low = clear_byte_flag(low, 0x01)
+    -- B and X swap between jump and dash with the control option.
     if _G.memory.readbyte(addresses.ADDR_CONTROL_OPTIONS) == 1 then
         low = clear_byte_flag(low, 0x02)
     else
         high = clear_byte_flag(high, 0x04)
     end
 
-    if low ~= original_low then
-        _G.memory.writebyte(address, low)
-    end
-    if high ~= original_high then
-        _G.memory.writebyte(address + 1, high)
-    end
+    if low ~= original_low then _G.memory.writebyte(address, low) end
+    if high ~= original_high then _G.memory.writebyte(address + 1, high) end
 end
 
 local function clear_sprint_buttons_at(address)
@@ -299,19 +296,73 @@ local function apply_button_input_filter()
 end
 
 function M.ensure_input_filter_hooks()
-    if context.input_filter_hooks_initialized or context.input_filter_hooks_attempted then
-        return
-    end
+    if context.input_filter_hooks_initialized then return true end
+
     context.input_filter_hooks_attempted = true
-    if not event or not event.onframestart then
-        return
+    if event and event.onmemoryexecute then
+        local scope = memory.sys_bus_domain or memory.domain
+        local general_hook_address = memory.sys_bus_domain
+            and constants.SYS_INPUT_GENERAL_AFTER_WRITE
+            or memory.to_domain_addr(constants.SYS_INPUT_GENERAL_AFTER_WRITE)
+        local buttons_hook_address = memory.sys_bus_domain
+            and constants.SYS_INPUT_BUTTONS_AFTER_WRITE
+            or memory.to_domain_addr(constants.SYS_INPUT_BUTTONS_AFTER_WRITE)
+        local general_ok, general_error = pcall(
+            event.onmemoryexecute,
+            apply_general_input_filter,
+            general_hook_address,
+            "nsmbds_input_filter_general_after_write",
+            scope
+        )
+        local buttons_ok, buttons_error = pcall(
+            event.onmemoryexecute,
+            apply_button_input_filter,
+            buttons_hook_address,
+            "nsmbds_input_filter_buttons_after_write",
+            scope
+        )
+        memory_input_filter_hooks_initialized = general_ok and buttons_ok
+        if memory_input_filter_hooks_initialized then
+            context.input_filter_hooks_initialized = true
+            input_filter_hook_warning_printed = false
+            return true
+        end
+
+        if event.unregisterbyname then
+            pcall(event.unregisterbyname, "nsmbds_input_filter_general_after_write")
+            pcall(event.unregisterbyname, "nsmbds_input_filter_buttons_after_write")
+        end
+        if not input_filter_hook_warning_printed then
+            local hook_error = not general_ok and general_error or buttons_error
+            print(
+                "NSMBDS input Trap execute-hook registration failed: "
+                .. tostring(hook_error)
+                .. "; trying frame-start fallback."
+            )
+            input_filter_hook_warning_printed = true
+        end
     end
-    local ok, hook_id = pcall(
-        event.onframestart,
-        M.apply_frame_start_input_filter,
-        "nsmbds_input_filter_frame_start"
-    )
-    context.input_filter_hooks_initialized = ok and hook_id ~= nil
+
+    if event and event.onframestart then
+        local ok, hook_error = pcall(
+            event.onframestart,
+            M.apply_frame_start_input_filter,
+            "nsmbds_input_filter_frame_start"
+        )
+        context.input_filter_hooks_initialized = ok
+        if ok then return true end
+        if not input_filter_hook_warning_printed then
+            print("NSMBDS input Trap fallback registration failed: " .. tostring(hook_error))
+            input_filter_hook_warning_printed = true
+        end
+    end
+
+    if not input_filter_hook_warning_printed then
+        print("NSMBDS input Trap hooks unavailable in this BizHawk core.")
+        input_filter_hook_warning_printed = true
+    end
+    context.input_filter_hooks_initialized = false
+    return false
 end
 
 function M.disable_input_filter_hooks()
@@ -320,15 +371,26 @@ function M.disable_input_filter_hooks()
         pcall(event.unregisterbyname, "nsmbds_input_filter_general_after_write")
         pcall(event.unregisterbyname, "nsmbds_input_filter_buttons_after_write")
     end
+    memory_input_filter_hooks_initialized = false
     context.input_filter_hooks_initialized = false
     context.input_filter_hooks_attempted = false
+    input_filter_hook_warning_printed = false
 end
 
 function M.update_input_filter_hooks(has_active_player)
-    local needs_frame_start_filter = has_active_player
+    local mode = context.active_mode
+    local needs_input_filter = has_active_player
         and context.trap_remaining_frames > 0
-        and context.active_mode == "no_jump"
-    if needs_frame_start_filter then
+        and (mode == "no_jump"
+            or mode == "im_stuck"
+            or mode == "no_sprint"
+            or mode == "button_roulette"
+            or mode == "auto_run"
+            or mode == "sticky_buttons"
+            or mode == "camera_drift"
+            or mode == "camera_sway"
+            or mode == "boo_curse")
+    if needs_input_filter then
         M.ensure_input_filter_hooks()
     elseif context.input_filter_hooks_initialized or context.input_filter_hooks_attempted then
         M.disable_input_filter_hooks()
@@ -336,28 +398,81 @@ function M.update_input_filter_hooks(has_active_player)
 end
 
 function M.apply_frame_start_input_filter()
-    if context.active_mode ~= "no_jump"
-        or context.trap_remaining_frames <= 0
+    -- Fallback only: combining this with the RAM hook would reverse Boo twice.
+    if memory_input_filter_hooks_initialized then return end
+    local mode = context.active_mode
+    if context.trap_remaining_frames <= 0
+        or (mode ~= "no_jump"
+            and mode ~= "camera_drift"
+            and mode ~= "camera_sway"
+            and mode ~= "boo_curse")
         or not joypad
         or not joypad.set then
         return
     end
 
-    -- Override controller input before NSMBDS copies it into game RAM.  The
-    -- previous frame-end RAM filter ran after the game had already accepted a
-    -- jump. A always jumps; B/X depends on the in-game control option.
-    local blocked = { A = false }
-    if _G.memory.readbyte(addresses.ADDR_CONTROL_OPTIONS) == 1 then
-        blocked.B = false
-    else
-        blocked.X = false
-    end
-    joypad.set(blocked, 1)
-end
+    local filtered = {}
+    if mode == "no_jump" then
+        -- A is always jump. B and X swap between jump and dash.
+        filtered.A = false
+        if _G.memory.readbyte(addresses.ADDR_CONTROL_OPTIONS) == 1 then
+            filtered.B = false
+        else
+            filtered.X = false
+        end
+    elseif mode == "camera_drift" or mode == "camera_sway" then
+        local elapsed = math.max(
+            0,
+            context.trap_total_frames - context.trap_remaining_frames
+        )
+        local direction = state.input_trap_state.camera_direction
+        local apply_direction = true
 
-function M.apply_trap_input_filter()
-    apply_general_input_filter()
-    apply_button_input_filter()
+        if mode == "camera_drift" then
+            local ramping = elapsed < state.input_trap_state.camera_drift_ramp_frames
+            local pulse_frame = elapsed % state.input_trap_state.camera_drift_pulse_period
+            apply_direction = not ramping
+                or pulse_frame < state.input_trap_state.camera_drift_pulse_frames
+        else
+            direction = math.floor(
+                elapsed / state.input_trap_state.camera_sway_period
+            ) % 2 == 0 and -1 or 1
+        end
+
+        filtered.L = apply_direction and direction < 0
+        filtered.R = apply_direction and direction > 0
+    elseif mode == "boo_curse" then
+        local elapsed = math.max(
+            0,
+            context.trap_total_frames - context.trap_remaining_frames
+        )
+        local pad = nil
+        if joypad.getimmediate then
+            local ok, immediate = pcall(joypad.getimmediate, 1)
+            if ok and type(immediate) == "table" then pad = immediate end
+        end
+        if pad == nil and joypad.get then
+            local ok, current = pcall(joypad.get, 1)
+            if ok and type(current) == "table" then pad = current end
+        end
+        if pad == nil then return end
+
+        local reversing = elapsed % state.input_trap_state.boo_cycle_frames
+            < state.input_trap_state.boo_reverse_frames
+        if reversing then
+            filtered.Left = pad.Right == true
+            filtered.Right = pad.Left == true
+        else
+            filtered.Left = pad.Left == true
+            filtered.Right = pad.Right == true
+        end
+    end
+
+    local ok, error_message = pcall(joypad.set, filtered, 1)
+    if not ok and not input_filter_hook_warning_printed then
+        print("NSMBDS input Trap filter failed: " .. tostring(error_message))
+        input_filter_hook_warning_printed = true
+    end
 end
 
 function M.poll_and_update_traps(has_active_player, trap_player)
@@ -459,18 +574,7 @@ function M.poll_and_update_traps(has_active_player, trap_player)
         context.trap_remaining_frames = context.trap_remaining_frames - 1
         if trap_player then
             local mode = context.active_mode
-            if mode == "no_jump"
-                or mode == "no_sprint"
-                or mode == "button_roulette"
-                or mode == "auto_run"
-                or mode == "sticky_buttons"
-                or mode == "camera_drift"
-                or mode == "camera_sway"
-                or mode == "boo_curse"
-                or mode == "im_stuck" then
-                -- Camera effects are intentionally polled once per frame.
-                -- Memory-execute callbacks caused audio underruns on BizHawk.
-                M.apply_trap_input_filter()
+            if mode == "auto_run" or mode == "im_stuck" then
                 if mode == "auto_run" then
                     local pad = joypad and joypad.getimmediate and joypad.getimmediate(1)
                     if not pad or next(pad) == nil then
@@ -511,7 +615,12 @@ function M.poll_and_update_traps(has_active_player, trap_player)
                 -- Refresh only the eight BG control words and two hardware
                 -- mosaic registers. Sprite-table scans caused audio crackle.
                 state.input_trap_state.apply_crazy_pixels()
-            else
+            elseif mode == "hyper"
+                or mode == "slow"
+                or mode == "walljump_lock"
+                or mode == "ice_shoes"
+                or mode == "heavy_mario"
+                or mode == "reverse_controls" then
                 local addr_x_velocity = memory.to_domain_addr(
                     trap_player + constants.PLAYER_X_VELOCITY_OFFSET
                 )
@@ -724,8 +833,7 @@ local function render_spotlight()
     local native_y1 = math.max(0, math.floor(cy - spot_h / 2))
     local native_y2 = math.min(191, math.floor(cy + spot_h / 2))
 
-    local powcnt1 = _G.memory.read_u16_le(0x04000304, memory.sys_bus_domain)
-    local gameplay_kind = (powcnt1 & 0x8000) ~= 0 and "top" or "bottom"
+    local gameplay_kind = screen_geometry.get_gameplay_kind(memory.sys_bus_domain)
     local screens = screen_geometry.get_screens()
 
     for _, screen in ipairs(screens) do
