@@ -1,8 +1,9 @@
--- Colored Archipelago activity feed in symmetric BizHawk client padding.
+-- Colored Archipelago activity feed.
 
 local M = {}
 
-local PADDING_SIDE = 520
+local FEED_WIDTH = 520
+
 local MAX_ENTRIES = 2000
 local WRAP_COLUMNS = 50
 local LINE_HEIGHT = 18
@@ -94,16 +95,7 @@ function M.push(message)
     return true
 end
 
-local function apply_padding()
-    if client and client.SetClientExtraPadding then
-        local side = visible and PADDING_SIDE or 0
-        client.SetClientExtraPadding(side, 0, side, 0)
-    end
-end
 
-local function feed_width()
-    return PADDING_SIDE
-end
 
 local function poll_toggle()
     if not input or not input.get then return end
@@ -116,7 +108,6 @@ local function poll_toggle()
     local toggle_down = ctrl and shift and key_down(keys, {"H"})
     if toggle_down and not toggle_was_down then
         visible = not visible
-        apply_padding()
     end
     toggle_was_down = toggle_down
 end
@@ -125,6 +116,7 @@ local function poll_scroll(max_visible_lines)
     if not visible or not input or not input.getmouse then return end
     local mouse = input.getmouse()
     local wheel = math.floor((mouse.Wheel or 0) / 120)
+
     if last_mouse_wheel == nil then
         last_mouse_wheel = wheel
         return
@@ -135,18 +127,24 @@ local function poll_scroll(max_visible_lines)
     if wheel_delta == 0 then return end
 
     local mouse_x = mouse.X or 0
+    
     if client and client.transformPoint then
         local ok, point = pcall(client.transformPoint, mouse.X or 0, mouse.Y or 0)
-        if ok and point then mouse_x = point.x or point.X or mouse_x end
+
+        if ok and point then
+            mouse_x = point.x or point.X or mouse_x
+        end
     end
-    if mouse_x < 0 or mouse_x >= feed_width() then return end
+
+     if mouse_x < 0 or mouse_x >= FEED_WIDTH then
+        return
+    end
 
     local maximum = math.max(0, #entries - max_visible_lines)
     scroll_offset = math.max(0, math.min(maximum, scroll_offset + wheel_delta * 3))
 end
 
 function M.initialize()
-    apply_padding()
     if input and input.getmouse then
         local mouse = input.getmouse()
         last_mouse_wheel = math.floor((mouse.Wheel or 0) / 120)
@@ -196,9 +194,7 @@ function M.shutdown()
     if _G.nsmbds_feed_push == M.push then _G.nsmbds_feed_push = nil end
     if gui and gui.cleartext then gui.cleartext() end
     if gui and gui.clearGraphics then gui.clearGraphics("client") end
-    if client and client.SetClientExtraPadding then
-        client.SetClientExtraPadding(0, 0, 0, 0)
-    end
 end
+
 
 return M
