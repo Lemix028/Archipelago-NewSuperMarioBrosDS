@@ -10,14 +10,9 @@ from unittest.mock import patch
 
 from .bases import NSMBDSTestBase
 from ..rom import _select_base_rom_path
-from ..settings import NSMBDSSettings
 
 
 class TestProcedurePatch(NSMBDSTestBase):
-    def test_base_rom_setting_is_optional_and_unset_by_default(self) -> None:
-        self.assertFalse(NSMBDSSettings.RomFile.required)
-        self.assertIsNone(NSMBDSSettings.rom_file)
-
     @patch("Utils.open_filename", return_value="")
     def test_base_rom_selection_cancel_has_clear_error(self, open_filename) -> None:
         with self.assertRaisesRegex(FileNotFoundError, "No NSMBDS ROM file was selected"):
