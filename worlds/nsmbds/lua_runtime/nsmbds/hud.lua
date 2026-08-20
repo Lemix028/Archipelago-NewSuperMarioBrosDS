@@ -6,6 +6,8 @@
 local M = {}
 local memory = require("nsmbds.memory")
 local state = require("nsmbds.state")
+local screen_geometry = require("nsmbds.screen_geometry")
+local RENDER_HUD_ON_BOTH_HYBRID_SCREENS = false
 local context = state.context
 local draw_shield_icon
 local draw_insurance_icon
@@ -52,6 +54,47 @@ local RECEIVED_ITEM_NAMES = {
     [0x50] = "PROGRESSIVE GATE PASS",
 }
 
+local function get_gameplay_screens()
+    local powcnt1 = _G.memory.read_u16_le(0x04000304, memory.sys_bus_domain)
+    local gameplay_kind = (powcnt1 & 0x8000) ~= 0 and "top" or "bottom"
+    local screens, result = screen_geometry.get_screens(), {}
+
+    for _, screen in ipairs(screens) do
+        if screen.kind == gameplay_kind then
+            result[#result + 1] = screen
+        end
+    end
+
+    return result
+end
+
+local function draw_icon_box(x, y, ox, oy, w, h, color, scale)
+    gui.drawBox(
+        x + ox * scale,
+        y + oy * scale,
+        x + (ox + w) * scale - 1,
+        y + (oy + h) * scale - 1,
+        color,
+        color
+    )
+end
+
+local function get_hud_screens()
+    local screens = get_gameplay_screens()
+
+    if RENDER_HUD_ON_BOTH_HYBRID_SCREENS or #screens <= 1 then
+        return screens
+    end
+
+    -- In Hybrid prefer the enlarged gameplay instance.
+    for _, screen in ipairs(screens) do
+        if screen.duplicate then
+            return { screen }
+        end
+    end
+
+    return { screens[1] }
+end
 
 function M.draw_protection_hud(snapshot)
     if not gui or not gui.drawBox or not gui.drawText then return end
@@ -81,16 +124,46 @@ function M.draw_protection_hud(snapshot)
     context.last_drawn_shield_count = shield_count
     context.last_drawn_insurance_count = insurance_count
 
-    -- Tiny pixel icons beside the vanilla timer; avoid covering gameplay.
-    if shield_count > 0 then
-        local x, y = 152, 3
-        draw_shield_icon(x, y, "cyan")
-        state.notification_state.drawTextWithOutline(x + 11, y - 1,  tostring(shield_count), 10) -- "x" ..
-    end
-    if insurance_count > 0 then
-        local x, y = 178, 3
-        draw_insurance_icon(x, y, "green")
-        state.notification_state.drawTextWithOutline(x + 11, y - 1,  tostring(insurance_count), 10) -- "x" ..
+    -- Tiny pixel icons beside the vanilla timer; on multiple screens.
+    for _, screen in ipairs(get_hud_screens()) do
+        local scale = screen.duplicate and 2 or 1
+
+        local shield_base_x = 145
+        local insurance_base_x = 172
+
+        local text_size = screen.duplicate and 18 or 10
+        local text_style = screen.duplicate and "bold" or "regular"
+        local outline = screen.duplicate and 2 or 1
+
+        if shield_count > 0 then
+            local x = screen.x + shield_base_x * scale
+            local y = screen.y + (screen.duplicate and 6 or 3)
+
+            draw_shield_icon(x, y, "cyan", scale)
+            state.notification_state.drawTextWithOutline(
+                x + 10 * scale,
+                y + (screen.duplicate and -2 or -1),
+                tostring(shield_count),
+                text_size,
+                text_style,
+                outline
+            )
+        end
+
+        if insurance_count > 0 then
+            local x = screen.x + insurance_base_x * scale
+            local y = screen.y + (screen.duplicate and 6 or 3)
+
+            draw_insurance_icon(x, y, "green", scale)
+            state.notification_state.drawTextWithOutline(
+                x + 10 * scale,
+                y + (screen.duplicate and -2 or -1),
+                tostring(insurance_count),
+                text_size,
+                text_style,
+                outline
+            )
+        end
     end
 end
 
@@ -172,26 +245,62 @@ function state.notification_state.draw()
     local title, subtitle, color = state.notification_state.text(state.notification_state.active)
 
     -- Filler details need more room than the compact Trap status.
-    local x1, y1, x2, y2 = 106, 20, 250, 49
-    gui.drawBox(x1, y1, x2, y2, "black", 0xD011111B)
-    gui.drawBox(x1, y1, x1 + 2, y2, color, color)
-    gui.drawText(x1 + 4, y1 + 2, title, "white", "clear", 10)
-    gui.drawText(x1 + 4, y1 + 12, subtitle, color, "clear", 9)
+    for _, screen in ipairs(get_hud_screens()) do
+        local layout = nds.getscreenlayout()
+        local scale = screen.duplicate and 1.20 or (layout == "Horizontal" and 0.85 or 1)
 
-    local bar_x1 = x1 + 4
-    local bar_x2 = x2 - 3
-    -- Keep the timer clear of the subtitle baseline.
-    local bar_y = y2 - 3
-    local fill_width = math.floor(
-        (bar_x2 - bar_x1)
-        * state.notification_state.remaining_frames
-        / state.notification_state.duration_frames
-    )
-    gui.drawBox(bar_x1, bar_y, bar_x2, bar_y, "gray", "gray")
-    if fill_width > 0 then
-        gui.drawBox(bar_x1, bar_y, bar_x1 + fill_width, bar_y, color, color)
+        local width = math.floor(145 * scale + 0.5)
+        local height = math.floor(30 * scale + 0.5)
+        local right_margin = screen.duplicate and 10 or 5
+        local top_offset = screen.duplicate and 34 or 20
+
+        local x1 = screen.x + screen.width - width - right_margin
+        local y1 = screen.y + top_offset
+        local x2 = x1 + width - 1
+        local y2 = y1 + height - 1
+
+        gui.drawBox(x1, y1, x2, y2, "black", 0xD011111B)
+
+        local accent_width = math.max(3, math.floor(3 * scale + 0.5))
+        gui.drawBox(x1, y1, x1 + accent_width - 1, y2, color, color)
+
+        local title_size = screen.duplicate and 12 or 10
+        local subtitle_size = screen.duplicate and 10 or 9
+
+        gui.drawText(
+            x1 + math.floor(4 * scale),
+            y1 + math.floor(2 * scale),
+            title,
+            "white",
+            "clear",
+            title_size
+        )
+
+        gui.drawText(
+            x1 + math.floor(4 * scale),
+            y1 + math.floor(12 * scale),
+            subtitle,
+            color,
+            "clear",
+            subtitle_size
+        )
+
+        local bar_x1 = x1 + math.floor(4 * scale)
+        local bar_x2 = x2 - math.floor(3 * scale)
+        local bar_y = y2 - math.floor(3 * scale)
+
+        local fill_width = math.floor(
+            (bar_x2 - bar_x1)
+            * state.notification_state.remaining_frames
+            / state.notification_state.duration_frames
+        )
+
+        gui.drawBox(bar_x1, bar_y, bar_x2, bar_y, "gray", "gray")
+
+        if fill_width > 0 then
+            gui.drawBox(bar_x1, bar_y, bar_x1 + fill_width, bar_y, color, color)
+        end
     end
-
     state.notification_state.remaining_frames = state.notification_state.remaining_frames - 1
     if state.notification_state.remaining_frames <= 0 then
         local completed_kind = state.notification_state.active.kind
@@ -203,54 +312,182 @@ function state.notification_state.draw()
     end
 end
 
-function state.notification_state.drawTextWithOutline(x, y, text, size)
-    local white = "white"
-    local black = "black"
+function M.draw_trap_status_hud()
+    if not gui or not gui.drawBox or not gui.drawText then return end
+    if context.trap_remaining_frames <= 0 then return end
 
-    gui.drawText(x - 1, y,     text, black, "clear", size)
-    gui.drawText(x + 1, y,     text, black, "clear", size)
-    gui.drawText(x,     y - 1, text, black, "clear", size)
-    gui.drawText(x,     y + 1, text, black, "clear", size)
-
-    gui.drawText(x, y, text, white, "clear", size)
-end
-
-draw_shield_icon = function(x, y, color)
-    local offsets = { {-1, 0}, {1, 0}, {0, -1}, {0, 1} }
-
-    for _, o in ipairs(offsets) do
-        local ox, oy = x + o[1], y + o[2]
-        gui.drawBox(ox,     oy,     ox + 8, oy + 4, "black", "black")
-        gui.drawBox(ox + 1, oy + 5, ox + 7, oy + 6, "black", "black")
-        gui.drawBox(ox + 2, oy + 7, ox + 6, oy + 8, "black", "black")
-        gui.drawBox(ox + 4, oy + 9, ox + 4, oy + 9, "black", "black")
+    -- Trap Blocked notification replaces the normal trap status temporarily.
+    if state.notification_state.active ~= nil
+        and state.notification_state.active.kind == state.notification_state.kind.trap_blocked then
+        return
     end
 
-    gui.drawBox(x,     y,     x + 8, y + 4, color, color)
-    gui.drawBox(x + 1, y + 5, x + 7, y + 6, color, color)
-    gui.drawBox(x + 2, y + 7, x + 6, y + 8, color, color)
-    gui.drawBox(x + 4, y + 9, x + 4, y + 9, color, color)
-end
+    local title = "TRAP ACTIVE"
+    local color = "red"
 
-draw_insurance_icon = function(x, y, color)
-    local offsets = { {-1, 0}, {1, 0}, {0, -1}, {0, 1} }
-
-    for _, o in ipairs(offsets) do
-        local ox, oy = x + o[1], y + o[2]
-        gui.drawBox(ox + 1, oy,     ox + 3, oy + 2, "black", "black")
-        gui.drawBox(ox + 5, oy,     ox + 7, oy + 2, "black", "black")
-        gui.drawBox(ox,     oy + 2, ox + 8, oy + 4, "black", "black")
-        gui.drawBox(ox + 1, oy + 5, ox + 7, oy + 6, "black", "black")
-        gui.drawBox(ox + 2, oy + 7, ox + 6, oy + 8, "black", "black")
-        gui.drawBox(ox + 4, oy + 9, ox + 4, oy + 9, "black", "black")
+    if context.active_mode == "hyper" then
+        title, color = "SUPER SPEED", "red"
+    elseif context.active_mode == "slow" then
+        title, color = "SLOWNESS", "cyan"
+    elseif context.active_mode == "walljump_lock" then
+        title, color = "SLIPPERY GLOVES", "yellow"
+    elseif context.active_mode == "no_jump" then
+        title, color = "GROUND BOUND", "orange"
+    elseif context.active_mode == "reverse_controls" then
+        title, color = "HYPER CONFUSION", "purple"
+    elseif context.active_mode == "no_sprint" then
+        title, color = "NO SPRINT", "orange"
+    elseif context.active_mode == "button_roulette" then
+        title, color = "BUTTON SWAP", "purple"
+    elseif context.active_mode == "ice_shoes" then
+        title, color = "ICE SHOES", "cyan"
+    elseif context.active_mode == "heavy_mario" then
+        title, color = "HEAVY MARIO", "orange"
+    elseif context.active_mode == "auto_run" then
+        title, color = "CAN'T STOP", "red"
+    elseif context.active_mode == "sticky_buttons" then
+        title, color = "STICKY BUTTONS", "yellow"
+    elseif context.active_mode == "camera_drift" then
+        title, color = "CAMERA DRIFT", "purple"
+    elseif context.active_mode == "screen_flip" then
+        title, color = "SCREEN FLIP", "purple"
+    elseif context.active_mode == "camera_sway" then
+        title, color = "DRUNK CAMERA", "purple"
+    elseif context.active_mode == "boo_curse" then
+        title, color = "BOO CURSE", "purple"
+    elseif context.active_mode == "im_stuck" then
+        title, color = "I'M STUCK", "yellow"
+    elseif context.active_mode == "screen_tint" then
+        title, color = "SCREEN TINT", "purple"
+    elseif context.active_mode == "retro_filter" then
+        title, color = "RETRO FILTER", "orange"
+    elseif context.active_mode == "spotlight" then
+        title, color = "SPOTLIGHT", "yellow"
+    elseif context.active_mode == "ground_clap" then
+        title, color = "GROUND CLAP", "red"
+    elseif context.active_mode == "head_bonk" then
+        title, color = "HEAD BONK", "red"
+    elseif context.active_mode == "crazy_pixels" then
+        title, color = "PIXELATION", "purple"
+    elseif context.active_mode == "coin_tax_notice" then
+        title, color = "COIN TAX -10", "red"
+    elseif context.active_mode == "timer_drain_notice" then
+        title, color = "TIME DRAIN", "red"
+    elseif context.active_mode == "coin_thief_notice" then
+        title, color = "COIN THIEF", "red"
+    elseif context.active_mode == "bonk_hit"
+        or context.active_mode == "bonk_fatal"
+        or context.active_mode == "bonk_protected" then
+        title, color = "BONK TRAP", "red"
     end
 
-    gui.drawBox(x + 1, y,     x + 3, y + 2, color, color)
-    gui.drawBox(x + 5, y,     x + 7, y + 2, color, color)
-    gui.drawBox(x,     y + 2, x + 8, y + 4, color, color)
-    gui.drawBox(x + 1, y + 5, x + 7, y + 6, color, color)
-    gui.drawBox(x + 2, y + 7, x + 6, y + 8, color, color)
-    gui.drawBox(x + 4, y + 9, x + 4, y + 9, color, color)
+    for _, screen in ipairs(get_hud_screens()) do
+        local scale = screen.duplicate and 1.25 or 1
+
+        local width = math.floor(93 * scale + 0.5)
+        local height = math.floor(18 * scale + 0.5)
+        local right_margin = screen.duplicate and 12 or 5
+        local top_offset = screen.duplicate and 38 or 20
+
+        local x1 = screen.x + screen.width - width - right_margin
+        local y1 = screen.y + top_offset
+        local x2 = x1 + width - 1
+        local y2 = y1 + height - 1
+
+        gui.drawBox(x1, y1, x2, y2, "black", 0xD011111B)
+
+        local accent_width = math.max(3, math.floor(3 * scale + 0.5))
+        gui.drawBox(x1, y1, x1 + accent_width - 1, y2, color, color)
+
+        gui.drawText(
+            x1 + math.floor(4 * scale),
+            y1 + math.floor(2 * scale),
+            title,
+            "white",
+            "clear",
+            screen.duplicate and 11 or 10
+        )
+
+        if context.trap_total_frames > 0 then
+            local bar_x1 = x1 + math.floor(4 * scale)
+            local bar_x2 = x2 - math.floor(3 * scale)
+            local bar_y = y2 - math.floor(3 * scale)
+
+            local fill_width = math.max(
+                0,
+                math.floor(
+                    (bar_x2 - bar_x1)
+                    * context.trap_remaining_frames
+                    / context.trap_total_frames
+                )
+            )
+
+            gui.drawBox(bar_x1, bar_y, bar_x2, bar_y, "gray", "gray")
+
+            if fill_width > 0 then
+                gui.drawBox(bar_x1, bar_y, bar_x1 + fill_width, bar_y, color, color)
+            end
+        end
+    end
+end
+
+
+function state.notification_state.drawTextWithOutline(x, y, text, size, style, outline)
+    style = style or "regular"
+    outline = outline or 1
+
+    if outline == 1 then
+        gui.drawText(x - 1, y, text, "black", "clear", size, "Courier New", style)
+        gui.drawText(x + 1, y, text, "black", "clear", size, "Courier New", style)
+        gui.drawText(x, y - 1, text, "black", "clear", size, "Courier New", style)
+        gui.drawText(x, y + 1, text, "black", "clear", size, "Courier New", style)
+    else
+        for ox = -outline, outline do
+            for oy = -outline, outline do
+                if ox ~= 0 or oy ~= 0 then
+                    gui.drawText(x + ox, y + oy, text, "black", "clear", size, "Courier New", style)
+                end
+            end
+        end
+    end
+
+    gui.drawText(x, y, text, "white", "clear", size, "Courier New", style)
+end
+
+draw_shield_icon = function(x, y, color, scale)
+    scale = scale or 1
+
+    for _, o in ipairs({{-1,0},{1,0},{0,-1},{0,1}}) do
+        draw_icon_box(x, y, o[1],     o[2],     9, 5, "black", scale)
+        draw_icon_box(x, y, o[1] + 1, o[2] + 5, 7, 2, "black", scale)
+        draw_icon_box(x, y, o[1] + 2, o[2] + 7, 5, 2, "black", scale)
+        draw_icon_box(x, y, o[1] + 4, o[2] + 9, 1, 1, "black", scale)
+    end
+
+    draw_icon_box(x, y, 0, 0, 9, 5, color, scale)
+    draw_icon_box(x, y, 1, 5, 7, 2, color, scale)
+    draw_icon_box(x, y, 2, 7, 5, 2, color, scale)
+    draw_icon_box(x, y, 4, 9, 1, 1, color, scale)
+end
+
+draw_insurance_icon = function(x, y, color, scale)
+    scale = scale or 1
+
+    for _, o in ipairs({{-1,0},{1,0},{0,-1},{0,1}}) do
+        draw_icon_box(x, y, o[1] + 1, o[2],     3, 3, "black", scale)
+        draw_icon_box(x, y, o[1] + 5, o[2],     3, 3, "black", scale)
+        draw_icon_box(x, y, o[1],     o[2] + 2, 9, 3, "black", scale)
+        draw_icon_box(x, y, o[1] + 1, o[2] + 5, 7, 2, "black", scale)
+        draw_icon_box(x, y, o[1] + 2, o[2] + 7, 5, 2, "black", scale)
+        draw_icon_box(x, y, o[1] + 4, o[2] + 9, 1, 1, "black", scale)
+    end
+
+    draw_icon_box(x, y, 1, 0, 3, 3, color, scale)
+    draw_icon_box(x, y, 5, 0, 3, 3, color, scale)
+    draw_icon_box(x, y, 0, 2, 9, 3, color, scale)
+    draw_icon_box(x, y, 1, 5, 7, 2, color, scale)
+    draw_icon_box(x, y, 2, 7, 5, 2, color, scale)
+    draw_icon_box(x, y, 4, 9, 1, 1, color, scale)
 end
 
 return M

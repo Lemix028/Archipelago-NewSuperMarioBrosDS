@@ -190,7 +190,7 @@ local function sideloading_tick()
     state.notification_state.draw()
     if has_active_player then
         state.input_trap_state.draw_visual_trap()
-        traps.draw_trap_status_hud()
+        hud.draw_trap_status_hud()
     end
     emulator_feed.draw()
 end
