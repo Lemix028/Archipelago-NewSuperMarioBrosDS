@@ -5,6 +5,8 @@ randomizer. Clearing levels and finding secrets sends items to you or to other
 players. In return, your own world access, abilities, Power-Ups, and Star Coins
 may be found anywhere in the multiworld.
 
+**[Roadmap](https://github.com/Lemix028/Archipelago-NewSuperMarioBrosDS/blob/nsmbds/worlds/nsmbds/docs/Roadmap.md)**
+
 For installation and launch instructions, see the [Setup Guide](setup_en.md).
 
 > **Alpha:** Crashes and fatal errors are considered unlikely. Known types of
