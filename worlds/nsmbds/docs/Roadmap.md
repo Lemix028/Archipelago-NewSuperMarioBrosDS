@@ -6,6 +6,11 @@ Focus:
 - Logic
     - Logic option canon/secret exits counts
     - Location only reachable with certain powerups
+    - Secondary paths are unlocked to Towers
+    - Toggle Secret Exit Progression Logic (including access to worlds and Toad Houses behind Secret Exits)
+- Bugs
+    - Deathlink trigger if you return out a level
+    
 
 ## Planned
 
