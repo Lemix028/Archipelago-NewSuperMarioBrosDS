@@ -310,7 +310,7 @@ def test_patch_startup_guard_publishes_successful_output_path() -> None:
 def test_client_title_contains_apworld_version() -> None:
     check(
         tracker_view_module.NSMBDSTrackerManager.base_title
-        == "NSMBDS Client | APWorld v0.4.2-alpha | Archipelago",
+        == "NSMBDS Client | APWorld v0.4.3-alpha | Archipelago",
         "Client window title displays the full APWorld release version",
     )
     version_module = sys.modules["nsmbds.version"]
