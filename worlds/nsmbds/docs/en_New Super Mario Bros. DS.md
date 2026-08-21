@@ -197,6 +197,10 @@ It shows checks and item transfers in real time, can be scrolled, and can be hid
 restore older feed messages, but already used lives, Coins, Power-Ups, and traps
 are not applied a second time.
 
+### Hotkeys
+
+ - Toggle Emulator Feed: `CTRL+SHIFT+H`
+
 ## Important player options
 
 The generated YAML explains every available setting. These are the main groups
