@@ -30,6 +30,30 @@ local context = state.context
 local GROUND_POUND_HOOK_ARM_FRAMES = 60
 local reported_ui_errors = {}
 
+local function check_bizhawk_version()
+    local detected_version = nil
+    if client ~= nil then
+        local ok, value = pcall(function()
+            return client.getversion()
+        end)
+        if ok and value ~= nil then
+            detected_version = tostring(value)
+        end
+    end
+
+    local normalized_version = detected_version
+        and detected_version:match("(%d+%.%d+%.%d+)")
+        or nil
+    if normalized_version ~= constants.SUPPORTED_BIZHAWK_VERSION then
+        print(string.format(
+            "[NSMBDS ERROR] Unsupported BizHawk version '%s'. "
+                .. "Only %s is supported. Continuing anyway; runtime will be unreliable.",
+            detected_version or "unknown",
+            constants.SUPPORTED_BIZHAWK_VERSION
+        ))
+    end
+end
+
 local function call_ui_safely(label, callback, ...)
     local ok, error_message = pcall(callback, ...)
     if not ok and not reported_ui_errors[label] then
@@ -38,6 +62,7 @@ local function call_ui_safely(label, callback, ...)
     end
 end
 
+check_bizhawk_version()
 emulator_feed.initialize()
 -- Remove any high-frequency input hooks left by an older loaded revision.
 traps.disable_input_filter_hooks()
