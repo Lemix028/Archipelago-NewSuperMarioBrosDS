@@ -123,7 +123,6 @@ class OverworldStateReconcilerMixin:
             or len(current_external[1]) != AP_STAR_COIN_GATE_PERMIT_MASK_SIZE
             or len(current_external[2]) != 8
         ):
-            logger.debug("Deferred overworld reconciliation: Overlay 8 not yet loaded.")
             return
 
         world_flags = current_external[0]
