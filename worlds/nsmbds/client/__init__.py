@@ -597,6 +597,9 @@ def restrict_bizhawk_handlers_to_nsmbds() -> None:
 
 def _make_tracker_gui_after_patching(_ctx):
     """Import Kivy only after a startup patch operation has finished."""
+    # Core's kvui module must configure Kivy before any direct Kivy import.
+    import kvui
+
     from .ui import install_kivy_hover_density_guard
 
     install_kivy_hover_density_guard()

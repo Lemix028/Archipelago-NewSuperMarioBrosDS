@@ -55,9 +55,9 @@ local RECEIVED_ITEM_NAMES = {
 }
 
 local function get_gameplay_screens()
-    local powcnt1 = _G.memory.read_u16_le(0x04000304, memory.sys_bus_domain)
-    local gameplay_kind = (powcnt1 & 0x8000) ~= 0 and "top" or "bottom"
-    local screens, result = screen_geometry.get_screens(), {}
+    local gameplay_kind = screen_geometry.get_gameplay_kind(memory.sys_bus_domain)
+    local screens, geometry = screen_geometry.get_screens()
+    local result = {}
 
     for _, screen in ipairs(screens) do
         if screen.kind == gameplay_kind then
@@ -65,7 +65,7 @@ local function get_gameplay_screens()
         end
     end
 
-    return result
+    return result, geometry
 end
 
 local function draw_icon_box(x, y, ox, oy, w, h, color, scale)
@@ -80,20 +80,20 @@ local function draw_icon_box(x, y, ox, oy, w, h, color, scale)
 end
 
 local function get_hud_screens()
-    local screens = get_gameplay_screens()
+    local screens, geometry = get_gameplay_screens()
 
     if RENDER_HUD_ON_BOTH_HYBRID_SCREENS or #screens <= 1 then
-        return screens
+        return screens, geometry
     end
 
     -- In Hybrid prefer the enlarged gameplay instance.
     for _, screen in ipairs(screens) do
         if screen.duplicate then
-            return { screen }
+            return { screen }, geometry
         end
     end
 
-    return { screens[1] }
+    return { screens[1] }, geometry
 end
 
 function M.draw_protection_hud(snapshot)
@@ -245,8 +245,9 @@ function state.notification_state.draw()
     local title, subtitle, color = state.notification_state.text(state.notification_state.active)
 
     -- Filler details need more room than the compact Trap status.
-    for _, screen in ipairs(get_hud_screens()) do
-        local layout = nds.getscreenlayout()
+    local hud_screens, geometry = get_hud_screens()
+    local layout = geometry and geometry.layout or "Natural"
+    for _, screen in ipairs(hud_screens) do
         local scale = screen.duplicate and 1.20 or (layout == "Horizontal" and 0.85 or 1)
 
         local width = math.floor(145 * scale + 0.5)

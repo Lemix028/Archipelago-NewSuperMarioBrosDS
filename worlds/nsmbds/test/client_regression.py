@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import inspect
 import hashlib
 import importlib.util
@@ -240,6 +241,35 @@ def test_kivy_hover_density_guard() -> None:
         observed_densities == [1.5, 1.0],
         "Kivy hover guard is installed only once",
     )
+
+
+def test_tracker_gui_loads_kvui_before_kivy_density_guard() -> None:
+    events = []
+    expected_gui = object()
+    original_import = builtins.__import__
+    original_guard = ui_module.install_kivy_hover_density_guard
+    original_make_gui = tracker_view_module.make_tracker_gui
+
+    def tracking_import(name, *args, **kwargs):
+        if name == "kvui":
+            events.append("kvui")
+        return original_import(name, *args, **kwargs)
+
+    try:
+        builtins.__import__ = tracking_import
+        ui_module.install_kivy_hover_density_guard = lambda: events.append("guard")
+        tracker_view_module.make_tracker_gui = lambda _ctx: expected_gui
+        result = client_module._make_tracker_gui_after_patching(object())
+    finally:
+        builtins.__import__ = original_import
+        ui_module.install_kivy_hover_density_guard = original_guard
+        tracker_view_module.make_tracker_gui = original_make_gui
+
+    check(
+        events[:2] == ["kvui", "guard"],
+        "Tracker GUI lets kvui configure Kivy before installing the density guard",
+    )
+    check(result is expected_gui, "Tracker GUI factory still returns the configured client UI")
 
 
 def test_patch_startup_guard_stops_failed_patch_before_client_ui() -> None:

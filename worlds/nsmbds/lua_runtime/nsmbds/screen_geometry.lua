@@ -92,6 +92,23 @@ local function get_buffer_size()
 end
 
 
+function M.get_gameplay_kind(system_bus_domain)
+    if system_bus_domain == nil
+        or not _G.memory
+        or not _G.memory.read_u16_le then
+        return "top"
+    end
+
+    local ok, powcnt1 = pcall(
+        _G.memory.read_u16_le,
+        0x04000304,
+        system_bus_domain
+    )
+    if not ok or type(powcnt1) ~= "number" then return "top" end
+    return (powcnt1 & 0x8000) ~= 0 and "top" or "bottom"
+end
+
+
 local function infer_render_scale(
     layout,
     gap,

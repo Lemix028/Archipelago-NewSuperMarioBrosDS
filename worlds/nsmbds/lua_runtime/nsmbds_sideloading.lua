@@ -28,6 +28,15 @@ local traps = require("nsmbds.traps")
 local runtime = require("nsmbds.runtime")
 local context = state.context
 local GROUND_POUND_HOOK_ARM_FRAMES = 60
+local reported_ui_errors = {}
+
+local function call_ui_safely(label, callback, ...)
+    local ok, error_message = pcall(callback, ...)
+    if not ok and not reported_ui_errors[label] then
+        reported_ui_errors[label] = true
+        print("NSMBDS " .. label .. " error: " .. tostring(error_message))
+    end
+end
 
 emulator_feed.initialize()
 -- Remove any high-frequency input hooks left by an older loaded revision.
@@ -186,13 +195,13 @@ local function sideloading_tick()
     if gui and gui.clearGraphics then gui.clearGraphics() end
     local notification_snapshot = state.notification_state.capture_snapshot(false)
     pcall(state.notification_state.receive, notification_snapshot)
-    hud.draw_protection_hud(notification_snapshot)
-    state.notification_state.draw()
+    call_ui_safely("protection HUD", hud.draw_protection_hud, notification_snapshot)
+    call_ui_safely("notification HUD", state.notification_state.draw)
     if has_active_player then
-        state.input_trap_state.draw_visual_trap()
-        hud.draw_trap_status_hud()
+        call_ui_safely("visual Trap renderer", state.input_trap_state.draw_visual_trap)
+        call_ui_safely("Trap status HUD", hud.draw_trap_status_hud)
     end
-    emulator_feed.draw()
+    call_ui_safely("emulator feed", emulator_feed.draw)
 end
 
 -- Forward the frame event to the main update function.
