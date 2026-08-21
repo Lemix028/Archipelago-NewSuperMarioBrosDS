@@ -189,6 +189,9 @@ The NSMBDS Client can launch BizHawk, the patched ROM, and the included Lua
 script for you. During play it shows received items,
 checked locations, and notifications.
 
+The patched game unlocks the native **SAVE** option in the World Map menu, so
+you can save your current game at any time while on the World Map.
+
 The emulator also displays an activity feed in the lower-left corner.
 It shows checks and item transfers in real time, can be scrolled, and can be hidden with CTRL+SHIFT+H. Reconnecting may
 restore older feed messages, but already used lives, Coins, Power-Ups, and traps
