@@ -321,7 +321,22 @@ function M.observe_block_bumps(objects)
             if tile_x == nil then
                 tile_x, tile_y = actors.object_tile(object)
             end
-            M.queue_block_object(object, tile_x, tile_y)
+            local player = state.input_trap_state.active_player
+            local is_ground_pound_block = false
+            if player ~= nil then
+                local ground_pound_state = _G.memory.readbyte(memory.to_domain_addr(
+                    player + constants.PLAYER_GROUND_POUND_STATE_OFFSET
+                ))
+                is_ground_pound_block = ground_pound_state
+                    == constants.PLAYER_GROUND_POUND_ACTIVE_STATE
+            end
+            if is_ground_pound_block then
+                -- These actors transition one frame before the impact animation
+                M.queue_block_event(
+                    constants.AP_EVENT_TYPE_BLOCK_GROUND_POUND, world, level, area, tile_x, tile_y + 1)
+            else
+                M.queue_block_object(object, tile_x, tile_y)
+            end
         end
 
         -- Verify both fields when a Sprite 290 pointer first appears, then
