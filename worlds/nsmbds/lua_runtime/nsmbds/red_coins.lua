@@ -80,25 +80,30 @@ end
 
 function M.ensure_red_coin_write_hook()
     if context.red_coin_write_hook_initialized then return end
-    if not event or not event.onmemorywrite then return end
+    local on_write = event and (event.on_bus_write or event.onmemorywrite)
+    if not on_write then return end
 
     local all_hooks_ready = true
-    for index, counter_address in ipairs(addresses.ADDR_RED_COIN_COUNTERS) do
+    for index, domain_address in ipairs(addresses.ADDR_RED_COIN_COUNTERS) do
         local hook_name = "NSMBDS Red Coin Counter " .. tostring(index)
         if event.unregisterbyname then
             pcall(event.unregisterbyname, hook_name)
         end
         local counter_index = index
+        local hook_address = memory.sys_bus_domain
+            and constants.SYS_RED_COIN_COUNTERS[index]
+            or domain_address
+        local scope = memory.sys_bus_domain or memory.domain
         local ok, hook_id = pcall(
-            event.onmemorywrite,
+            on_write,
             function(_, value)
                 if memory.is_rom_loaded() then
                     M.observe_red_coin_counter(counter_index, value)
                 end
             end,
-            counter_address,
+            hook_address,
             hook_name,
-            memory.domain
+            scope
         )
         all_hooks_ready = all_hooks_ready and ok and hook_id ~= nil
     end

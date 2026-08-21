@@ -299,7 +299,8 @@ function M.ensure_input_filter_hooks()
     if context.input_filter_hooks_initialized then return true end
 
     context.input_filter_hooks_attempted = true
-    if event and event.onmemoryexecute then
+    local on_execute = event and (event.on_bus_exec or event.onmemoryexecute)
+    if on_execute then
         local scope = memory.sys_bus_domain or memory.domain
         local general_hook_address = memory.sys_bus_domain
             and constants.SYS_INPUT_GENERAL_AFTER_WRITE
@@ -308,14 +309,14 @@ function M.ensure_input_filter_hooks()
             and constants.SYS_INPUT_BUTTONS_AFTER_WRITE
             or memory.to_domain_addr(constants.SYS_INPUT_BUTTONS_AFTER_WRITE)
         local general_ok, general_error = pcall(
-            event.onmemoryexecute,
+            on_execute,
             apply_general_input_filter,
             general_hook_address,
             "nsmbds_input_filter_general_after_write",
             scope
         )
         local buttons_ok, buttons_error = pcall(
-            event.onmemoryexecute,
+            on_execute,
             apply_button_input_filter,
             buttons_hook_address,
             "nsmbds_input_filter_buttons_after_write",

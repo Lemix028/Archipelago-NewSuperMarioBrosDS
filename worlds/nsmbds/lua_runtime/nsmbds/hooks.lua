@@ -60,14 +60,15 @@ function M.ensure_change_tile_execute_hook()
         return
     end
     context.change_tile_execute_hook_attempted = true
-    if not event or not event.onmemoryexecute or not emu or not emu.getregister then
+    local on_execute = event and (event.on_bus_exec or event.onmemoryexecute)
+    if not on_execute or not emu or not emu.getregister then
         return
     end
     local scope = memory.sys_bus_domain or memory.domain
     local hook_address = memory.sys_bus_domain and constants.SYS_CHANGE_TILE_FUNCTION
         or memory.to_domain_addr(constants.SYS_CHANGE_TILE_FUNCTION)
     local ok, hook_id = pcall(
-        event.onmemoryexecute,
+        on_execute,
         M.record_native_tile_change,
         hook_address,
         "nsmbds_change_tile_execute",
@@ -107,7 +108,8 @@ function M.ensure_hit_block_execute_hook()
         return
     end
     context.hit_block_execute_hook_attempted = true
-    if not event or not event.onmemoryexecute then
+    local on_execute = event and (event.on_bus_exec or event.onmemoryexecute)
+    if not on_execute then
         print("NSMBDS native hitBlock hook unavailable; using position fallback.")
         return
     end
@@ -115,7 +117,7 @@ function M.ensure_hit_block_execute_hook()
     local hook_address = memory.sys_bus_domain and constants.SYS_HIT_BLOCK_FUNCTION
         or memory.to_domain_addr(constants.SYS_HIT_BLOCK_FUNCTION)
     local ok, hook_id = pcall(
-        event.onmemoryexecute,
+        on_execute,
         M.record_native_block_hit,
         hook_address,
         "nsmbds_hit_block_execute",
