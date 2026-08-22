@@ -8,6 +8,8 @@ Focus:
     - Location only reachable with certain powerups
     - Secondary paths are unlocked to Towers
     - Toggle Secret Exit Progression Logic (including access to worlds and Toad Houses behind Secret Exits)
+    - 5-C, 5-B logic
+    - Any Blocksanity logic related to powerups
 - Bugs
     - Deathlink trigger if you return to the overworld
     - Star Coin Sign can be bought without an item
