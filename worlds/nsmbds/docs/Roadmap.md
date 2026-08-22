@@ -10,6 +10,8 @@ Focus:
     - Toggle Secret Exit Progression Logic (including access to worlds and Toad Houses behind Secret Exits)
 - Bugs
     - Deathlink trigger if you return to the overworld
+    - Star Coin Sign can be bought without an item
+    - Some Blocksanity blocks doesnt exist (World 6)
     
 
 ## Planned
