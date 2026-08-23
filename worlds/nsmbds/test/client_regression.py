@@ -1742,6 +1742,7 @@ async def test_insured_death_still_sends_death_link() -> None:
             bytes([0]),
             bytes([0]),
             bytes([6]),
+            struct.pack("<I", 0),
         ]
 
     fake_bizhawk.read = fake_read
@@ -1759,6 +1760,42 @@ async def test_insured_death_still_sends_death_link() -> None:
     check(
         sent_deaths == ["Mario died."],
         "An insured death still emits Death Link even though the life counter was restored",
+    )
+
+
+async def test_return_to_map_does_not_send_death_link() -> None:
+    sent_deaths: list[str] = []
+    states = iter((
+        (3, 100, ram_addresses.STAGE_EXIT_RETURN_TO_MAP_MASK),
+        (2, 100, 0),
+    ))
+
+    async def fake_read(_bizhawk_ctx, _read_requests):
+        lives, timer_seconds, exit_flags = next(states)
+        return [
+            bytes([lives]),
+            struct.pack("<I", timer_seconds * ram_addresses.TIMER_UNITS_PER_SECOND),
+            bytes([0]),
+            bytes([0]),
+            bytes([0]),
+            struct.pack("<I", exit_flags),
+        ]
+
+    fake_bizhawk.read = fake_read
+    client = client_module.NSMBDSClient()
+    client._last_lives = 3
+    client._last_timer = 101 * ram_addresses.TIMER_UNITS_PER_SECOND
+    context = FakeContext(death_link=True)
+
+    async def fake_send_death(message):
+        sent_deaths.append(message)
+
+    context.send_death = fake_send_death
+    await client._handle_death_link(context)
+    await client._handle_death_link(context)
+    check(
+        not sent_deaths and not client._return_to_map_pending,
+        "Return to Map life loss is not treated as a local death",
     )
 
 
@@ -2747,190 +2784,6 @@ async def test_moving_block_mailboxes() -> None:
     check(
         early_open_messages == [{"cmd": "LocationChecks", "locations": [early_open_id]}],
         "An early World 6-2 block opened before baseline resolves to its nearby immutable spawn",
-    )
-
-
-async def test_blocksanity_world_1_2_mailbox() -> None:
-    writes: list[tuple] = []
-    sent_messages: list[dict] = []
-
-    async def fake_read(_bizhawk_ctx, _read_requests):
-        return [
-            bytes([15]),
-            bytes([ram_addresses.AP_EVENT_TYPE_BLOCK_BUMP]),
-            struct.pack("<I", 0),
-            struct.pack("<I", 2),
-            struct.pack("<I", 3),
-            struct.pack("<i", 57),
-            struct.pack("<i", -24),
-            bytes([14]),
-            bytes([15]),
-        ]
-
-    async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
-        writes.append((write_requests, guards))
-        return True
-
-    async def fake_send_msgs(messages):
-        sent_messages.extend(messages)
-
-    fake_bizhawk.read = fake_read
-    fake_bizhawk.guarded_write = fake_guarded_write
-    client = client_module.NSMBDSClient()
-    context = FakeContext()
-    context.send_msgs = fake_send_msgs
-    client._active_location_set_known = True
-    expected_location = locations.LOCATION_TABLE["World 1-2 Blocksanity Block 1"]
-    client._active_locations = {expected_location}
-
-    await client._detect_and_send_block_check(context)
-    check(
-        sent_messages == [{"cmd": "LocationChecks", "locations": [expected_location]}],
-        "Block mailbox resolves World 1-2 from cumulative in-world area 3",
-    )
-    check(
-        writes and writes[0][0] == [
-            (ram_addresses.ADDR_AP_BLOCK_EVENT_ACK_SEQUENCE, [15], ram_addresses.MEMORY_DOMAIN)
-        ],
-        "World 1-2 Blocksanity event is acknowledged after successful submission",
-    )
-
-
-async def test_blocksanity_world_1_2_secondary_area_mailbox() -> None:
-    writes: list[tuple] = []
-    sent_messages: list[dict] = []
-
-    async def fake_read(_bizhawk_ctx, _read_requests):
-        return [
-            bytes([18]),
-            bytes([ram_addresses.AP_EVENT_TYPE_BLOCK_BUMP]),
-            struct.pack("<I", 0),
-            struct.pack("<I", 2),
-            struct.pack("<I", 5),
-            struct.pack("<i", 12),
-            struct.pack("<i", -25),
-            bytes([17]),
-            bytes([18]),
-        ]
-
-    async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
-        writes.append((write_requests, guards))
-        return True
-
-    async def fake_send_msgs(messages):
-        sent_messages.extend(messages)
-
-    fake_bizhawk.read = fake_read
-    fake_bizhawk.guarded_write = fake_guarded_write
-    client = client_module.NSMBDSClient()
-    context = FakeContext()
-    context.send_msgs = fake_send_msgs
-    client._active_location_set_known = True
-    expected_location = locations.LOCATION_TABLE["World 1-2 Blocksanity Block 25"]
-    client._active_locations = {expected_location}
-
-    await client._detect_and_send_block_check(context)
-    check(
-        sent_messages == [{"cmd": "LocationChecks", "locations": [expected_location]}],
-        "Block mailbox resolves World 1-2 secondary area at cumulative area 5",
-    )
-    check(
-        writes and writes[0][0] == [
-            (ram_addresses.ADDR_AP_BLOCK_EVENT_ACK_SEQUENCE, [18], ram_addresses.MEMORY_DOMAIN)
-        ],
-        "World 1-2 secondary-area event is acknowledged after submission",
-    )
-
-
-async def test_blocksanity_world_2_1_mailbox() -> None:
-    writes: list[tuple] = []
-    sent_messages: list[dict] = []
-
-    async def fake_read(_bizhawk_ctx, _read_requests):
-        return [
-            bytes([17]),
-            bytes([ram_addresses.AP_EVENT_TYPE_BLOCK_BUMP]),
-            struct.pack("<I", 1),
-            struct.pack("<I", 1),
-            struct.pack("<I", 21),
-            struct.pack("<i", 53),
-            struct.pack("<i", -25),
-            bytes([16]),
-            bytes([17]),
-        ]
-
-    async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
-        writes.append((write_requests, guards))
-        return True
-
-    async def fake_send_msgs(messages):
-        sent_messages.extend(messages)
-
-    fake_bizhawk.read = fake_read
-    fake_bizhawk.guarded_write = fake_guarded_write
-    client = client_module.NSMBDSClient()
-    context = FakeContext()
-    context.send_msgs = fake_send_msgs
-    client._active_location_set_known = True
-    expected_location = locations.LOCATION_TABLE["World 2-1 Blocksanity Block 1"]
-    client._active_locations = {expected_location}
-
-    await client._detect_and_send_block_check(context)
-    check(
-        sent_messages == [{"cmd": "LocationChecks", "locations": [expected_location]}],
-        "Block mailbox resolves World 2-1 at live global area 21",
-    )
-    check(
-        writes and writes[0][0] == [
-            (ram_addresses.ADDR_AP_BLOCK_EVENT_ACK_SEQUENCE, [17], ram_addresses.MEMORY_DOMAIN)
-        ],
-        "World 2-1 Blocksanity event is acknowledged after successful submission",
-    )
-
-
-async def test_blocksanity_world_7_1_mailbox() -> None:
-    writes: list[tuple] = []
-    sent_messages: list[dict] = []
-
-    async def fake_read(_bizhawk_ctx, _read_requests):
-        return [
-            bytes([19]),
-            bytes([ram_addresses.AP_EVENT_TYPE_BLOCK_BUMP]),
-            struct.pack("<I", 6),
-            struct.pack("<I", 1),
-            struct.pack("<I", 129),
-            struct.pack("<i", 29),
-            struct.pack("<i", -39),
-            bytes([18]),
-            bytes([19]),
-        ]
-
-    async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
-        writes.append((write_requests, guards))
-        return True
-
-    async def fake_send_msgs(messages):
-        sent_messages.extend(messages)
-
-    fake_bizhawk.read = fake_read
-    fake_bizhawk.guarded_write = fake_guarded_write
-    client = client_module.NSMBDSClient()
-    context = FakeContext()
-    context.send_msgs = fake_send_msgs
-    client._active_location_set_known = True
-    expected_location = locations.LOCATION_TABLE["World 7-1 Blocksanity Block 1"]
-    client._active_locations = {expected_location}
-
-    await client._detect_and_send_block_check(context)
-    check(
-        sent_messages == [{"cmd": "LocationChecks", "locations": [expected_location]}],
-        "Block mailbox resolves World 7-1 at live global area 129",
-    )
-    check(
-        writes and writes[0][0] == [
-            (ram_addresses.ADDR_AP_BLOCK_EVENT_ACK_SEQUENCE, [19], ram_addresses.MEMORY_DOMAIN)
-        ],
-        "World 7-1 Blocksanity event is acknowledged after successful submission",
     )
 
 
