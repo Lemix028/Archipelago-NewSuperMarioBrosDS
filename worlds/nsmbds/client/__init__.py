@@ -138,6 +138,7 @@ class NSMBDSClient(
         self._last_lives: int | None = None
         self._last_timer: int | None = None
         self._in_level_grace_polls = 0
+        self._return_to_map_pending = False
         self._suppress_local_death_polls = 0
         self._pending_timer_drains = 0
         self._pending_starman_buffs = 0
@@ -525,6 +526,7 @@ class NSMBDSClient(
         self._last_lives = None
         self._last_timer = None
         self._in_level_grace_polls = 0
+        self._return_to_map_pending = False
         self._suppress_local_death_polls = 0
         self._pending_timer_drains = 0
         self._pending_starman_buffs = 0

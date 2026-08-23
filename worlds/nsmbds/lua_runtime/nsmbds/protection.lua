@@ -5,6 +5,7 @@
 
 local M = {}
 local addresses = require("nsmbds.addresses")
+local constants = require("nsmbds.constants")
 local state = require("nsmbds.state")
 local context = state.context
 
@@ -14,6 +15,15 @@ function M.poll_life_insurance()
     local current = _G.memory.readbyte(addresses.ADDR_LIVES)
     local previous = context.last_observed_lives
     if previous == nil or not context.previous_frame_had_player or current >= previous then
+        context.last_observed_lives = current
+        return
+    end
+
+    -- Vanilla marks the pause-menu "Return to Map" path separately from an
+    -- actual death. It can still lower the life counter, but must not consume
+    -- Life Insurance or publish an insured-death event.
+    local exit_flags = _G.memory.readbyte(addresses.ADDR_STAGE_EXIT_FLAGS)
+    if math.floor(exit_flags / constants.STAGE_EXIT_RETURN_TO_MAP_MASK) % 2 == 1 then
         context.last_observed_lives = current
         return
     end

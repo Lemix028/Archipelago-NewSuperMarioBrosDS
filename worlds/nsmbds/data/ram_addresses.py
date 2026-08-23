@@ -216,6 +216,8 @@ ACTION_REPLAY_FULL_BYTE = 0xD7
 # course. The current area can change inside a course and must not be used as its AP key.
 # Values are uint32_le and world indices are zero-based (World 1 = 0).
 # Stable selected-world byte retained while its course is running.
+ADDR_STAGE_EXIT_FLAGS = 0x00085A1C  # 4 bytes, uint32_le
+STAGE_EXIT_RETURN_TO_MAP_MASK = 0x08
 ADDR_CURRENT_COURSE_WORLD = 0x00088BFC  # 1 byte, uint8
 ADDR_CURRENT_COURSE_LEVEL = 0x00085A9C  # 1 byte, uint8
 ADDR_CURRENT_COURSE_AREA = 0x00085A94   # 1 byte, uint8

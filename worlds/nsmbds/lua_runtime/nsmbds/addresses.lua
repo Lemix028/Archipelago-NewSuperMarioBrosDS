@@ -33,6 +33,7 @@ function M.resolve()
         memory.to_domain_addr(constants.SYS_RED_COIN_COUNTERS[1]),
         memory.to_domain_addr(constants.SYS_RED_COIN_COUNTERS[2]),
     }
+    M.ADDR_STAGE_EXIT_FLAGS = memory.to_domain_addr(constants.SYS_STAGE_EXIT_FLAGS)
     M.ADDR_CURRENT_WORLD_MAP = memory.to_domain_addr(constants.SYS_CURRENT_WORLD_MAP)
     M.ADDR_CURRENT_COURSE_LEVEL = memory.to_domain_addr(constants.SYS_CURRENT_COURSE_LEVEL)
     M.ADDR_CURRENT_COURSE_AREA = memory.to_domain_addr(constants.SYS_CURRENT_COURSE_AREA)

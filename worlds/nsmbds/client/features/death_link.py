@@ -11,8 +11,10 @@ from ...data.ram_addresses import (
     ADDR_AP_LIFE_INSURANCE_COUNT,
     ADDR_AP_TRAP_SHIELD_COUNT,
     ADDR_LIVES,
+    ADDR_STAGE_EXIT_FLAGS,
     ADDR_TIMER,
     MEMORY_DOMAIN,
+    STAGE_EXIT_RETURN_TO_MAP_MASK,
 )
 
 if TYPE_CHECKING:
@@ -34,6 +36,7 @@ class DeathLinkMixin:
         self._death_link_enabled = enabled
         if not enabled:
             self._pending_death_link = False
+            self._return_to_map_pending = False
             self._suppress_local_death_polls = 0
         logger.info("NSMBDS Death Link %s.", "enabled" if enabled else "disabled")
 
@@ -45,7 +48,7 @@ class DeathLinkMixin:
     async def _read_lives_and_timer(
         self,
         ctx: "BizHawkClientContext",
-    ) -> tuple[int, int, int, int, int] | None:
+    ) -> tuple[int, int, int, int, int, int] | None:
         """Read death state plus Lua-visible protection charges."""
         from worlds._bizhawk import read
 
@@ -58,12 +61,13 @@ class DeathLinkMixin:
                     (ADDR_AP_TRAP_SHIELD_COUNT, 1, MEMORY_DOMAIN),
                     (ADDR_AP_LIFE_INSURANCE_COUNT, 1, MEMORY_DOMAIN),
                     (ADDR_AP_INSURED_DEATH_SEQUENCE, 1, MEMORY_DOMAIN),
+                    (ADDR_STAGE_EXIT_FLAGS, 4, MEMORY_DOMAIN),
                 ],
             )
         except Exception:
             logger.exception("Failed to read NSMBDS Death Link state.")
             return None
-        if len(result) != 5 or [len(value) for value in result] != [1, 4, 1, 1, 1]:
+        if len(result) != 6 or [len(value) for value in result] != [1, 4, 1, 1, 1, 4]:
             logger.warning("Received invalid NSMBDS Death Link state data.")
             return None
         return (
@@ -72,6 +76,7 @@ class DeathLinkMixin:
             result[2][0],
             result[3][0],
             result[4][0],
+            struct.unpack("<I", bytes(result[5]))[0],
         )
 
     async def _handle_death_link(self, ctx: "BizHawkClientContext") -> None:
@@ -79,7 +84,7 @@ class DeathLinkMixin:
         state = await self._read_lives_and_timer(ctx)
         if state is None:
             return
-        lives, timer, shield_count, insurance_count, insured_death_sequence = state
+        lives, timer, shield_count, insurance_count, insured_death_sequence, exit_flags = state
         self._pending_trap_shields = shield_count
         self._pending_life_insurance = insurance_count
         insured_death = (
@@ -90,13 +95,21 @@ class DeathLinkMixin:
         timer_is_counting = self._timer_is_counting(self._last_timer, timer)
         self._last_timer = timer
 
+        return_to_map_active = bool(exit_flags & STAGE_EXIT_RETURN_TO_MAP_MASK)
+        if return_to_map_active:
+            self._return_to_map_pending = True
+        elif timer_is_counting:
+            # A newly active level clears a stale marker left by an earlier
+            # Return-to-Map transition.
+            self._return_to_map_pending = False
+
         if timer_is_counting:
             self._in_level_grace_polls = 16
         elif self._in_level_grace_polls:
             self._in_level_grace_polls -= 1
 
         enabled = bool(ctx.slot_data and ctx.slot_data.get("death_link", False))
-        if enabled and self._pending_death_link and timer_is_counting:
+        if enabled and self._pending_death_link and timer_is_counting and not self._return_to_map_pending:
             from worlds._bizhawk import guarded_write
 
             applied = await guarded_write(
@@ -122,6 +135,10 @@ class DeathLinkMixin:
         should_trigger = life_lost or (insured_death and trigger_on_insured)
 
         if not enabled or not should_trigger:
+            return
+        if self._return_to_map_pending:
+            self._return_to_map_pending = False
+            logger.info("Ignored life loss caused by Return to Map.")
             return
         if self._suppress_local_death_polls > 0:
             self._suppress_local_death_polls -= 1
