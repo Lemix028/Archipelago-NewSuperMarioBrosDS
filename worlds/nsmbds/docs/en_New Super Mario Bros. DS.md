@@ -22,6 +22,7 @@ For installation and launch instructions, see the [Setup Guide](setup_en.md).
 With the standard location settings, a seed includes:
 
 - all 80 level goals;
+- all 9 Castle boss defeats as separate checks;
 - all 240 Star Coins;
 - 34 Toad House rewards;
 - 29 Red Coin Challenges;
@@ -49,10 +50,10 @@ You can choose one of four victory conditions:
 
 | Goal | How to win |
 |---|---|
-| Defeat Bowser | Clear World 8-Bowser's Castle |
+| Defeat Bowser | Defeat Bowser & Bowser Jr. in World 8-Bowser's Castle |
 | Star Coin Hunt | Receive the chosen number of Star Coin items |
-| World Tour | Clear the castle goal in all eight worlds |
-| Completionist | Defeat Bowser and receive the chosen number of Star Coin items |
+| World Tour | Defeat all 9 Castle bosses |
+| Completionist | Defeat all 9 Castle bosses and receive the chosen number of Star Coin items |
 
 Star Coins spent at signs still count toward Star Coin Hunt and Completionist.
 Only your current spending balance goes down. The overview section in the client shows the total amount received so far.

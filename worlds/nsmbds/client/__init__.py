@@ -14,8 +14,8 @@ from .features.buffs import BuffHandlingMixin
 from .features.emulator_feed import EmulatorFeedMixin
 from .features.death_link import DeathLinkMixin
 from .features.goals import (
-    BOWSER_LOCATION_ID,
-    CASTLE_GOAL_LOCATION_IDS,
+    BOSS_LOCATION_IDS,
+    FINAL_BOSS_LOCATION_ID,
     GoalHandlingMixin,
 )
 from .features.items import ItemHandlingMixin

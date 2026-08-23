@@ -34,6 +34,25 @@ class PowerUpAlternativeRequirement:
     locations: tuple[str, ...]
 
 
+LARGE_MARIO_LOCATIONS = (
+    "World 1-1 Star Coin 3", "World 1-4 Star Coin 2", "World 1-4 1-Up Block",
+    "World 2-2 Star Coin 2", "World 3-1 Star Coin 3", "World 5-2 Star Coin 1",
+    "World 5-3 Star Coin 2", "World 5-C Star Coin 3", "World 6-6 Star Coin 1",
+    "World 6-Tower 2 Star Coin 2", "World 7-2 Star Coin 1",
+    "World 7-6 Star Coin 1", "World 7-6 Secret Exit", "World 8-6 Star Coin 2",
+    "World 1-2 Blocksanity Block 7", "World 1-2 Blocksanity Block 8",
+    "World 2-5 Blocksanity Block 4", "World 2-5 Blocksanity Block 5",
+    "World 2-5 Blocksanity Block 7", "World 2-5 Blocksanity Block 15",
+    "World 2-5 Blocksanity Block 16", "World 2-5 Blocksanity Block 18",
+    "World 2-5 Blocksanity Block 19", "World 4-5 Blocksanity Block 37",
+    "World 5-2 Blocksanity Block 1", "World 5-4 Blocksanity Block 2",
+    "World 5-A Blocksanity Block 4", "World 5-C Blocksanity Block 20",
+    "World 5-C Blocksanity Block 22", "World 6-6 Blocksanity Block 5",
+    "World 6-6 Blocksanity Block 6",
+    *(f"World 5-C Blocksanity Block {index}" for index in range(1, 17)),
+)
+
+
 POWERUP_ABILITY_REQUIREMENTS: tuple[PowerUpAbilityRequirement, ...] = (
     PowerUpAbilityRequirement(
         MINI_MUSHROOM_LICENSE,
@@ -51,6 +70,22 @@ POWERUP_ABILITY_REQUIREMENTS: tuple[PowerUpAbilityRequirement, ...] = (
             "World 8-4 Star Coin 3",
             "World 8-8 Star Coin 2",
             "World 2 Red Toad House 2 Goal",
+            "World 2-Castle Blocksanity Block 13",
+            "World 2-Castle Blocksanity Block 14",
+            "World 3-A Blocksanity Block 12",
+            "World 3-A Blocksanity Block 13",
+            "World 4-4 Blocksanity Block 8",
+            "World 5-3 Blocksanity Block 4",
+            "World 5-3 Blocksanity Block 5",
+            "World 6-1 Blocksanity Block 6",
+            "World 7-4 Blocksanity Block 6",
+            "World 7-4 Blocksanity Block 7",
+            "World 7-4 Blocksanity Block 9",
+            "World 7-4 Blocksanity Flying Block 1",
+            "World 7-5 Blocksanity Block 28",
+            "World 8-2 Blocksanity Block 6",
+            "World 8-4 Blocksanity Block 10",
+            "World 8-4 Blocksanity Block 11",
         ),
     ),
     PowerUpAbilityRequirement(
@@ -59,17 +94,29 @@ POWERUP_ABILITY_REQUIREMENTS: tuple[PowerUpAbilityRequirement, ...] = (
             "World 1-Tower Secret Exit",
             "World 3-Ghost House Star Coin 3",
             "World 5-B Secret Exit",
+            "World 8-Bowser's Castle Star Coin 3",
+            "World 1-Tower Blocksanity Block 11",
+            "World 1-Tower Blocksanity Block 12",
+            "World 1-Tower Blocksanity Block 13",
+            "World 5-C Blocksanity Block 25",
+            "World 5-C Blocksanity Block 26",
+            "World 5-C Blocksanity Block 31",
+            "World 5-C Blocksanity Block 32",
         ),
     ),
     PowerUpAbilityRequirement(
         MEGA_MUSHROOM_LICENSE,
-        locations=("World 7-5 Star Coin 2",),
+        locations=(),
     ),
     PowerUpAbilityRequirement(TOUCHSCREEN_RESERVE_LICENSE),
 )
 
 
 POWERUP_ALTERNATIVE_REQUIREMENTS: tuple[PowerUpAlternativeRequirement, ...] = (
+    PowerUpAlternativeRequirement(
+        (MUSHROOM_LICENSE, FIRE_FLOWER_LICENSE, BLUE_SHELL_LICENSE, MEGA_MUSHROOM_LICENSE),
+        locations=LARGE_MARIO_LOCATIONS,
+    ),
     PowerUpAlternativeRequirement(
         (MINI_MUSHROOM_LICENSE, MEGA_MUSHROOM_LICENSE),
         locations=("World 3-A Star Coin 3",),

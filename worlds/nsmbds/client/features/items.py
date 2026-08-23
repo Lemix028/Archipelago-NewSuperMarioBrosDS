@@ -50,7 +50,7 @@ MAX_NEW_ITEMS_PER_POLL = 8
 RECEIVED_NOTIFICATION_ITEM_IDS = frozenset(
     item_id
     for item_name, (item_id, classification) in ITEM_TABLE.items()
-    if item_name not in {"Bowser Defeated", "Nothing"}
+    if item_name != "Nothing"
     and (
         int(classification) & 0b0011
         or item_name in {"1-Up Mushroom", "3-Up Moon", "Coin Bundle"}

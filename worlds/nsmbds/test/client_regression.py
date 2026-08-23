@@ -142,7 +142,12 @@ launcher_module = sys.modules["nsmbds.client.launcher"]
 
 
 class FakeContext:
-    def __init__(self, goal: int = 0, required_star_coins: int = 80, death_link: bool = False) -> None:
+    def __init__(
+        self,
+        goal: int = 0,
+        required_star_coins: int = 80,
+        death_link: bool = False,
+    ) -> None:
         self.slot_data = {
             "goal": goal,
             "required_star_coins": required_star_coins,
@@ -739,6 +744,46 @@ def test_bowser_goal_detection() -> None:
         client_module.NSMBDSClient._is_location_completed("World 8-Bowser's Castle Goal", bytes(game_data)),
         "Bowser victory flag at offset 187 completes World 8 Bowser's Castle Goal",
     )
+    check(
+        client_module.NSMBDSClient._is_location_completed(
+            "World 8-Bowser's Castle Bowser & Bowser Jr. Defeated",
+            bytes(game_data),
+        ),
+        "Final victory also completes the separate Bowser boss check",
+    )
+
+    world_two_data = bytearray(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
+    world_two_data[35] = 0xD0
+    world_two_data[0x2F4] = 0x01
+    check(
+        client_module.NSMBDSClient._is_location_completed(
+            "World 2-Castle Mummipokey Defeated", bytes(world_two_data)
+        ),
+        "Mummipokey boss check accepts the Mini-Mario castle exit",
+    )
+
+
+async def test_boss_location_submission() -> None:
+    client = client_module.NSMBDSClient()
+    context = FakeContext()
+    sent_messages = []
+
+    async def send_msgs(messages):
+        sent_messages.extend(messages)
+
+    context.send_msgs = send_msgs
+    game_data = bytearray(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
+    game_data[35] = 0xD0
+    await client._detect_and_send_locations(context, bytes(game_data))
+
+    submitted = set(sent_messages[0]["locations"])
+    check(
+        {
+            locations.LOCATION_TABLE["World 2-Castle Goal"],
+            locations.LOCATION_TABLE["World 2-Castle Mummipokey Defeated"],
+        } <= submitted,
+        "A castle clear submits both its Goal and separate randomized boss check",
+    )
 
 
 def test_death_link_state() -> None:
@@ -1146,7 +1191,7 @@ async def test_item_receipt_notifications_and_realtime_core_feed() -> None:
 
 def test_goals() -> None:
     client = client_module.NSMBDSClient()
-    bowser_id = locations.LOCATION_TABLE["World 8-Bowser's Castle Goal"]
+    bowser_id = client_module.FINAL_BOSS_LOCATION_ID
     star_coin_item_id = client_module.ITEM_TABLE["Star Coin"][0]
 
     def coin_context(count: int, goal: int, required: int = 80) -> FakeContext:
@@ -1169,26 +1214,26 @@ def test_goals() -> None:
         "Star Coin goal accepts 80 received Star Coin items",
     )
 
-    client._observed_locations = set(client_module.CASTLE_GOAL_LOCATION_IDS)
-    check(client._check_goal(FakeContext(goal=2)), "World Tour requires all castle goals")
+    client._observed_locations = set(client_module.BOSS_LOCATION_IDS)
+    check(client._check_goal(FakeContext(goal=2)), "World Tour requires all nine Castle bosses")
 
     client._observed_locations.remove(bowser_id)
     check(
         not client._check_goal(FakeContext(goal=2)),
-        "World Tour does not finish before Bowser's Castle goal",
+        "World Tour does not finish before the final Bowser boss check",
     )
 
-    client._observed_locations = {bowser_id}
-    check(client._check_goal(coin_context(80, 3)), "Completionist requires Bowser and received Star Coin items")
+    client._observed_locations = set(client_module.BOSS_LOCATION_IDS)
+    check(client._check_goal(coin_context(80, 3)), "Completionist requires all bosses and received Star Coin items")
 
     check(
         not client._check_goal(coin_context(79, 3)),
-        "Completionist does not finish with Bowser but too few Star Coins",
+        "Completionist does not finish with all bosses but too few Star Coins",
     )
     client._observed_locations = set()
     check(
         not client._check_goal(coin_context(80, 3)),
-        "Completionist does not finish with enough Star Coins but without Bowser",
+        "Completionist does not finish with enough Star Coins but without all bosses",
     )
 
     check(
@@ -1209,9 +1254,12 @@ def test_goals() -> None:
         "Star Coin Hunt still completes at 240 received items independently of the final path",
     )
 
-    client._observed_locations = set(client_module.CASTLE_GOAL_LOCATION_IDS) - {bowser_id}
-    check(client._final_castle_gate_should_open(FakeContext(goal=2)),
-          "World Tour opens Bowser after the seven earlier castle goals")
+    client._observed_locations = {tower_two_id}
+    check(
+        client._final_castle_gate_should_open(FakeContext(goal=2)),
+        "World Tour opens final Bowser after Tower 2 regardless of other Castle bosses",
+    )
+    client._observed_locations = set()
     check(
         client._final_castle_gate_should_open(FakeContext(goal=0)) is None,
         "Defeat Bowser leaves the final path under vanilla map control",
@@ -1221,7 +1269,7 @@ def test_goals() -> None:
 async def test_goal_status_submission() -> None:
     client = client_module.NSMBDSClient()
     context = FakeContext(goal=0)
-    bowser_id = locations.LOCATION_TABLE["World 8-Bowser's Castle Goal"]
+    bowser_id = client_module.FINAL_BOSS_LOCATION_ID
     client._observed_locations = {bowser_id}
     sent_messages = []
 

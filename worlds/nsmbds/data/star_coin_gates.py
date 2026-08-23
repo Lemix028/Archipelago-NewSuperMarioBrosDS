@@ -78,7 +78,7 @@ STAR_COIN_GATE_CATALOG: tuple[StarCoinGateMapping, ...] = (
     _mapping(2, "World 2 Red Toad House 1",     0x00088D3C, 0x0B),
     _mapping(2, "World 2 Orange Toad House",    0x00088D40, 0x0F),
     _mapping(2, "World 2 Green Toad House",     0x00088D43, 0x11),
-    _mapping(2, "World 2 Red Toad House 2",     0x00088D44, 0x12),
+    _mapping(2, "World 2 Red Toad House 3",     0x00088D44, 0x12),
 
     _mapping(3, "World 3-A",                    0x00088D5A, 0x0B),
     _mapping(3, "World 3 Orange Toad House",    0x00088D5F, 0x0E),

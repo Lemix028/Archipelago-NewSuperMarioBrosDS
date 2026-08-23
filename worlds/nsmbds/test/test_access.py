@@ -58,6 +58,19 @@ class TestCompletionistFinalCastleAccess(NSMBDSTestBase):
         self.assertTrue(self.can_reach_location("World 8-Bowser's Castle Goal"))
 
 
+class TestWorldTourFinalBowserAccess(NSMBDSTestBase):
+    options = {
+        "goal": "world_tour",
+        "tower_castle_keys": False,
+    }
+
+    def test_final_bowser_is_independent_of_other_world_bosses(self) -> None:
+        self.collect_by_name("Volcano Pass")
+        self.assertTrue(self.can_reach_location(
+            "World 8-Bowser's Castle Bowser & Bowser Jr. Defeated"
+        ))
+
+
 class TestVanillaWorldRoutes(NSMBDSTestBase):
     """Test normal exits, alternate boss exits, and Warp Cannons."""
 
@@ -128,22 +141,58 @@ class TestStarCoinPowerupAccessRules(NSMBDSTestBase):
         self.collect_by_name(["Desert Pass", "Isle Pass", "Blue Shell Permit"])
         self.assertTrue(self.can_reach_location("World 3-Ghost House Star Coin 3"))
 
+    def test_large_mario_accepts_any_large_form_permit(self) -> None:
+        self.assertFalse(self.can_reach_location("World 1-1 Star Coin 3"))
+        self.collect_by_name("Fire Flower Permit")
+        self.assertTrue(self.can_reach_location("World 1-1 Star Coin 3"))
+
     def test_world_3_a_accepts_mini_or_mega(self) -> None:
         self.collect_by_name(["Desert Pass", "Isle Pass"] + ["Star Coin"] * 5)
         self.assertFalse(self.can_reach_location("World 3-A Star Coin 3"))
         self.collect_by_name("Mega Mushroom Permit")
         self.assertTrue(self.can_reach_location("World 3-A Star Coin 3"))
 
-    def test_world_7_5_requires_mini_and_local_mega(self) -> None:
+    def test_world_7_5_requires_mini(self) -> None:
         self.collect_by_name([
             "Desert Pass",
             "Jungle Pass",
             "Cloud Pass",
             "Mini Mushroom Permit",
         ])
-        self.assertFalse(self.can_reach_location("World 7-5 Star Coin 2"))
-        self.collect_by_name("Mega Mushroom Permit")
         self.assertTrue(self.can_reach_location("World 7-5 Star Coin 2"))
+
+
+class TestOptionalRouteLogic(NSMBDSTestBase):
+    options = {
+        "tower_castle_keys": False,
+        "secret_exit_shortcut_logic": False,
+        "secret_exit_world_unlock_logic": False,
+        "cannon_route_logic": False,
+    }
+
+    def test_internal_secret_path_remains_usable_but_nonprogression(self) -> None:
+        self.collect_by_name(["Desert Pass", "Mini Mushroom Permit"])
+        self.assertTrue(self.can_reach_location("World 2-3 Secret Exit"))
+        self.assertTrue(self.can_reach_location("World 2-A Goal"))
+        location = self.multiworld.get_location("World 2-A Goal", self.player)
+        self.assertFalse(location.item_rule(self.world.create_item("Desert Pass")))
+
+    def test_alternate_castle_exit_does_not_open_world_four(self) -> None:
+        self.collect_by_name(["Desert Pass", "Mini Mushroom Permit"])
+        self.assertTrue(self.can_reach_location("World 2-Castle Secret Exit"))
+        self.assertFalse(self.can_reach_region("World 4"))
+
+    def test_checks_behind_ignored_routes_are_nonprogression(self) -> None:
+        progression = self.world.create_item("Desert Pass")
+        for name in ("World 3 Green Toad House Goal", "World 5 Red Toad House Goal"):
+            location = self.multiworld.get_location(name, self.player)
+            self.assertFalse(location.item_rule(progression), name)
+
+    def test_cannon_exit_remains_usable_but_nonprogression(self) -> None:
+        self.collect_by_name("Blue Shell Permit")
+        self.assertTrue(self.can_reach_location("World 1-Tower Secret Exit"))
+        location = self.multiworld.get_location("World 1-Tower Secret Exit", self.player)
+        self.assertFalse(location.item_rule(self.world.create_item("Desert Pass")))
 
 
 class TestPowerupLicensesDisabledAccess(NSMBDSTestBase):

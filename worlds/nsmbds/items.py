@@ -33,8 +33,6 @@ ITEM_TABLE: dict[str, tuple[int, ItemClassification]] = {
     "Mini Mushroom Permit":  (BASE_ID + 0x07, ItemClassification.progression),
     "Blue Shell Permit":     (BASE_ID + 0x08, ItemClassification.progression),
 
-    "Bowser Defeated":       (BASE_ID + 0x09, ItemClassification.progression),
-
     "Mega Mushroom Permit":       (BASE_ID + 0x0A, ItemClassification.progression),
     "Touchscreen Pocket Permit":  (BASE_ID + 0x0B, ItemClassification.progression),
     "Mushroom Permit":            (BASE_ID + 0x0C, ItemClassification.progression),

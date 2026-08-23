@@ -9,6 +9,8 @@ from typing import Any
 from ....items import INVENTORY_RAM_VALUES, ITEM_TABLE, KEY_ITEM_NAMES, item_id_to_name
 from ....locations import (
     BLOCKSANITY_LOCATION_IDS,
+    BOSS_LOCATION_IDS,
+    BOSS_LOCATION_NAMES,
     LOCATION_TABLE,
     ONE_UP_BLOCK_LOCATION_IDS,
     RED_COIN_LOCATION_IDS,
@@ -32,12 +34,6 @@ WORLD_ACCESS_ITEMS = (
     "Cloud Pass",
     "Volcano Pass",
 )
-CASTLE_GOAL_NAMES = tuple(
-    [f"World {world}-Castle Goal" for world in range(1, 8)]
-    + ["World 8-Bowser's Castle Goal"]
-)
-
-
 @dataclass(frozen=True)
 class ProgressCount:
     checked: int
@@ -88,6 +84,8 @@ def _bizhawk_status(ctx: Any) -> str:
 
 
 def _location_category(name: str, location_id: int) -> str:
+    if location_id in BOSS_LOCATION_IDS:
+        return "Bosses"
     if location_id in RED_COIN_LOCATION_IDS:
         return "Red Coin Challenges"
     if location_id in ONE_UP_BLOCK_LOCATION_IDS:
@@ -162,8 +160,8 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
     goal = int(slot_data.get("goal", 0))
     checked_names = {id_to_name[location_id] for location_id in checked}
     checked_star_coins = sum(" Star Coin " in name for name in checked_names)
-    checked_castles = sum(name in checked_names for name in CASTLE_GOAL_NAMES)
-    bowser_defeated = "World 8-Bowser's Castle Goal" in checked_names
+    checked_bosses = sum(name in checked_names for name in BOSS_LOCATION_NAMES)
+    bowser_defeated = BOSS_LOCATION_NAMES[-1] in checked_names
     required_star_coins = int(slot_data.get("required_star_coins", 80))
     if goal == 0:
         goal_progress = "Bowser defeated" if bowser_defeated else "Bowser not defeated"
@@ -172,14 +170,16 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
         goal_progress = f"{received_star_coins} / {required_star_coins} Star Coins received"
         goal_count = ProgressCount(min(received_star_coins, required_star_coins), required_star_coins)
     elif goal == 2:
-        goal_progress = f"{checked_castles} / {len(CASTLE_GOAL_NAMES)} Castle goals"
-        goal_count = ProgressCount(checked_castles, len(CASTLE_GOAL_NAMES))
+        goal_progress = f"{checked_bosses} / {len(BOSS_LOCATION_NAMES)} Castle bosses"
+        goal_count = ProgressCount(checked_bosses, len(BOSS_LOCATION_NAMES))
     else:
-        bowser_text = "done" if bowser_defeated else "open"
-        goal_progress = f"Bowser: {bowser_text} | Star Coins: {received_star_coins} / {required_star_coins}"
+        goal_progress = (
+            f"Bosses: {checked_bosses} / {len(BOSS_LOCATION_NAMES)} | "
+            f"Star Coins: {received_star_coins} / {required_star_coins}"
+        )
         goal_count = ProgressCount(
-            int(bowser_defeated) + min(received_star_coins, required_star_coins),
-            required_star_coins + 1,
+            checked_bosses + min(received_star_coins, required_star_coins),
+            required_star_coins + len(BOSS_LOCATION_NAMES),
         )
 
     rom_handler = getattr(ctx, "client_handler", None)
@@ -196,6 +196,7 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
     rom_status = "NSMBDS Active" if getattr(rom_handler, "server_game", None) == "New Super Mario Bros. DS" else "Waiting for NSMBDS ROM"
 
     category_order = (
+        "Bosses",
         "Level Goals",
         "Star Coins",
         "Red Coin Challenges",

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from ...locations import (
     BLOCKSANITY_LOCATION_IDS,
+    BOSS_LOCATION_COMPLETION_SOURCES,
     LOCATION_RAM_MAP,
     LOCATION_TABLE,
     ONE_UP_BLOCK_LOCATION_IDS,
@@ -64,6 +65,13 @@ class LocationTrackingMixin:
     @staticmethod
     def _is_location_completed(location_name: str, game_data: bytes) -> bool:
         """Return whether a location's RAM condition is currently met."""
+        completion_sources = BOSS_LOCATION_COMPLETION_SOURCES.get(location_name)
+        if completion_sources is not None:
+            return any(
+                LocationTrackingMixin._is_location_completed(source_name, game_data)
+                for source_name in completion_sources
+            )
+
         secret_requirements = SECRET_EXIT_RAM_REQUIREMENTS.get(location_name)
         if secret_requirements is not None:
             return all(
@@ -82,7 +90,10 @@ class LocationTrackingMixin:
         new_checks: list[int] = []
         for location_name, location_id in LOCATION_TABLE.items():
             # Red Coin Challenges are transient events supplied by the Lua hook.
-            if location_name not in LOCATION_RAM_MAP:
+            if (
+                location_name not in LOCATION_RAM_MAP
+                and location_name not in BOSS_LOCATION_COMPLETION_SOURCES
+            ):
                 continue
             if not self._is_location_completed(location_name, level_data):
                 continue

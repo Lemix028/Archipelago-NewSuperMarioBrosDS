@@ -26,6 +26,7 @@ from .locations import (
     BLOCKSANITY_DEFINITIONS,
     BLOCKSANITY_LOCATION_IDS,
     BLOCKSANITY_LOCATION_NAMES,
+    BOSS_LOCATION_NAMES,
     ONE_UP_BLOCK_DEFINITIONS,
     ONE_UP_BLOCK_LOCATION_NAMES,
     ONE_UP_BLOCK_LOCATION_IDS,
@@ -48,15 +49,18 @@ from .client import NSMBDSClient  # Imported to register the BizHawk handler.
 from .rules import set_rules
 from .data.star_coin_gates import STAR_COIN_GATES, TOTAL_STAR_COIN_GATE_COST
 from .data.powerup_licenses import license_items_for_mode
-from .data.overworld_routes import WORLD_CONNECTION_REQUIREMENTS
-
-
-VANILLA_ROUTE_EVENT_NAMES = frozenset(
-    location_name
-    for requirement in WORLD_CONNECTION_REQUIREMENTS.values()
-    for alternative in requirement.vanilla_routes
-    for location_name in alternative
+from .data.logic_data import (
+    ADVANCED_LOCATION_NAMES,
+    ALL_SECRET_EXITS,
+    CANNON_ROUTE_EXITS,
+    INTER_SECRET_DEPENDENT_REGIONS,
+    INTER_WORLD_SECRET_EXITS,
+    INTRA_SECRET_DEPENDENT_REGIONS,
+    INTRA_WORLD_SECRET_EXITS,
 )
+
+
+VANILLA_ROUTE_EVENT_NAMES = ALL_SECRET_EXITS
 
 
 def allow_non_progression_item(item: Any) -> bool:
@@ -105,10 +109,7 @@ class NSMBDSWorld(World):
     _star_coin_location_names: tuple[str, ...] = tuple(
         name for name in LOCATION_TABLE if " Star Coin " in name
     )
-    _castle_goal_location_names: tuple[str, ...] = tuple(
-        [f"World {world}-Castle Goal" for world in range(1, 8)]
-        + ["World 8-Bowser's Castle Goal"]
-    )
+    _boss_location_names: tuple[str, ...] = BOSS_LOCATION_NAMES
 
     @staticmethod
     def interpret_slot_data(slot_data: dict[str, Any]) -> dict[str, Any]:
@@ -261,6 +262,34 @@ class NSMBDSWorld(World):
                 elif placement_mode == ITEM_PLACEMENT_NON_PROGRESSION:
                     location.item_rule = allow_non_progression_item
                     setattr(location, "is_non_progression_only", True)
+
+                route_non_progression = (
+                    (
+                        not self.options.secret_exit_shortcut_logic
+                        and (
+                            loc_name in INTRA_WORLD_SECRET_EXITS
+                            or region_name in INTRA_SECRET_DEPENDENT_REGIONS
+                        )
+                    )
+                    or (
+                        not self.options.secret_exit_world_unlock_logic
+                        and (
+                            loc_name in INTER_WORLD_SECRET_EXITS
+                            or region_name in INTER_SECRET_DEPENDENT_REGIONS
+                        )
+                    )
+                    or (
+                        not self.options.cannon_route_logic
+                        and loc_name in CANNON_ROUTE_EXITS
+                    )
+                )
+                advanced_non_progression = (
+                    self.options.advanced_location_item_placement.value == 1
+                    and loc_name in ADVANCED_LOCATION_NAMES
+                )
+                if route_non_progression or advanced_non_progression:
+                    location.item_rule = allow_non_progression_item
+                    setattr(location, "is_non_progression_only", True)
                 region.locations.append(location)
                 if loc_id in BLOCKSANITY_LOCATION_IDS or is_bonus_area:
                     active_block_locations.append(location)
@@ -386,8 +415,7 @@ class NSMBDSWorld(World):
         )
         progression_location_count = location_count - progression_restricted_location_count
 
-        locked_item_count = 1 if self.options.goal.value in (0, 3) else 0
-        random_item_count = location_count - locked_item_count
+        random_item_count = location_count
 
         prog_names = list(PROGRESSION_ITEM_NAMES)
         prog_names.extend(license_items_for_mode(self.options))
@@ -577,16 +605,14 @@ class NSMBDSWorld(World):
         patch.write(patch_path)
 
     def generate_basic(self) -> None:
-        """Place locked goal events and define logical completion conditions."""
+        """Define logical completion conditions from the real boss checks."""
         goal = self.options.goal.value
-
-        if goal in (0, 3):
-            bowser_location = self.multiworld.get_location("World 8-Bowser's Castle Goal", self.player)
-            bowser_location.place_locked_item(self.create_item("Bowser Defeated"))
 
         if goal == 0:  # Defeat Bowser
             self.multiworld.completion_condition[self.player] = \
-                lambda state: state.has("Bowser Defeated", self.player)
+                lambda state: state.can_reach(
+                    self._boss_location_names[-1], "Location", self.player
+                )
         elif goal == 1:  # Star Coin Hunt
             required = self.options.required_star_coins.value
             self.multiworld.completion_condition[self.player] = \
@@ -594,13 +620,15 @@ class NSMBDSWorld(World):
         elif goal == 2:  # World Tour
             self.multiworld.completion_condition[self.player] = \
                 lambda state: self._count_reachable_locations(
-                    state, self._castle_goal_location_names
-                ) == len(self._castle_goal_location_names)
+                    state, self._boss_location_names
+                ) == len(self._boss_location_names)
         elif goal == 3:  # Completionist
             required = self.options.required_star_coins.value
             self.multiworld.completion_condition[self.player] = \
                 lambda state: (
-                    state.has("Bowser Defeated", self.player)
+                    self._count_reachable_locations(
+                        state, self._boss_location_names
+                    ) == len(self._boss_location_names)
                     and state.has("Star Coin", self.player, required)
                 )
         else:
@@ -635,6 +663,10 @@ class NSMBDSWorld(World):
             "world_6_2_bonus_area": self.options.world_6_2_bonus_area.value,
             "secret_exit_checks": bool(self.options.secret_exit_checks.value),
             "toad_house_checks": bool(self.options.toad_house_checks.value),
+            "secret_exit_shortcut_logic": bool(self.options.secret_exit_shortcut_logic.value),
+            "secret_exit_world_unlock_logic": bool(self.options.secret_exit_world_unlock_logic.value),
+            "cannon_route_logic": bool(self.options.cannon_route_logic.value),
+            "advanced_location_item_placement": self.options.advanced_location_item_placement.value,
             "required_star_coins": self.options.required_star_coins.value,
             "star_coin_gate_mode": self.options.star_coin_gate_mode.value,
             "tower_castle_keys": bool(self.options.tower_castle_keys.value),

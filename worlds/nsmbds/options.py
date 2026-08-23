@@ -24,8 +24,8 @@ class Goal(Choice):
 
     defeat_bowser:   Reach World 8 and defeat Bowser in World 8-Bowser's Castle. (Default)
     star_coin_hunt:  Collect the required number of Star Coins across the multiworld.
-    world_tour:      Defeat all 8 Castle boss goals across Worlds 1 through 8.
-    completionist:   Defeat Bowser AND collect all required Star Coins.
+    world_tour:      Defeat all 9 Castle bosses.
+    completionist:   Defeat all 9 Castle bosses AND collect all required Star Coins.
     """
     display_name = "Goal"
     option_defeat_bowser  = 0
@@ -37,7 +37,7 @@ class Goal(Choice):
 
 class RequiredStarCoins(Range):
     """
-    (Relevant for 'Star Coin Hunt' and 'Completionist' goals.)
+    Relevant for 'Star Coin Hunt' and 'Completionist' goals.
     The number of Star Coins required for victory goal.
     You can set this to any target (e.g. 40, 80, 120) while keeping all 240 Star Coin check locations active!
     """
@@ -75,7 +75,7 @@ class OneUpBlockItemPlacement(Choice):
 
 
 class Blocksanity(Toggle):
-    """Include verified static and flying Coin/Power-up Blocks as Archipelago checks."""
+    """Include static and flying Coin/Power-up Blocks as Archipelago checks."""
     display_name = "Blocksanity"
     default = 0
 
@@ -135,6 +135,37 @@ class ToadHouseChecks(Toggle):
     """Include Toad House locations on the world map as check locations."""
     display_name = "Toad House Checks"
     default = 1
+
+
+class SecretExitShortcutLogic(Toggle):
+    """Allow secret-exit paths as shortcuts in world logic."""
+    display_name = "Secret Exit Shortcut Logic"
+    default = 1
+
+
+class SecretExitWorldUnlockLogic(Toggle):
+    """Allow the Mini-Mario castle exits to Worlds 4 and 7 in world logic."""
+    display_name = "Secret Exit World Unlock Logic"
+    default = 1
+
+
+class CannonRouteLogic(Toggle):
+    """Allow Warp Cannon routes to other worlds in world logic."""
+    display_name = "Cannon Route Logic"
+    default = 1
+
+
+class AdvancedLocationItemPlacement(Choice):
+    """
+    Controls whether hard-to-reach or well-hidden locations (such as hidden blocks) can contain required progression items.
+
+    allow_progression: Hard and hidden locations are treated normally and can hold required items. (Default)
+    non_progression: Prevents progression items from spawning in hard or hidden locations. Makes the playthrough smoother by keeping required items out of obscure checks.
+    """
+    display_name = "Advanced Location Item Placement"
+    option_allow_progression = 0
+    option_non_progression = 1
+    default = 0
 
 
 # =============================================================================
@@ -525,6 +556,10 @@ class NSMBDSOptions(PerGameCommonOptions):
     world_6_2_bonus_area:                 WorldSixTwoBonusArea
     secret_exit_checks:                   SecretExitChecks
     toad_house_checks:                    ToadHouseChecks
+    secret_exit_shortcut_logic:           SecretExitShortcutLogic
+    secret_exit_world_unlock_logic:       SecretExitWorldUnlockLogic
+    cannon_route_logic:                    CannonRouteLogic
+    advanced_location_item_placement:     AdvancedLocationItemPlacement
 
     # Overworld & Progression Logic
     star_coin_gate_mode:                  StarCoinGateMode

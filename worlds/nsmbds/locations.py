@@ -14,6 +14,7 @@ from .data.level_catalog import FULL_LEVEL_CATALOG
 from .data.blocksanity_data import (
     BLOCKSANITY_SPECS,
     BLOCKSANITY_STATIC_COUNT,
+    BLOCKSANITY_STATIC_ID_SPAN,
     RUNTIME_AREA_OFFSET_BY_SOURCE_COURSE,
 )
 from .data.moving_blocksanity_data import (
@@ -62,6 +63,19 @@ class StageDefinition:
     def has_secret_exit(self) -> bool:
         """Return whether this entity has a Secret Exit route."""
         return self.secret_exit_status is SecretExitStatus.EXISTS
+
+
+@dataclass(frozen=True)
+class BossLocationDefinition:
+    """A real AP check awarded for defeating one castle boss."""
+
+    stage_name: str
+    boss_name: str
+    completion_sources: tuple[str, ...]
+
+    @property
+    def name(self) -> str:
+        return f"{self.stage_name} {self.boss_name} Defeated"
 
 
 @dataclass(frozen=True)
@@ -145,6 +159,7 @@ SLOT_COIN_2 = 2
 SLOT_COIN_3 = 3
 SLOT_RED_COIN = 4
 SLOT_RED_COIN_2 = 5
+SLOT_BOSS = 6
 SLOT_SECRET = 8
 
 
@@ -371,7 +386,7 @@ for source_course, record_offset, editor_x, editor_y, sprite_settings in SPRITE_
             _moving_blocksanity_counts[stage_name] += 1
             name = f"{stage_name} Blocksanity Flying Block {_moving_blocksanity_counts[stage_name]}"
         location_id_offset = (
-            0x4000 + BLOCKSANITY_STATIC_COUNT + len(_moving_blocksanity_definitions)
+            0x4000 + BLOCKSANITY_STATIC_ID_SPAN + len(_moving_blocksanity_definitions)
         )
 
     definition = MovingBlockDefinition(
@@ -569,6 +584,44 @@ ACTIVE_STAGE_DEFINITIONS = tuple(
     stage for stage in ALL_ACTIVE_DEFINITIONS if stage.kind is LocationKind.STAGE
 )
 
+BOSS_LOCATION_DEFINITIONS: tuple[BossLocationDefinition, ...] = (
+    BossLocationDefinition("World 1-Castle", "Bowser", ("World 1-Castle Goal",)),
+    BossLocationDefinition(
+        "World 2-Castle",
+        "Mummipokey",
+        ("World 2-Castle Goal", "World 2-Castle Secret Exit"),
+    ),
+    BossLocationDefinition("World 3-Castle", "Cheepskipper", ("World 3-Castle Goal",)),
+    BossLocationDefinition("World 4-Castle", "Mega Goomba", ("World 4-Castle Goal",)),
+    BossLocationDefinition(
+        "World 5-Castle",
+        "Petey Piranha",
+        ("World 5-Castle Goal", "World 5-Castle Secret Exit"),
+    ),
+    BossLocationDefinition("World 6-Castle", "Monty Tank", ("World 6-Castle Goal",)),
+    BossLocationDefinition("World 7-Castle", "Lakithunder", ("World 7-Castle Goal",)),
+    BossLocationDefinition("World 8-Castle", "Dry Bowser", ("World 8-Castle Goal",)),
+    BossLocationDefinition(
+        "World 8-Bowser's Castle",
+        "Bowser & Bowser Jr.",
+        ("World 8-Bowser's Castle Goal",),
+    ),
+)
+BOSS_LOCATION_BY_STAGE = {
+    definition.stage_name: definition for definition in BOSS_LOCATION_DEFINITIONS
+}
+BOSS_LOCATION_NAMES = tuple(definition.name for definition in BOSS_LOCATION_DEFINITIONS)
+BOSS_LOCATION_COMPLETION_SOURCES = {
+    definition.name: definition.completion_sources
+    for definition in BOSS_LOCATION_DEFINITIONS
+}
+
+_unknown_boss_stages = set(BOSS_LOCATION_BY_STAGE) - {
+    stage.name for stage in ACTIVE_STAGE_DEFINITIONS
+}
+if _unknown_boss_stages:
+    raise ValueError(f"Boss catalog references unknown stages: {_unknown_boss_stages}")
+
 # Runtime course level (world, level) RAM pair.
 RED_COIN_COURSE_LEVELS: dict[str, int] = {
     "World 1-1": 0x01,
@@ -630,6 +683,11 @@ for stage in ALL_ACTIVE_DEFINITIONS:
     LOCATION_TABLE[f"{stage.name} Goal"] = _loc_id(stage.world_index, stage.location_index, SLOT_GOAL)
     goal_ram_offset = stage.goal_ram_offset if stage.goal_ram_offset is not None else stage.ram_offset
     LOCATION_RAM_MAP[f"{stage.name} Goal"] = (goal_ram_offset, 0x10)
+    boss_definition = BOSS_LOCATION_BY_STAGE.get(stage.name)
+    if boss_definition is not None:
+        LOCATION_TABLE[boss_definition.name] = _loc_id(
+            stage.world_index, stage.location_index, SLOT_BOSS
+        )
     if stage.has_star_coins:
         for coin_number, coin_slot, coin_bit in (
             (1, SLOT_COIN_1, 0x01),
@@ -725,6 +783,7 @@ BLOCKSANITY_LOCATION_NAMES = frozenset(
 BLOCKSANITY_LOCATION_IDS = frozenset(
     LOCATION_TABLE[name] for name in BLOCKSANITY_LOCATION_NAMES
 )
+BOSS_LOCATION_IDS = frozenset(LOCATION_TABLE[name] for name in BOSS_LOCATION_NAMES)
 BLOCKSANITY_LOCATION_NAMES_BY_WORLD = {
     world_index: tuple(
         definition.name for definition in BLOCKSANITY_DEFINITIONS

@@ -8,11 +8,17 @@ from BaseClasses import LocationProgressType
 from .bases import NSMBDSTestBase
 from ..data.star_coin_gates import STAR_COIN_GATES, TOTAL_STAR_COIN_GATE_COST
 from ..items import FILLER_ITEM_WEIGHTS
+from ..locations import (
+    BLOCKSANITY_DEFINITIONS,
+    BOSS_LOCATION_NAMES,
+    ONE_UP_BLOCK_DEFINITIONS,
+    WORLD_6_2_BONUS_AREA_LOCATION_NAMES,
+)
 from ..options import RequiredStarCoins, TrapPercentage
 
 
 def advancement_star_coins_behind_gates(test: NSMBDSTestBase) -> list:
-    gated_regions = {gate.region_name for gate in STAR_COIN_GATES}
+    gated_regions = {gate.target_stage_name for gate in STAR_COIN_GATES}
     return [
         location
         for location in test.multiworld.get_locations(test.player)
@@ -88,6 +94,19 @@ class TestRedCoinChecksDisabled(NSMBDSTestBase):
             self.assertNotIn("Red Coin Challenge", loc.name)
 
 
+class TestCastleBossLocations(NSMBDSTestBase):
+    """Castle bosses are genuine randomized AP checks, not locked events."""
+
+    def test_all_nine_boss_checks_are_randomized_locations(self) -> None:
+        locations = [
+            self.multiworld.get_location(name, self.player)
+            for name in BOSS_LOCATION_NAMES
+        ]
+        self.assertEqual(len(locations), 9)
+        self.assertTrue(all(location.address is not None for location in locations))
+        self.assertTrue(all(not location.locked for location in locations))
+
+
 class TestOneUpBlockChecksDisabled(NSMBDSTestBase):
     """Test world generation when 1-Up Block checks are disabled."""
 
@@ -121,7 +140,7 @@ class TestBlocksanityEnabled(NSMBDSTestBase):
             loc for loc in self.multiworld.get_locations(self.player)
             if "Blocksanity" in loc.name
         ]
-        self.assertEqual(len(locations), 1164)
+        self.assertEqual(len(locations), len(BLOCKSANITY_DEFINITIONS))
 
 
 class TestWorldSixTwoBonusArea(NSMBDSTestBase):
@@ -175,7 +194,12 @@ class TestNormalBlockPlacementProgression(NSMBDSTestBase):
                 or "1-Up Block" in location.name
             )
         ]
-        self.assertEqual(len(block_locations), 1044 + 43)
+        self.assertEqual(
+            len(block_locations),
+            len(BLOCKSANITY_DEFINITIONS)
+            + len(ONE_UP_BLOCK_DEFINITIONS)
+            - len(WORLD_6_2_BONUS_AREA_LOCATION_NAMES),
+        )
         global_locations = [
             location for location in block_locations
             if location.progress_type == LocationProgressType.DEFAULT
@@ -362,3 +386,29 @@ class TestIndividualStarCoinGatesEnabled(NSMBDSTestBase):
 
     def test_required_gate_currency_stays_outside_individual_gates(self) -> None:
         self.assertFalse(advancement_star_coins_behind_gates(self))
+
+
+class TestAdvancedLocationsNonProgression(NSMBDSTestBase):
+    options = {
+        "advanced_location_item_placement": "non_progression",
+        "blocksanity": True,
+        "one_up_block_checks": True,
+        "blocksanity_item_placement": "progression",
+        "one_up_block_item_placement": "progression",
+        "world_6_2_bonus_area": False,
+    }
+
+    def test_advanced_locations_reject_progression(self) -> None:
+        from ..data.logic_data import ADVANCED_LOCATION_NAMES
+
+        progression = self.world.create_item("Desert Pass")
+        active = [
+            location for location in self.multiworld.get_locations(self.player)
+            if location.name in ADVANCED_LOCATION_NAMES
+        ]
+        self.assertTrue(active)
+        self.assertTrue(all(
+            getattr(location, "is_non_progression_only", False)
+            and not location.item_rule(progression)
+            for location in active
+        ))
