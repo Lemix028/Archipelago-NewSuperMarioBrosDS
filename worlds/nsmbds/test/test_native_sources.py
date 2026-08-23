@@ -20,6 +20,19 @@ class TestNativeHookSources(unittest.TestCase):
         spec.loader.exec_module(module)
         self.assertEqual(module.verify(), [])
 
+    def test_missing_gate_permit_clears_vanilla_purchase_state(self) -> None:
+        source_root = Path(__file__).resolve().parents[1] / "src"
+        metadata_path = source_root / "native_hooks" / "star_coin_gate_hook.py"
+        spec = importlib.util.spec_from_file_location("nsmbds_star_coin_gate_hook", metadata_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(
+            module.STAR_COIN_GATE_HOOK_BYTES[0x6C:0x74],
+            bytes.fromhex("0000A0E3 EE02C2E5"),
+        )
+
     def test_rom_verifier_matches_runtime_identity(self) -> None:
         verifier_path = Path(__file__).resolve().parents[1] / "src" / "verify_base_rom.py"
         spec = importlib.util.spec_from_file_location("nsmbds_verify_base_rom", verifier_path)

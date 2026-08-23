@@ -56,6 +56,8 @@ vanilla:
     b       VANILLA_CONTINUE
 
 missing_permit:
+    mov     r0, #0
+    strb    r0, [r2, #0x2EE]
     ldr     r0, =MESSAGE_CONTEXT
     ldr     r3, =MESSAGE_STYLE
     ldr     r2, [r0]
