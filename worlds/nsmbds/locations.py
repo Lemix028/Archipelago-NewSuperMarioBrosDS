@@ -583,6 +583,12 @@ ALL_ACTIVE_DEFINITIONS = tuple(stage for world in ALL_WORLDS for stage in world)
 ACTIVE_STAGE_DEFINITIONS = tuple(
     stage for stage in ALL_ACTIVE_DEFINITIONS if stage.kind is LocationKind.STAGE
 )
+RUNTIME_COURSE_TO_STAGE_NAME = {
+    (stage.world_index, _runtime_level_for_stage_name(stage.name)): stage.name
+    for stage in ACTIVE_STAGE_DEFINITIONS
+}
+if len(RUNTIME_COURSE_TO_STAGE_NAME) != len(ACTIVE_STAGE_DEFINITIONS):
+    raise ValueError("Active NSMBDS stages contain duplicate runtime course identities.")
 
 BOSS_LOCATION_DEFINITIONS: tuple[BossLocationDefinition, ...] = (
     BossLocationDefinition("World 1-Castle", "Bowser", ("World 1-Castle Goal",)),

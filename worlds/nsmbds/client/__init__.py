@@ -25,6 +25,7 @@ from .features.block_checks import BlockCheckTrackingMixin
 from .features.overworld import OverworldStateReconcilerMixin
 from .features.red_coins import RedCoinTrackingMixin
 from .features.traps import TIMER_DRAIN_UNITS, TrapHandlingMixin
+from .features.tracker_sync import PopTrackerWorldSyncMixin
 from ..items import ITEM_TABLE
 from ..data.star_coin_gates import STAR_COIN_GATES
 from ..data.powerup_licenses import (
@@ -90,6 +91,7 @@ class NSMBDSClient(
     DeathLinkMixin,
     GoalHandlingMixin,
     OverworldStateReconcilerMixin,
+    PopTrackerWorldSyncMixin,
     BizHawkClient,
 ):
     """Bridge verified NSMBDS RAM state to an Archipelago server."""
@@ -188,6 +190,7 @@ class NSMBDSClient(
         self._gate_purchase_spent_floor = 0
         self._gate_storage_sync_pending = False
         self._gate_storage_write_pending = False
+        self._last_published_poptracker_view: str | None = None
 
     async def validate_rom(self, ctx: "BizHawkClientContext") -> bool:
         """Accept only the verified NSMBDS USA ROM header code."""
@@ -260,6 +263,7 @@ class NSMBDSClient(
             logger.exception("NSMBDS emulator feed synchronization failed; retrying next tick.")
 
         if not server_connected:
+            self._last_published_poptracker_view = None
             return
 
         level_data = await self._read_level_data(ctx)
@@ -294,6 +298,7 @@ class NSMBDSClient(
             ("Red Coin detection", self._detect_and_send_red_coin_challenge(ctx)),
             ("Block check detection", self._detect_and_send_block_check(ctx)),
             ("overworld state reconciliation", self._reconcile_overworld_state(ctx, level_data)),
+            ("PopTracker world synchronization", self._sync_poptracker_world(ctx)),
             ("Power-Up License sync", self._sync_powerup_licenses(ctx)),
             ("bonus mailbox initialization", self._initialize_bonus_mailbox(ctx)),
             ("item application", self._apply_pending_items(ctx)),
@@ -572,6 +577,7 @@ class NSMBDSClient(
         self._gate_purchase_spent_floor = 0
         self._gate_storage_sync_pending = False
         self._gate_storage_write_pending = False
+        self._last_published_poptracker_view = None
 
 
 def restrict_bizhawk_handlers_to_nsmbds() -> None:
