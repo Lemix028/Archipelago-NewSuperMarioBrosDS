@@ -26,9 +26,12 @@ class TestBase(unittest.TestCase):
         })
         try:
             cls.app = get_app()
-        except AssertionError as e:
-            # since we only have 1 global app object, this might fail, but luckily all tests use the same config
-            if "register_blueprint" not in e.args[0]:
+        except (AssertionError, ValueError) as e:
+            message = str(e)
+            if (
+                "register_blueprint" not in message
+                and "already registered for this blueprint" not in message
+            ):
                 raise
             cls.app = raw_app
 
