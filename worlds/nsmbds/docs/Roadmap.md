@@ -3,25 +3,13 @@
 ## Current
 
 Focus:
-- Logic
-    - ~~Logic option canon/secret exits counts~~
-    - ~~Location only reachable with certain powerups~~
-    - ~~Secondary paths are unlocked to Towers~~
-    - ~~Toggle Secret Exit Progression Logic (including access to worlds and Toad Houses behind Secret Exits)~~
-    - 5-C, 5-B logic
-    - ~~Any Blocksanity logic related to powerups~~
-    - Testing logic
-- Bugs
-    - ~~Deathlink trigger if you return to the overworld~~
-    - ~~Star Coin Sign can be bought without an item~~
-    - ~~Some Blocksanity blocks doesnt exist (World 6)~~
+    - PopTracker
     
 
 ## Planned
 
 - Add a No Turnaround Trap
 - Add a Remove Backup Power-Up Trap
-- Castle Goals rename to defeat boss
 - PopTracker
 
 ## Later / Ideas
