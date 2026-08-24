@@ -8,7 +8,7 @@ local version = require("nsmbds.version")
 
 M.VERSION = version.VERSION
 M.VERSION_LABEL = version.VERSION_LABEL
-M.SUPPORTED_BIZHAWK_VERSION = "2.11.1"
+M.MINIMUM_BIZHAWK_VERSION = "2.11.1"
 
 -- SYS_* constants are ARM9 system-bus addresses.
 M.SYS_POWERUP_MAP = 0x0208B324

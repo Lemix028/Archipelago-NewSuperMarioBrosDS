@@ -30,6 +30,20 @@ local context = state.context
 local GROUND_POUND_HOOK_ARM_FRAMES = 60
 local reported_ui_errors = {}
 
+local function version_is_at_least(version, minimum)
+    local major, minor, patch = version:match("^(%d+)%.(%d+)%.(%d+)$")
+    local minimum_major, minimum_minor, minimum_patch = minimum:match("^(%d+)%.(%d+)%.(%d+)$")
+    if not major or not minimum_major then return false end
+
+    major, minor, patch = tonumber(major), tonumber(minor), tonumber(patch)
+    minimum_major, minimum_minor, minimum_patch =
+        tonumber(minimum_major), tonumber(minimum_minor), tonumber(minimum_patch)
+
+    if major ~= minimum_major then return major > minimum_major end
+    if minor ~= minimum_minor then return minor > minimum_minor end
+    return patch >= minimum_patch
+end
+
 local function check_bizhawk_version()
     local detected_version = nil
     if client ~= nil then
@@ -44,13 +58,25 @@ local function check_bizhawk_version()
     local normalized_version = detected_version
         and detected_version:match("(%d+%.%d+%.%d+)")
         or nil
-    if normalized_version ~= constants.SUPPORTED_BIZHAWK_VERSION then
-        print(string.format(
-            "[NSMBDS ERROR] Unsupported BizHawk version '%s'. "
-                .. "Only %s is supported. Continuing anyway; runtime will be unreliable.",
+    if not normalized_version
+        or not version_is_at_least(normalized_version, constants.MINIMUM_BIZHAWK_VERSION)
+    then
+        local warning = string.format(
+            "NSMBDS WARNING: UNSUPPORTED BIZHAWK VERSION '%s' - MINIMUM REQUIRED: %s. "
+                .. "CONTINUING, BUT THE RUNTIME MAY FAIL!",
             detected_version or "unknown",
-            constants.SUPPORTED_BIZHAWK_VERSION
-        ))
+            constants.MINIMUM_BIZHAWK_VERSION
+        )
+        local console_warning = "!!! " .. warning .. " !!!"
+        for _ = 1, 10 do
+            print(console_warning)
+        end
+
+        emulator_feed.push({
+            segments = {
+                {text = warning, color = "warning"},
+            },
+        })
     end
 end
 
@@ -62,8 +88,8 @@ local function call_ui_safely(label, callback, ...)
     end
 end
 
-check_bizhawk_version()
 emulator_feed.initialize()
+check_bizhawk_version()
 -- Remove any high-frequency input hooks left by an older loaded revision.
 traps.disable_input_filter_hooks()
 
