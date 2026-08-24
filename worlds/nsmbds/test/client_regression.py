@@ -2080,16 +2080,18 @@ def test_lua_connector_connection_status_messages() -> None:
     )
 
 
-def test_tower_keys_only_own_entrance_paths() -> None:
+def test_tower_keys_own_verified_entrance_paths() -> None:
     expected_tower_paths = {
         "Grassland Tower Key": (0x00088D18,),
         "Desert Tower Key": (0x00088D36,),
         "Tropical Tower Key": (0x00088D54,),
-        "Jungle Tower Key": (0x00088D71,),
+        # Secret Exit from World 4-1 approaches the Tower from behind the Toad House.
+        "Jungle Tower Key": (0x00088D71, 0x00088D7B),
         "Glacier Tower Key": (0x00088D90,),
         # Worlds 6 and 8 each contain two Towers, so both entrance paths stay.
         "Mountain Tower Key": (0x00088DAE, 0x00088DB1),
-        "Sky Tower Key": (0x00088DCC,),
+        # Secret Exit from World 7-Ghost House approaches the Tower from behind the Toad House.
+        "Sky Tower Key": (0x00088DCC, 0x00088DD6),
         "Volcano Tower Key": (0x00088DE8, 0x00088DF0),
     }
     actual_tower_paths = {
@@ -2099,7 +2101,7 @@ def test_tower_keys_only_own_entrance_paths() -> None:
     }
     check(
         actual_tower_paths == expected_tower_paths,
-        "Tower Keys own only Tower entrance paths; vanilla stage clears retain every post-Tower exit",
+        "Tower Keys own every verified Tower approach while post-Tower exits remain vanilla-owned",
     )
 
 

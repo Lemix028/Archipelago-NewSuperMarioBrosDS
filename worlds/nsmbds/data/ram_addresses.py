@@ -256,8 +256,10 @@ LEVEL_DATA_WORLD_HEADER_MAX_STATE = 0x0F
 # ---------------------------------------------------------------------------
 # Overworld path bytes owned by Tower & Castle Keys.
 #
-# Tower Keys only control paths leading into a Tower.  Paths leaving a Tower
-# must remain vanilla-owned so completing the stage can open them normally.
+# Tower Keys only control verified paths leading into a Tower. World 4 and
+# World 7 each have a second Tower approach opened by a Secret Exit; those two
+# alternate entrance paths are key-owned as well. Paths leaving a Tower must
+# remain vanilla-owned so completing the stage can open them normally.
 # Worlds 6 and 8 intentionally have two Tower entries because they contain two
 # separate Towers; both addresses are entrance paths, not post-Tower exits.
 # ---------------------------------------------------------------------------
@@ -269,13 +271,13 @@ KEY_PATH_GATE_ADDRESSES: dict[str, tuple[int, ...]] = {
     "Desert Castle Key":    (0x00088D3B, 0x00088D45),
     "Tropical Tower Key":   (0x00088D54,),
     "Tropical Castle Key":  (0x00088D59,),
-    "Jungle Tower Key":     (0x00088D71,),
+    "Jungle Tower Key":     (0x00088D71, 0x00088D7B),
     "Jungle Castle Key":    (0x00088D78,),
     "Glacier Tower Key":    (0x00088D90,),
     "Glacier Castle Key":   (0x00088D96, 0x00088DA4),
     "Mountain Tower Key":   (0x00088DAE, 0x00088DB1),
     "Mountain Castle Key":  (0x00088DB5,),
-    "Sky Tower Key":        (0x00088DCC,),
+    "Sky Tower Key":        (0x00088DCC, 0x00088DD6),
     "Sky Castle Key":       (0x00088DD1,),
     "Volcano Tower Key":    (0x00088DE8, 0x00088DF0),
     "Volcano Castle Key":   (0x00088DEB,),
