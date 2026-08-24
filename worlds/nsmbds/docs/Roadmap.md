@@ -3,7 +3,7 @@
 ## Current
 
 Focus:
-    - PopTracker
+- PopTracker
     
 
 ## Planned
