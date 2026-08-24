@@ -88,6 +88,7 @@ fake_kivy_clock = types.ModuleType("kivy.clock")
 fake_kivy_metrics = types.ModuleType("kivy.metrics")
 fake_kivy_button = types.ModuleType("kivy.uix.button")
 fake_kivy_checkbox = types.ModuleType("kivy.uix.checkbox")
+fake_kivy_progressbar = types.ModuleType("kivy.uix.progressbar")
 fake_kivy_utils = types.ModuleType("kivy.utils")
 fake_kivymd = types.ModuleType("kivymd")
 fake_kivymd_uix = types.ModuleType("kivymd.uix")
@@ -106,6 +107,7 @@ fake_kivy_clock.Clock = types.SimpleNamespace(
 fake_kivy_metrics.dp = lambda value: value
 fake_kivy_button.Button = FakeGuiWidget
 fake_kivy_checkbox.CheckBox = FakeGuiWidget
+fake_kivy_progressbar.ProgressBar = FakeGuiWidget
 fake_kivy_utils.escape_markup = lambda value: value
 fake_kivymd_boxlayout.MDBoxLayout = FakeGuiWidget
 fake_kivymd_button.MDButton = FakeGuiWidget
@@ -122,6 +124,7 @@ sys.modules.update({
     "kivy.metrics": fake_kivy_metrics,
     "kivy.uix.button": fake_kivy_button,
     "kivy.uix.checkbox": fake_kivy_checkbox,
+    "kivy.uix.progressbar": fake_kivy_progressbar,
     "kivy.utils": fake_kivy_utils,
     "kivymd": fake_kivymd,
     "kivymd.uix": fake_kivymd_uix,

@@ -11,11 +11,11 @@ from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
+from kivy.uix.progressbar import ProgressBar
 from kivy.utils import escape_markup
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.label import MDLabel
-from kivymd.uix.progressindicator import MDLinearProgressIndicator
 from kivymd.uix.scrollview import MDScrollView
 
 from .state import InventoryEntry, ProgressCount, TrackerSnapshot, build_tracker_snapshot
@@ -102,7 +102,7 @@ class ProgressRow(MDBoxLayout):
         count.width = dp(90)
         heading.add_widget(count)
         self.add_widget(heading)
-        self.add_widget(MDLinearProgressIndicator(
+        self.add_widget(ProgressBar(
             max=max(1, progress.total),
             value=min(progress.checked, max(1, progress.total)),
             size_hint_y=None,
