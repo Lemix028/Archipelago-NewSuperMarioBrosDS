@@ -2,8 +2,6 @@
 
 local M = {}
 
-local FEED_WIDTH = 520
-
 local MAX_ENTRIES = 2000
 local WRAP_COLUMNS = 50
 local LINE_HEIGHT = 18
@@ -125,20 +123,6 @@ local function poll_scroll(max_visible_lines)
     local wheel_delta = wheel - last_mouse_wheel
     last_mouse_wheel = wheel
     if wheel_delta == 0 then return end
-
-    local mouse_x = mouse.X or 0
-    
-    if client and client.transformPoint then
-        local ok, point = pcall(client.transformPoint, mouse.X or 0, mouse.Y or 0)
-
-        if ok and point then
-            mouse_x = point.x or point.X or mouse_x
-        end
-    end
-
-     if mouse_x < 0 or mouse_x >= FEED_WIDTH then
-        return
-    end
 
     local maximum = math.max(0, #entries - max_visible_lines)
     scroll_offset = math.max(0, math.min(maximum, scroll_offset + wheel_delta * 3))
