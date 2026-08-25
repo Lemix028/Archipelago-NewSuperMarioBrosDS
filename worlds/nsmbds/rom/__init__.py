@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from worlds.Files import APPatchExtension, APProcedurePatch, APTokenMixin, APTokenTypes
 
 from .palette import patch_player_palettes_from_json
+from .secondary_screen import patch_secondary_screen_backgrounds_from_json
 from ..version import APWORLD_VERSION, DISPLAY_VERSION, RELEASE_CHANNEL
 
 if TYPE_CHECKING:
@@ -83,6 +84,15 @@ class NSMBDSPatchExtension(APPatchExtension):
         """Apply deterministic in-level Mario and Luigi palette selections."""
         return patch_player_palettes_from_json(rom, caller.get_file(config_file))
 
+    @staticmethod
+    def apply_secondary_screen_backgrounds(
+        caller: APProcedurePatch,
+        rom: bytes,
+        config_file: str,
+    ) -> bytes:
+        """Apply the deterministic in-level lower-screen wallpaper shuffle."""
+        return patch_secondary_screen_backgrounds_from_json(rom, caller.get_file(config_file))
+
 
 class NSMBDSProcedurePatch(APProcedurePatch, APTokenMixin):
     """Create a per-player patch."""
@@ -94,6 +104,7 @@ class NSMBDSProcedurePatch(APProcedurePatch, APTokenMixin):
     procedure = [
         ("apply_bsdiff4", ["native_hooks.bsdiff4"]),
         ("apply_tokens", ["token_data.bin"]),
+        ("apply_secondary_screen_backgrounds", ["nsmbds_patch_config.json"]),
         ("apply_player_palettes", ["nsmbds_patch_config.json"]),
     ]
 
@@ -122,6 +133,7 @@ def write_patch_payload(world: "NSMBDSWorld", patch: NSMBDSProcedurePatch) -> No
         "trap_percentage": world.options.trap_percentage.value,
         "mario_palette": world.options.mario_palette.value,
         "luigi_palette": world.options.luigi_palette.value,
+        "secondary_screen_background": world.options.secondary_screen_background.value,
         "tower_castle_keys": bool(world.options.tower_castle_keys.value),
         "license_mini_mushroom": bool(world.options.license_mini_mushroom.value),
         "license_blue_shell": bool(world.options.license_blue_shell.value),

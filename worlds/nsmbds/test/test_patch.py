@@ -35,6 +35,7 @@ class TestProcedurePatch(NSMBDSTestBase):
             with zipfile.ZipFile(patches[0]) as patch:
                 names = set(patch.namelist())
                 manifest = json.loads(patch.read("archipelago.json"))
+                patch_config = json.loads(patch.read("nsmbds_patch_config.json"))
 
             self.assertEqual(manifest["game"], "New Super Mario Bros. DS")
             self.assertEqual(manifest["patch_file_ending"], ".apnsmbds")
@@ -44,6 +45,7 @@ class TestProcedurePatch(NSMBDSTestBase):
                 [
                     ["apply_bsdiff4", ["native_hooks.bsdiff4"]],
                     ["apply_tokens", ["token_data.bin"]],
+                    ["apply_secondary_screen_backgrounds", ["nsmbds_patch_config.json"]],
                     ["apply_player_palettes", ["nsmbds_patch_config.json"]],
                 ],
             )
@@ -52,3 +54,19 @@ class TestProcedurePatch(NSMBDSTestBase):
                 "token_data.bin",
                 "nsmbds_patch_config.json",
             } <= names)
+            self.assertEqual(patch_config["options"]["secondary_screen_background"], 0)
+
+
+class TestRandomizedSecondaryScreenProcedurePatch(NSMBDSTestBase):
+    options = {
+        "secondary_screen_background": "randomized",
+    }
+
+    def test_generate_output_persists_randomized_background_option(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            self.world.generate_output(temporary_directory)
+            patch_path = next(Path(temporary_directory).glob("*.apnsmbds"))
+            with zipfile.ZipFile(patch_path) as patch:
+                patch_config = json.loads(patch.read("nsmbds_patch_config.json"))
+
+            self.assertEqual(patch_config["options"]["secondary_screen_background"], 1)

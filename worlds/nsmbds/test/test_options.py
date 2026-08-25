@@ -14,7 +14,7 @@ from ..locations import (
     ONE_UP_BLOCK_DEFINITIONS,
     WORLD_6_2_BONUS_AREA_LOCATION_NAMES,
 )
-from ..options import RequiredStarCoins, TrapPercentage
+from ..options import RequiredStarCoins, SecondaryScreenBackground, TrapPercentage
 
 
 def advancement_star_coins_behind_gates(test: NSMBDSTestBase) -> list:
@@ -74,6 +74,8 @@ class TestBalancingDefaults(NSMBDSTestBase):
         self.assertEqual(RequiredStarCoins.range_start, 30)
         self.assertEqual(RequiredStarCoins.default, 80)
         self.assertEqual(TrapPercentage.default, 20)
+        self.assertEqual(SecondaryScreenBackground.default, 0)
+        self.assertEqual(SecondaryScreenBackground.options["classic_overworld"], 6)
 
     def test_strong_filler_items_are_weighted_below_common_items(self) -> None:
         self.assertLess(FILLER_ITEM_WEIGHTS["3-Up Moon"], FILLER_ITEM_WEIGHTS["1-Up Mushroom"])

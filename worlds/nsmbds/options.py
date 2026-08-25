@@ -550,6 +550,30 @@ class LuigiPalette(PlayerPalette):
     display_name = "Luigi Palette"
 
 
+class SecondaryScreenBackground(Choice):
+    """
+    Choose whether the in-level lower-screen backgrounds retain their normal
+    assignments, are shuffled, or use one specific background in every level.
+
+    vanilla:           Keep the original secondary-screen backgrounds. (Default)
+    randomized:        Shuffle all five backgrounds so every assignment changes.
+    white_bricks:      Use the white brick background everywhere.
+    star_pattern:      Use the yellow star pattern everywhere.
+    blue_bricks:       Use the dark blue brick background everywhere.
+    mario_silhouette:  Use the red Mario silhouette everywhere.
+    classic_overworld: Use the classic overworld scene everywhere.
+    """
+    display_name = "Secondary Screen Background"
+    option_vanilla = 0
+    option_randomized = 1
+    option_white_bricks = 2
+    option_star_pattern = 3
+    option_blue_bricks = 4
+    option_mario_silhouette = 5
+    option_classic_overworld = 6
+    default = 0
+
+
 # =============================================================================
 # 6. NSMBDS OPTIONS DATACLASS
 # =============================================================================
@@ -633,3 +657,4 @@ class NSMBDSOptions(PerGameCommonOptions):
     # Character Palettes
     mario_palette:                        MarioPalette
     luigi_palette:                        LuigiPalette
+    secondary_screen_background:          SecondaryScreenBackground

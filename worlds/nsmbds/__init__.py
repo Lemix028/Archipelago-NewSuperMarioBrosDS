@@ -687,6 +687,7 @@ class NSMBDSWorld(World):
             "trap_percentage": self.options.trap_percentage.value,
             "mario_palette": self.options.mario_palette.value,
             "luigi_palette": self.options.luigi_palette.value,
+            "secondary_screen_background": self.options.secondary_screen_background.value,
             "bonk_trap_can_kill": bool(self.options.bonk_trap_can_kill.value),
             "filler_time_capsule": bool(self.options.filler_time_capsule.value),
             "filler_starman_lite": bool(self.options.filler_starman_lite.value),

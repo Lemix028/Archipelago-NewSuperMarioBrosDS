@@ -177,7 +177,7 @@ Life Insurance prevents the next local death from consuming a life.
 The option Death Link: Trigger on Insured Deaths determines whether that insured death is still sent through Death Link. 
 It is disabled by default.
 
-## Character palettes
+## Cosmetic options
 
 Mario and Luigi can each use their own color palette. The selected colors are
 applied to the character (also the Power Ups) while playing levels; gameplay and abilities do not
@@ -187,6 +187,13 @@ Available choices are Vanilla, Crimson, Emerald, Sapphire, Purple, Monochrome,
 Pastel Rosa, Gold, Silver, Peach, Random Preset, and Crazy Random. **Random
 Preset** chooses one of the prepared palettes for the seed. **Crazy Random**
 randomizes every pixel.
+
+The **Secondary Screen Background** option can shuffle the five vanilla
+in-level lower-screen wallpapers or use one selected wallpaper in every level.
+The available fixed designs are White Bricks, Star Pattern, Blue Bricks, Mario
+Silhouette, and Classic Overworld.
+
+![Secondary Screen Background choices](images/secondary_screen_backgrounds.png)
 
 ## Client and emulator features
 
@@ -222,7 +229,8 @@ you will find there:
   items may appear.
 - **Traps:** set the overall percentage and toggle individual effects.
 - **Multiplayer:** enable Death Link and its Life Insurance behavior.
-- **Cosmetics:** select separate Mario and Luigi palettes.
+- **Cosmetics:** select separate Mario and Luigi palettes and optionally
+  shuffle the in-level secondary-screen backgrounds.
 
 Normal host safety limits allow up to 30% global Blocksanity checks and a 50%
 trap rate. Higher values require the host to explicitly allow unsafe NSMBDS
