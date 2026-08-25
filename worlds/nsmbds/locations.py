@@ -569,8 +569,8 @@ W8_LEVELS: tuple[StageDefinition, ...] = (
     StageDefinition("World 8-5", 7, 5, 182),
     StageDefinition("World 8-6", 7, 6, 183),
     StageDefinition("World 8-7", 7, 7, 184),
-    StageDefinition("World 8-Tower 2", 7, 8, 185),
-    StageDefinition("World 8-8", 7, 9, 186),
+    StageDefinition("World 8-8", 7, 8, 185),
+    StageDefinition("World 8-Tower 2", 7, 9, 186),
     StageDefinition("World 8-Bowser's Castle", 7, 11, 187),
     *(stage for stage in STATIC_TOAD_HOUSES if stage.world_index == 7),
 )
