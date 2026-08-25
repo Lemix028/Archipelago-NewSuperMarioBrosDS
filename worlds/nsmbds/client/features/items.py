@@ -399,6 +399,10 @@ class ItemHandlingMixin:
             self._queue_crazy_pixels_trap()
             return True
 
+        if item_name == "No Turnaround Trap":
+            self._queue_no_turnaround_trap()
+            return True
+
         if item_name == "Bonk Trap":
             self._queue_bonk_trap()
             return True

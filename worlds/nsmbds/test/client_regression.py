@@ -2052,6 +2052,7 @@ async def test_speed_traps() -> None:
         ("Retro Filter", 25, "_pending_retro_filter_traps", "Retro Filter"),
         ("Spotlight", 26, "_pending_spotlight_traps", "Spotlight"),
         ("Pixelation", 31, "_pending_crazy_pixels_traps", "Crazy Pixels"),
+        ("No Turnaround Trap", 32, "_pending_no_turnaround_traps", "No Turnaround"),
     ):
         writes.clear()
         await client._apply_item(FakeContext(), client_module.ITEM_TABLE[item_name][0])

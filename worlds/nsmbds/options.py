@@ -491,6 +491,12 @@ class TrapCoinThief(Toggle):
     default = 1
 
 
+class TrapNoTurnaround(Toggle):
+    """Enable No Turnaround traps (locks horizontal movement to one direction for 15s)."""
+    display_name = "Trap: No Turnaround"
+    default = 1
+
+
 # =============================================================================
 # 5. COSMETIC & CHARACTER CUSTOMIZATION
 # =============================================================================
@@ -615,6 +621,7 @@ class NSMBDSOptions(PerGameCommonOptions):
     trap_bonk:                            TrapBonk
     trap_timer_drain:                     TrapTimerDrain
     trap_coin_thief:                      TrapCoinThief
+    trap_no_turnaround:                   TrapNoTurnaround
 
     # Character Palettes
     mario_palette:                        MarioPalette

@@ -209,6 +209,11 @@ class TrapHandlingMixin:
         self._pending_crazy_pixels_traps += 1
         logger.debug("Queued Crazy Pixels Trap until active in a level.")
 
+    def _queue_no_turnaround_trap(self) -> None:
+        """Queue one No Turnaround Trap."""
+        self._pending_no_turnaround_traps += 1
+        logger.debug("Queued No Turnaround Trap until active in a level.")
+
     def _queue_bonk_trap(self) -> None:
         """Queue one Bonk / Damage Trap."""
         self._pending_bonk_traps += 1
@@ -402,6 +407,7 @@ class TrapHandlingMixin:
             ("_pending_screen_tint_traps", 24, "Screen Tint"),
             ("_pending_retro_filter_traps", 25, "Retro Filter"),
             ("_pending_spotlight_traps", 26, "Spotlight"),
+            ("_pending_no_turnaround_traps", 32, "No Turnaround"),
         ):
             if getattr(self, counter_name, 0) <= 0:
                 continue

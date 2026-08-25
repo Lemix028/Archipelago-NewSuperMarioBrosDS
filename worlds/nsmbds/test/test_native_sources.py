@@ -10,6 +10,19 @@ from ..rom import BASE_ROM_MD5, BASE_ROM_SHA256, BASE_ROM_SIZE
 
 
 class TestNativeHookSources(unittest.TestCase):
+    def test_no_turnaround_uses_input_filter_and_trigger_32(self) -> None:
+        runtime_path = (
+            Path(__file__).resolve().parents[1]
+            / "lua_runtime"
+            / "nsmbds"
+            / "traps.lua"
+        )
+        source = runtime_path.read_text(encoding="utf-8")
+        self.assertIn("local function apply_no_turnaround_at(address)", source)
+        self.assertIn('context.active_mode == "no_turnaround"', source)
+        self.assertIn('trigger_code == 32', source)
+        self.assertIn('M.begin_timed_trap("no_turnaround", LONG_TRAP_FRAMES)', source)
+
     def test_checked_in_native_artifacts_match_manifest(self) -> None:
         source_root = Path(__file__).resolve().parents[1] / "src"
         verifier_path = source_root / "verify_native_hooks.py"

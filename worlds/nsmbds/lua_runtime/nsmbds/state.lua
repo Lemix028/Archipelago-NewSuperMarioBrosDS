@@ -49,6 +49,7 @@ M.input_trap_state = {
     sticky_frames = 0,
     sticky_last_frame = -1,
     sticky_duration = 36,
+    no_turnaround_direction = 0,
     heavy_gravity_boost = 512,
     heavy_max_fall_speed = 22528,
     camera_direction = 1,

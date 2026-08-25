@@ -163,6 +163,7 @@ items. Every trap can also be enabled or disabled separately.
 | Coin Tax | Removes up to ten Coins |
 | Time Drain | Removes 50 seconds from the level timer |
 | Coin Thief | Removes all normal Coins |
+| No Turnaround Trap | Locks horizontal movement to the first chosen direction for 15 seconds |
 
 Most timed traps last 15 seconds. The Spotlight lasts ten seconds and I'm Stuck
 lasts three seconds. Bonk Trap can optionally be allowed to kill Small Mario.

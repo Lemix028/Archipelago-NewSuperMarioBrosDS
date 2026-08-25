@@ -370,6 +370,8 @@ function M.draw_trap_status_hud()
         title, color = "HEAD BONK", "red"
     elseif context.active_mode == "crazy_pixels" then
         title, color = "PIXELATION", "purple"
+    elseif context.active_mode == "no_turnaround" then
+        title, color = "NO TURNAROUND", "orange"
     elseif context.active_mode == "coin_tax_notice" then
         title, color = "COIN TAX -10", "red"
     elseif context.active_mode == "timer_drain_notice" then

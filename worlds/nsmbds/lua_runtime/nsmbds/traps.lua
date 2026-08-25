@@ -53,6 +53,8 @@ function M.begin_timed_trap(mode, duration)
         state.input_trap_state.sticky_direction = 0
         state.input_trap_state.sticky_frames = 0
         state.input_trap_state.sticky_last_frame = -1
+    elseif mode == "no_turnaround" then
+        state.input_trap_state.no_turnaround_direction = 0
     elseif mode == "camera_drift" then
         local frame = emu and emu.framecount and emu.framecount() or 0
         state.input_trap_state.camera_direction = frame % 2 == 0 and 1 or -1
@@ -257,6 +259,25 @@ local function apply_boo_curse_at(address)
     _G.memory.writebyte(address, low)
 end
 
+local function apply_no_turnaround_at(address)
+    local original_low = _G.memory.readbyte(address)
+    local right = has_byte_flag(original_low, 0x10)
+    local left = has_byte_flag(original_low, 0x20)
+    if right == left then return end
+
+    local requested_direction = right and 1 or -1
+    local locked_direction = state.input_trap_state.no_turnaround_direction
+    if locked_direction == 0 then
+        state.input_trap_state.no_turnaround_direction = requested_direction
+        return
+    end
+    if requested_direction == locked_direction then return end
+
+    local blocked_flag = requested_direction > 0 and 0x10 or 0x20
+    local low = clear_byte_flag(original_low, blocked_flag)
+    if low ~= original_low then _G.memory.writebyte(address, low) end
+end
+
 local function apply_input_filter_at(address)
     if context.trap_remaining_frames <= 0 then
         return
@@ -280,6 +301,8 @@ local function apply_input_filter_at(address)
         filter = apply_camera_trap_at
     elseif context.active_mode == "boo_curse" then
         filter = apply_boo_curse_at
+    elseif context.active_mode == "no_turnaround" then
+        filter = apply_no_turnaround_at
     end
     if filter == nil then return end
 
@@ -390,7 +413,8 @@ function M.update_input_filter_hooks(has_active_player)
             or mode == "sticky_buttons"
             or mode == "camera_drift"
             or mode == "camera_sway"
-            or mode == "boo_curse")
+            or mode == "boo_curse"
+            or mode == "no_turnaround")
     if needs_input_filter then
         M.ensure_input_filter_hooks()
     elseif context.input_filter_hooks_initialized or context.input_filter_hooks_attempted then
@@ -406,7 +430,8 @@ function M.apply_frame_start_input_filter()
         or (mode ~= "no_jump"
             and mode ~= "camera_drift"
             and mode ~= "camera_sway"
-            and mode ~= "boo_curse")
+            and mode ~= "boo_curse"
+            and mode ~= "no_turnaround")
         or not joypad
         or not joypad.set then
         return
@@ -466,6 +491,26 @@ function M.apply_frame_start_input_filter()
         else
             filtered.Left = pad.Left == true
             filtered.Right = pad.Right == true
+        end
+    elseif mode == "no_turnaround" then
+        local pad = nil
+        if joypad.getimmediate then
+            local ok, immediate = pcall(joypad.getimmediate, 1)
+            if ok and type(immediate) == "table" then pad = immediate end
+        end
+        if pad == nil and joypad.get then
+            local ok, current = pcall(joypad.get, 1)
+            if ok and type(current) == "table" then pad = current end
+        end
+        if pad == nil or pad.Right == pad.Left then return end
+
+        local requested_direction = pad.Right and 1 or -1
+        local locked_direction = state.input_trap_state.no_turnaround_direction
+        if locked_direction == 0 then
+            state.input_trap_state.no_turnaround_direction = requested_direction
+        elseif requested_direction ~= locked_direction then
+            filtered.Right = requested_direction < 0 and pad.Right == true
+            filtered.Left = requested_direction > 0 and pad.Left == true
         end
     end
 
@@ -539,6 +584,8 @@ function M.poll_and_update_traps(has_active_player, trap_player)
             M.begin_timed_trap("head_bonk", LONG_TRAP_FRAMES)
         elseif trigger_code == 31 then
             M.begin_timed_trap("crazy_pixels", LONG_TRAP_FRAMES)
+        elseif trigger_code == 32 then
+            M.begin_timed_trap("no_turnaround", LONG_TRAP_FRAMES)
         elseif trigger_code == 7 or trigger_code == 8 then
             _G.memory.writebyte(addresses.ADDR_AP_TRAP_TRIGGER, 0)
             if trap_player then
@@ -800,6 +847,7 @@ function state.input_trap_state.finish_timed_trap()
     state.input_trap_state.im_stuck_player = nil
     state.input_trap_state.im_stuck_x = nil
     state.input_trap_state.im_stuck_y = nil
+    state.input_trap_state.no_turnaround_direction = 0
     if gui and gui.clearGraphics then gui.clearGraphics() end
 end
 

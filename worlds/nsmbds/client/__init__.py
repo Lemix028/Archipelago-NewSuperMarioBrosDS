@@ -174,6 +174,7 @@ class NSMBDSClient(
         self._pending_ground_clap_traps = 0
         self._pending_head_bonk_traps = 0
         self._pending_crazy_pixels_traps = 0
+        self._pending_no_turnaround_traps = 0
         self._pending_coin_tax_notices = 0
         self._pending_timer_drain_notices = 0
         self._pending_coin_thief_notices = 0
@@ -565,6 +566,7 @@ class NSMBDSClient(
         self._pending_ground_clap_traps = 0
         self._pending_head_bonk_traps = 0
         self._pending_crazy_pixels_traps = 0
+        self._pending_no_turnaround_traps = 0
         self._pending_coin_tax_notices = 0
         self._pending_timer_drain_notices = 0
         self._pending_coin_thief_notices = 0

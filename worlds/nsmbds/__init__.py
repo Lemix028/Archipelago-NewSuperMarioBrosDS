@@ -192,6 +192,7 @@ class NSMBDSWorld(World):
             _bool(self.options.trap_retro_filter), _bool(self.options.trap_spotlight), _bool(self.options.trap_ground_clap),
             _bool(self.options.trap_head_bonk), _bool(self.options.trap_crazy_pixels), _bool(self.options.trap_bonk),
             _bool(self.options.trap_timer_drain), _bool(self.options.trap_coin_thief),
+            _bool(self.options.trap_no_turnaround),
         ])
         if trap_pct > 0 and not traps_enabled:
             raise Exception(
@@ -388,6 +389,7 @@ class NSMBDSWorld(World):
         if _bool(self.options.trap_bonk): active_traps.append("Bonk Trap")
         if _bool(self.options.trap_timer_drain): active_traps.append("Time Drain")
         if _bool(self.options.trap_coin_thief): active_traps.append("Coin Thief")
+        if _bool(self.options.trap_no_turnaround): active_traps.append("No Turnaround Trap")
 
         trap_pct = _val(self.options.trap_percentage)
 
@@ -557,6 +559,8 @@ class NSMBDSWorld(World):
             active_traps.append("Time Drain")
         if self.options.trap_coin_thief:
             active_traps.append("Coin Thief")
+        if self.options.trap_no_turnaround:
+            active_traps.append("No Turnaround Trap")
 
         trap_count, guaranteed_filler_count, flexible_count = (
             calculate_nonprogression_pool_counts(
