@@ -244,6 +244,19 @@ request_handlers = {
         return res
     end,
 
+    ["NSMBDS_FEED_CONFIG"] = function (req)
+        local res = {}
+
+        res["type"] = "NSMBDS_FEED_CONFIG_RESPONSE"
+        res["value"] = false
+        if type(_G.nsmbds_feed_configure) == "function" then
+            local ok, accepted = pcall(_G.nsmbds_feed_configure, req)
+            res["value"] = ok and accepted == true
+        end
+
+        return res
+    end,
+
     ["default"] = function (req)
         local res = {}
 

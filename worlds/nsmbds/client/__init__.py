@@ -124,6 +124,7 @@ class NSMBDSClient(
         self._emulator_feed_flush_task: asyncio.Task[None] | None = None
         self._emulator_feed_received_index = 0
         self._emulator_feed_server_announced = False
+        self._emulator_feed_config_sent: tuple[bool, int, str, int] | None = None
         self._sent_locations: set[int] = set()
         self._active_locations: set[int] = set()
         self._active_location_set_known = False
@@ -249,6 +250,7 @@ class NSMBDSClient(
                 getattr(ctx, "rom_hash", None),
             )
         self._emulator_feed_server_announced = False
+        self._emulator_feed_config_sent = None
         return True
     async def game_watcher(self, ctx: "BizHawkClientContext") -> None:
         """Poll verified game data, submit checks, and apply pending features."""
@@ -520,6 +522,7 @@ class NSMBDSClient(
         self._pending_emulator_feed.clear()
         self._emulator_feed_received_index = 0
         self._emulator_feed_server_announced = False
+        self._emulator_feed_config_sent = None
         self._sent_locations.clear()
         self._active_locations.clear()
         self._active_location_set_known = False

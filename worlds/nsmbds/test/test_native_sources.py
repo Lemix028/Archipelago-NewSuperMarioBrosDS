@@ -10,6 +10,22 @@ from ..rom import BASE_ROM_MD5, BASE_ROM_SHA256, BASE_ROM_SIZE
 
 
 class TestNativeHookSources(unittest.TestCase):
+    def test_emulator_feed_supports_runtime_presentation_settings(self) -> None:
+        runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime"
+        feed_source = (runtime_root / "nsmbds" / "emulator_feed.lua").read_text(encoding="utf-8")
+        connector_source = (
+            runtime_root / "vendor" / "connector_bizhawk_generic.lua"
+        ).read_text(encoding="utf-8")
+        self.assertIn("function M.configure(request)", feed_source)
+        self.assertIn("feed_width", feed_source)
+        self.assertIn("feed_position", feed_source)
+        self.assertIn("fade_seconds", feed_source)
+        self.assertIn("local browsing_history = false", feed_source)
+        self.assertIn("fade_seconds > 0 and wheel_delta > 0 and not browsing_history", feed_source)
+        self.assertIn("browsing_history = scroll_offset > 0", feed_source)
+        self.assertIn("_G.nsmbds_feed_configure = M.configure", feed_source)
+        self.assertIn('["NSMBDS_FEED_CONFIG"]', connector_source)
+
     def test_no_turnaround_uses_input_filter_and_trigger_32(self) -> None:
         runtime_path = (
             Path(__file__).resolve().parents[1]

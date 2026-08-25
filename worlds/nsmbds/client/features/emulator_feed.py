@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from ...items import ITEM_TABLE, TRAP_ITEM_NAMES, item_id_to_name
 from ...locations import LOCATION_TABLE
+from ..launcher import emulator_feed_config
 
 if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
@@ -26,6 +27,36 @@ def _network_value(item: object, name: str, default: object = None) -> object:
 
 class EmulatorFeedMixin:
     """Mirror relevant Core ItemSend messages to BizHawk without polling delay."""
+
+    async def _sync_emulator_feed_config(self, ctx: "BizHawkClientContext") -> None:
+        """Push changed host settings to Lua and retry rejected updates."""
+        config = emulator_feed_config()
+        signature = (
+            config.enabled,
+            config.width,
+            config.position,
+            config.fade_seconds,
+        )
+        if signature == self._emulator_feed_config_sent:
+            return
+
+        from worlds._bizhawk import send_requests
+
+        responses = await send_requests(ctx.bizhawk_ctx, [{
+            "type": "NSMBDS_FEED_CONFIG",
+            "enabled": config.enabled,
+            "width": config.width,
+            "position": config.position,
+            "fade_seconds": config.fade_seconds,
+        }])
+        if (
+            len(responses) != 1
+            or responses[0].get("type") != "NSMBDS_FEED_CONFIG_RESPONSE"
+            or responses[0].get("value") is not True
+        ):
+            logger.warning("BizHawk rejected the NSMBDS emulator feed settings; retrying next tick.")
+            return
+        self._emulator_feed_config_sent = signature
 
     @staticmethod
     def _item_color(flags: int, item_id: int | None = None) -> str:
@@ -163,6 +194,8 @@ class EmulatorFeedMixin:
         server_connected: bool = True,
     ) -> None:
         """Announce both connection layers and backfill server item history."""
+        await self._sync_emulator_feed_config(ctx)
+
         if not server_connected:
             if self._emulator_feed_server_announced:
                 self._queue_emulator_system_message(

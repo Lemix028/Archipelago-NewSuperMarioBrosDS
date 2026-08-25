@@ -89,6 +89,8 @@ fake_kivy_metrics = types.ModuleType("kivy.metrics")
 fake_kivy_button = types.ModuleType("kivy.uix.button")
 fake_kivy_checkbox = types.ModuleType("kivy.uix.checkbox")
 fake_kivy_progressbar = types.ModuleType("kivy.uix.progressbar")
+fake_kivy_slider = types.ModuleType("kivy.uix.slider")
+fake_kivy_spinner = types.ModuleType("kivy.uix.spinner")
 fake_kivy_utils = types.ModuleType("kivy.utils")
 fake_kivymd = types.ModuleType("kivymd")
 fake_kivymd_uix = types.ModuleType("kivymd.uix")
@@ -108,6 +110,8 @@ fake_kivy_metrics.dp = lambda value: value
 fake_kivy_button.Button = FakeGuiWidget
 fake_kivy_checkbox.CheckBox = FakeGuiWidget
 fake_kivy_progressbar.ProgressBar = FakeGuiWidget
+fake_kivy_slider.Slider = FakeGuiWidget
+fake_kivy_spinner.Spinner = FakeGuiWidget
 fake_kivy_utils.escape_markup = lambda value: value
 fake_kivymd_boxlayout.MDBoxLayout = FakeGuiWidget
 fake_kivymd_button.MDButton = FakeGuiWidget
@@ -125,6 +129,8 @@ sys.modules.update({
     "kivy.uix.button": fake_kivy_button,
     "kivy.uix.checkbox": fake_kivy_checkbox,
     "kivy.uix.progressbar": fake_kivy_progressbar,
+    "kivy.uix.slider": fake_kivy_slider,
+    "kivy.uix.spinner": fake_kivy_spinner,
     "kivy.utils": fake_kivy_utils,
     "kivymd": fake_kivymd,
     "kivymd.uix": fake_kivymd_uix,
@@ -687,6 +693,10 @@ def test_launcher_uses_core_world_settings() -> None:
             self.nsmbds_options = types.SimpleNamespace(
                 last_patched_rom="",
                 auto_launch_game=False,
+                emulator_feed_enabled=True,
+                emulator_feed_width=500,
+                emulator_feed_position="bottom_left",
+                emulator_feed_fade_seconds=0,
             )
             self.save_count = 0
 
@@ -700,13 +710,42 @@ def test_launcher_uses_core_world_settings() -> None:
         check(not launcher_module.auto_launch_enabled(), "Launcher reads Core world settings")
         launcher_module.set_auto_launch(True)
         launcher_module._remember_rom(Path("seed.nds").resolve())
+        launcher_module.set_emulator_feed_enabled(False)
+        launcher_module.set_emulator_feed_width(650)
+        launcher_module.set_emulator_feed_position("top_right")
+        launcher_module.set_emulator_feed_fade_seconds(20)
+        persisted_feed_config = launcher_module.emulator_feed_config()
     finally:
         launcher_module._settings = original_settings
     check(
         fake_settings.nsmbds_options.auto_launch_game is True
         and fake_settings.nsmbds_options.last_patched_rom.endswith("seed.nds")
-        and fake_settings.save_count == 2,
-        "Launcher persists Core world settings",
+        and launcher_module.EmulatorFeedConfig(False, 650, "top_right", 20)
+        == persisted_feed_config
+        and fake_settings.save_count == 6,
+        "Launcher persists and validates Core world settings",
+    )
+
+
+def test_launcher_accepts_empty_optional_rom_setting() -> None:
+    class EmptyRomOptions:
+        @property
+        def last_patched_rom(self):
+            raise FileNotFoundError("an empty OptionalUserFilePath resolved to the working directory")
+
+    fake_settings = types.SimpleNamespace(nsmbds_options=EmptyRomOptions())
+    original_settings = launcher_module._settings
+    original_rom_file = launcher_module.launch_state.rom_file
+    try:
+        launcher_module._settings = lambda: fake_settings
+        launcher_module.launch_state.rom_file = None
+        configured_rom = launcher_module.configured_rom_path()
+    finally:
+        launcher_module._settings = original_settings
+        launcher_module.launch_state.rom_file = original_rom_file
+    check(
+        configured_rom is None,
+        "Launcher treats an empty optional seed-ROM setting as unconfigured",
     )
 
 
@@ -1190,11 +1229,29 @@ async def test_item_receipt_notifications_and_realtime_core_feed() -> None:
 
     requests = []
 
+    class FeedSettings:
+        nsmbds_options = types.SimpleNamespace(
+            emulator_feed_enabled=True,
+            emulator_feed_width=500,
+            emulator_feed_position="bottom_left",
+            emulator_feed_fade_seconds=0,
+        )
+
+    original_settings = launcher_module._settings
+    launcher_module._settings = lambda: FeedSettings()
+
     async def fake_send_requests(_bizhawk_ctx, payload):
         requests.extend(payload)
         return [
-            {"type": "NSMBDS_FEED_MESSAGE_RESPONSE", "value": True}
-            for _request in payload
+            {
+                "type": (
+                    "NSMBDS_FEED_CONFIG_RESPONSE"
+                    if request["type"] == "NSMBDS_FEED_CONFIG"
+                    else "NSMBDS_FEED_MESSAGE_RESPONSE"
+                ),
+                "value": True,
+            }
+            for request in payload
         ]
 
     fake_bizhawk.send_requests = fake_send_requests
@@ -1231,14 +1288,21 @@ async def test_item_receipt_notifications_and_realtime_core_feed() -> None:
     })
     await client._emulator_feed_flush_task
     check(
-        len(requests) == 4
-        and requests[0]["segments"] == [
+        len(requests) == 5
+        and requests[0] == {
+            "type": "NSMBDS_FEED_CONFIG",
+            "enabled": True,
+            "width": 500,
+            "position": "bottom_left",
+            "fade_seconds": 0,
+        }
+        and requests[1]["segments"] == [
             {
                 "text": "NSMBDS Client connected to the Archipelago server.",
                 "color": "success",
             },
         ]
-        and requests[1]["segments"] == [
+        and requests[2]["segments"] == [
             {"text": "Lemix", "color": "player_self"},
             {"text": " found ", "color": "text"},
             {"text": "Desert Pass", "color": "progression"},
@@ -1248,11 +1312,11 @@ async def test_item_receipt_notifications_and_realtime_core_feed() -> None:
         ]
         and any(
             segment == {"text": " sent ", "color": "text"}
-            for segment in requests[3]["segments"]
+            for segment in requests[4]["segments"]
         )
-        and requests[3]["segments"][2]["color"] == "useful"
-        and requests[2]["segments"][0] == {"text": "Alice", "color": "player"}
-        and requests[2]["segments"][2]["color"] == "trap"
+        and requests[4]["segments"][2]["color"] == "useful"
+        and requests[3]["segments"][0] == {"text": "Alice", "color": "player"}
+        and requests[3]["segments"][2]["color"] == "trap"
         and not client._pending_emulator_feed,
         "Both connection layers and Core ItemSend bursts appear as colored messages",
     )
@@ -1291,6 +1355,7 @@ async def test_item_receipt_notifications_and_realtime_core_feed() -> None:
         and client._item_color(0b010, cant_stop_id) == "trap",
         "Local I'm Stuck and Can't Stop items stay trap-colored despite stale useful flags",
     )
+    launcher_module._settings = original_settings
 
 
 def test_goals() -> None:

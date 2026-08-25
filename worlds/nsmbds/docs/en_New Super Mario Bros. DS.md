@@ -197,8 +197,11 @@ checked locations, and notifications.
 The patched game unlocks the native **SAVE** option in the World Map menu, so
 you can save your current game at any time while on the World Map.
 
-The emulator also displays an activity feed in the lower-left corner.
-It shows checks and item transfers in real time, can be scrolled, and can be hidden with CTRL+SHIFT+H. Reconnecting may
+The emulator also displays a configurable activity feed.
+It shows checks and item transfers in real time and can be scrolled. The
+client's **Settings** tab controls its status, width, screen position, and
+fade-out time; changes apply while the game is running. The feed can also be
+hidden temporarily with CTRL+SHIFT+H. Reconnecting may
 restore older feed messages, but already used lives, Coins, Power-Ups, and traps
 are not applied a second time.
 

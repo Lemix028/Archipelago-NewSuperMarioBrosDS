@@ -19,6 +19,21 @@ ROM_GAME_CODE = b"A2DE"
 ROM_GAME_CODE_OFFSET = 0x0C
 PATCH_MARKER_OFFSET = 0x013A57A8
 PATCH_MARKER = bytes.fromhex("1E FF 2F E1 41 50 4E 53 01 00 00 00 00 00 00 00 00 00 00 00")
+EMULATOR_FEED_POSITIONS = (
+    "bottom_left",
+    "bottom_right",
+    "top_left",
+    "top_right",
+)
+EMULATOR_FEED_FADE_CHOICES = (0, 5, 10, 20, 30, 60)
+
+
+@dataclass(frozen=True)
+class EmulatorFeedConfig:
+    enabled: bool
+    width: int
+    position: str
+    fade_seconds: int
 
 
 @dataclass
@@ -144,19 +159,26 @@ def _remember_rom(path: Path) -> None:
     _set_nsmbds_value("last_patched_rom", str(path))
 
 
+def _last_patched_rom_value() -> object:
+    """Read the optional ROM setting without treating an empty path as the working directory."""
+    try:
+        return _nsmbds_value("last_patched_rom", "")
+    except OSError:
+        return ""
+
+
 def configured_rom_path() -> Path | None:
     """Prefer this process's patch output, then the last selected seed ROM."""
     if launch_state.rom_file:
         return launch_state.rom_file
-    value = _nsmbds_value("last_patched_rom", "")
-    return _resolved_setting_path(value)
+    return _resolved_setting_path(_last_patched_rom_value())
 
 
 def browse_for_rom() -> Path | None:
     """Select and remember an already-patched NSMBDS seed ROM."""
     from Utils import open_filename
 
-    current = _nsmbds_value("last_patched_rom", "") or ""
+    current = _last_patched_rom_value() or ""
     chosen = open_filename(
         "Select Patched NSMBDS Seed ROM",
         [("Nintendo DS ROM", ["*.nds"]), ("All Files", ["*.*"])],
@@ -229,6 +251,45 @@ def auto_launch_enabled() -> bool:
 
 def set_auto_launch(enabled: bool) -> None:
     _set_nsmbds_value("auto_launch_game", bool(enabled))
+
+
+def emulator_feed_config() -> EmulatorFeedConfig:
+    """Return validated feed settings suitable for both the client UI and Lua."""
+    position = str(_nsmbds_value("emulator_feed_position", "bottom_left"))
+    if position not in EMULATOR_FEED_POSITIONS:
+        position = "bottom_left"
+    try:
+        width = int(_nsmbds_value("emulator_feed_width", 500))
+    except (TypeError, ValueError):
+        width = 500
+    try:
+        fade_seconds = int(_nsmbds_value("emulator_feed_fade_seconds", 0))
+    except (TypeError, ValueError):
+        fade_seconds = 0
+    return EmulatorFeedConfig(
+        enabled=bool(_nsmbds_value("emulator_feed_enabled", True)),
+        width=max(200, min(1200, width)),
+        position=position,
+        fade_seconds=max(0, min(300, fade_seconds)),
+    )
+
+
+def set_emulator_feed_enabled(enabled: bool) -> None:
+    _set_nsmbds_value("emulator_feed_enabled", bool(enabled))
+
+
+def set_emulator_feed_width(width: int) -> None:
+    _set_nsmbds_value("emulator_feed_width", max(200, min(1200, int(width))))
+
+
+def set_emulator_feed_position(position: str) -> None:
+    if position not in EMULATOR_FEED_POSITIONS:
+        raise ValueError(f"Unknown emulator feed position: {position}")
+    _set_nsmbds_value("emulator_feed_position", position)
+
+
+def set_emulator_feed_fade_seconds(seconds: int) -> None:
+    _set_nsmbds_value("emulator_feed_fade_seconds", max(0, min(300, int(seconds))))
 
 
 def launch_game() -> subprocess.Popen:

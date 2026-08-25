@@ -16,3 +16,7 @@ class NSMBDSSettings(Group):
     last_patched_rom: Optional[LastPatchedRom] = None
     auto_launch_game: bool = False
     allow_unsafe_nsmbds_options: bool = False
+    emulator_feed_enabled: bool = True
+    emulator_feed_width: int = 500
+    emulator_feed_position: str = "bottom_left"
+    emulator_feed_fade_seconds: int = 0

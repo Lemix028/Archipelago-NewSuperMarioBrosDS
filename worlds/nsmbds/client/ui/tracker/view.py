@@ -12,6 +12,8 @@ from kivy.metrics import dp
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.progressbar import ProgressBar
+from kivy.uix.slider import Slider
+from kivy.uix.spinner import Spinner
 from kivy.utils import escape_markup
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.gridlayout import MDGridLayout
@@ -21,15 +23,22 @@ from kivymd.uix.scrollview import MDScrollView
 from .state import InventoryEntry, ProgressCount, TrackerSnapshot, build_tracker_snapshot
 from ....version import DISPLAY_VERSION
 from ...launcher import (
+    EMULATOR_FEED_FADE_CHOICES,
+    EMULATOR_FEED_POSITIONS,
     auto_launch_enabled,
     browse_for_emuhawk,
     browse_for_rom,
     configured_rom_path,
+    emulator_feed_config,
     find_emuhawk,
     launch_game,
     launch_state,
     materialize_lua_runtime,
     set_auto_launch,
+    set_emulator_feed_enabled,
+    set_emulator_feed_fade_seconds,
+    set_emulator_feed_position,
+    set_emulator_feed_width,
 )
 
 
@@ -703,8 +712,201 @@ class NSMBDSLaunchPanel(MDScrollView):
             self.launch_button.disabled = False
 
 
+class NSMBDSSettingsPanel(MDScrollView):
+    """Persistent client-side presentation settings for the Lua runtime."""
+
+    POSITION_LABELS = {
+        "bottom_left": "Bottom Left",
+        "bottom_right": "Bottom Right",
+        "top_left": "Top Left",
+        "top_right": "Top Right",
+    }
+    FADE_LABELS = {
+        0: "Never",
+        5: "5 seconds",
+        10: "10 seconds",
+        20: "20 seconds",
+        30: "30 seconds",
+        60: "60 seconds",
+    }
+
+    POSITION_VALUES = {label: value for value, label in POSITION_LABELS.items()}
+    FADE_VALUES = {label: value for value, label in FADE_LABELS.items()}
+
+    def __init__(self, _ctx, **kwargs):
+        super().__init__(**kwargs)
+        self._updating_controls = False
+        self._width_save_event = None
+        self.content = MDBoxLayout(
+            orientation="vertical",
+            adaptive_height=True,
+            padding=(dp(24), dp(20), dp(24), dp(24)),
+            spacing=dp(14),
+        )
+        self.add_widget(self.content)
+        self.content.add_widget(_label("[size=26sp][b]Settings[/b][/size]"))
+        self.content.add_widget(_label(
+            "[size=19sp][b]Emulator Feed[/b][/size]\n"
+            "[color=#B8B8B8]Configure the message overlay shown inside BizHawk. "
+            "Changes are saved and applied automatically.[/color]"
+        ))
+
+        config = emulator_feed_config()
+        status_control = MDBoxLayout(
+            orientation="horizontal",
+            spacing=dp(8),
+        )
+        self.feed_checkbox = CheckBox(
+            active=config.enabled,
+            size_hint=(None, None),
+            size=(dp(40), dp(40)),
+        )
+        self.feed_checkbox.bind(active=self._set_enabled)
+        status_control.add_widget(self.feed_checkbox)
+        status_control.add_widget(_label("Enabled"))
+        self.content.add_widget(self._setting_row(
+            "Status",
+            "Show item, check, and client messages.",
+            status_control,
+        ))
+
+        width_control = MDBoxLayout(
+            orientation="horizontal",
+            spacing=dp(12),
+        )
+        self.width_slider = Slider(
+            min=200,
+            max=1200,
+            step=50,
+            value=config.width,
+            value_track=True,
+            value_track_color=(0.38, 0.78, 0.91, 1),
+            cursor_size=(dp(20), dp(20)),
+            background_width=dp(3),
+        )
+        self.width_slider.bind(value=self._preview_width)
+        width_control.add_widget(self.width_slider)
+        self.width_label = _label("", halign="right")
+        self.width_label.size_hint_x = None
+        self.width_label.width = dp(72)
+        width_control.add_widget(self.width_label)
+        self.content.add_widget(self._setting_row(
+            "Width",
+            "Horizontal size of the overlay.",
+            width_control,
+        ))
+
+        self.position_spinner = Spinner(
+            text=self.POSITION_LABELS[config.position],
+            values=tuple(self.POSITION_LABELS[value] for value in EMULATOR_FEED_POSITIONS),
+            background_normal="",
+            background_down="",
+            background_color=self._theme_color("surfaceContainerHighColor", (0.18, 0.20, 0.24, 1)),
+            color=self._theme_color("onSurfaceColor", (1, 1, 1, 1)),
+        )
+        self.position_spinner.bind(text=self._set_position)
+        self.content.add_widget(self._setting_row(
+            "Position",
+            "Screen corner used by the overlay.",
+            self.position_spinner,
+        ))
+
+        self.fade_spinner = Spinner(
+            text=self.FADE_LABELS.get(config.fade_seconds, f"{config.fade_seconds} seconds"),
+            values=tuple(self.FADE_LABELS[value] for value in EMULATOR_FEED_FADE_CHOICES),
+            background_normal="",
+            background_down="",
+            background_color=self._theme_color("surfaceContainerHighColor", (0.18, 0.20, 0.24, 1)),
+            color=self._theme_color("onSurfaceColor", (1, 1, 1, 1)),
+        )
+        self.fade_spinner.bind(text=self._set_fade)
+        self.content.add_widget(self._setting_row(
+            "Fade Out",
+            "Time before new messages disappear.",
+            self.fade_spinner,
+        ))
+
+        self.hint_label = _label(
+            f"[color={GREY}]BizHawk controls: mouse wheel for history  -  "
+            "Ctrl+Shift+H to toggle temporarily[/color]"
+        )
+        self.content.add_widget(self.hint_label)
+        self.refresh()
+
+    @staticmethod
+    def _theme_color(name: str, fallback: tuple[float, float, float, float]):
+        try:
+            from kivy.app import App
+
+            theme = getattr(App.get_running_app(), "theme_cls", None)
+            return tuple(getattr(theme, name)) if theme is not None else fallback
+        except (AttributeError, TypeError):
+            return fallback
+
+    @staticmethod
+    def _setting_row(title: str, description: str, control) -> MDBoxLayout:
+        row = MDBoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(62),
+            spacing=dp(24),
+        )
+        text = _label(
+            f"[b]{title}[/b]\n[color={GREY}]{description}[/color]"
+        )
+        text.size_hint_x = 0.52
+        row.add_widget(text)
+
+        control_box = MDBoxLayout(
+            orientation="horizontal",
+            size_hint_x=0.48,
+            padding=(0, dp(10), 0, dp(10)),
+        )
+        control_box.add_widget(control)
+        row.add_widget(control_box)
+        return row
+
+    def refresh(self) -> None:
+        config = emulator_feed_config()
+        self._updating_controls = True
+        self.width_label.text = f"[b]{config.width} px[/b]"
+        self.feed_checkbox.active = config.enabled
+        self.width_slider.value = config.width
+        self.position_spinner.text = self.POSITION_LABELS[config.position]
+        self.fade_spinner.text = self.FADE_LABELS.get(
+            config.fade_seconds,
+            f"{config.fade_seconds} seconds",
+        )
+        self._updating_controls = False
+
+    def _set_enabled(self, _switch, active: bool) -> None:
+        if not self._updating_controls:
+            set_emulator_feed_enabled(active)
+
+    def _preview_width(self, _slider, value: float) -> None:
+        width = int(value)
+        self.width_label.text = f"[b]{width} px[/b]"
+        if self._updating_controls:
+            return
+        if self._width_save_event is not None:
+            self._width_save_event.cancel()
+        self._width_save_event = Clock.schedule_once(self._save_width, 0.25)
+
+    def _save_width(self, *_args) -> None:
+        self._width_save_event = None
+        set_emulator_feed_width(int(self.width_slider.value))
+
+    def _set_position(self, _spinner, label: str) -> None:
+        if not self._updating_controls and label in self.POSITION_VALUES:
+            set_emulator_feed_position(self.POSITION_VALUES[label])
+
+    def _set_fade(self, _spinner, label: str) -> None:
+        if not self._updating_controls and label in self.FADE_VALUES:
+            set_emulator_feed_fade_seconds(self.FADE_VALUES[label])
+
+
 class NSMBDSTrackerManager(GameManager):
-    """Standard Archipelago client UI with NSMBDS overview and launch tabs."""
+    """Standard Archipelago client UI with overview, launch, and settings tabs."""
 
     base_title = f"NSMBDS Client | APWorld v{DISPLAY_VERSION} | Archipelago"
 
@@ -730,6 +932,8 @@ class NSMBDSTrackerManager(GameManager):
                 f"{escape_markup(str(exc))}\nCheck the BizHawk Client log for details."
             ))
         self.add_client_tab("Launch Game", self.launch_panel)
+        self.settings_panel = NSMBDSSettingsPanel(self.ctx)
+        self.add_client_tab("Settings", self.settings_panel)
         Clock.schedule_interval(self.tracker_panel.refresh, 0.5)
         if isinstance(self.launch_panel, NSMBDSLaunchPanel):
             Clock.schedule_interval(self.launch_panel.refresh, 1.0)
