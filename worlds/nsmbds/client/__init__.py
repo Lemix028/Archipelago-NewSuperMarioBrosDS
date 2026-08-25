@@ -178,6 +178,7 @@ class NSMBDSClient(
         self._pending_coin_tax_notices = 0
         self._pending_timer_drain_notices = 0
         self._pending_coin_thief_notices = 0
+        self._pending_powerup_pickpocket_notices = 0
         self._pending_bonk_traps = 0
         self._bonk_trap_can_kill = True
         self._speed_trap_end_time = 0.0
@@ -570,6 +571,7 @@ class NSMBDSClient(
         self._pending_coin_tax_notices = 0
         self._pending_timer_drain_notices = 0
         self._pending_coin_thief_notices = 0
+        self._pending_powerup_pickpocket_notices = 0
         self._pending_bonk_traps = 0
         self._held_powerup_log_key = None
         self._last_not_ready_logged = False

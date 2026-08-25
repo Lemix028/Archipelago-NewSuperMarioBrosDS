@@ -586,6 +586,8 @@ function M.poll_and_update_traps(has_active_player, trap_player)
             M.begin_timed_trap("crazy_pixels", LONG_TRAP_FRAMES)
         elseif trigger_code == 32 then
             M.begin_timed_trap("no_turnaround", LONG_TRAP_FRAMES)
+        elseif trigger_code == 33 then
+            M.begin_timed_trap("powerup_pickpocket_notice", BONK_FEEDBACK_FRAMES)
         elseif trigger_code == 7 or trigger_code == 8 then
             _G.memory.writebyte(addresses.ADDR_AP_TRAP_TRIGGER, 0)
             if trap_player then

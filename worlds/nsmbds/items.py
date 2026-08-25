@@ -91,6 +91,7 @@ ITEM_TABLE: dict[str, tuple[int, ItemClassification]] = {
     "Head Bonk":             (BASE_ID + 0x80, ItemClassification.trap),  # Hitting blocks from below inflicts damage
     "Pixelation":            (BASE_ID + 0x81, ItemClassification.trap),  # Enables the native DS Mosaic effect
     "No Turnaround Trap":    (BASE_ID + 0x82, ItemClassification.trap),  # Locks movement to the first chosen direction
+    "Power-Up Pickpocket Trap": (BASE_ID + 0x83, ItemClassification.trap),  # Empties the reserve slot
 
     # --- Progression: Tower & Castle Keys ---
     "Grassland Tower Key":   (BASE_ID + 0x40, ItemClassification.progression),
@@ -259,6 +260,7 @@ TRAP_ITEM_NAMES: tuple[str, ...] = (
     "Head Bonk",
     "Pixelation",
     "No Turnaround Trap",
+    "Power-Up Pickpocket Trap",
 )
 
 GENERATABLE_TRAP_ITEM_NAMES: tuple[str, ...] = (
@@ -289,6 +291,7 @@ GENERATABLE_TRAP_ITEM_NAMES: tuple[str, ...] = (
     "Head Bonk",
     "Pixelation",
     "No Turnaround Trap",
+    "Power-Up Pickpocket Trap",
 )
 
 # Inventory item RAM values (written to the inventory slot)

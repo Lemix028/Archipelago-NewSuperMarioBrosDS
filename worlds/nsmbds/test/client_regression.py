@@ -923,6 +923,42 @@ async def test_coin_thief_write() -> None:
         "Coin Tax removes exactly ten coins and queues its Trap notification",
     )
 
+    fake_bizhawk.guarded_read = fake_guarded_read
+    writes.clear()
+    applied = await client._apply_item(
+        FakeContext(),
+        client_module.ITEM_TABLE["Power-Up Pickpocket Trap"][0],
+    )
+    expected_backup_write = (
+        ram_addresses.ADDR_INVENTORY_ITEM,
+        [0],
+        ram_addresses.MEMORY_DOMAIN,
+    )
+    check(
+        applied
+        and writes[0][0] == [expected_backup_write]
+        and (
+            ram_addresses.ADDR_INVENTORY_ITEM,
+            [42],
+            ram_addresses.MEMORY_DOMAIN,
+        ) in writes[0][1]
+        and client._pending_powerup_pickpocket_notices == 1,
+        "Power-Up Pickpocket Trap exact-guards and empties the reserve slot",
+    )
+
+    async def empty_reserve_guarded_read(_bizhawk_ctx, _read_requests, _guards):
+        return [bytes([0])]
+
+    fake_bizhawk.guarded_read = empty_reserve_guarded_read
+    writes.clear()
+    applied = await client._apply_powerup_pickpocket(FakeContext())
+    check(
+        applied
+        and not writes
+        and client._pending_powerup_pickpocket_notices == 2,
+        "Power-Up Pickpocket Trap is consumed safely when the reserve slot is already empty",
+    )
+
 
 async def test_nothing_item() -> None:
     client = client_module.NSMBDSClient()
@@ -1930,6 +1966,7 @@ async def test_speed_traps() -> None:
         ("_pending_coin_tax_notices", 15, "Coin Tax"),
         ("_pending_timer_drain_notices", 16, "Timer Drain"),
         ("_pending_coin_thief_notices", 17, "Coin Thief"),
+        ("_pending_powerup_pickpocket_notices", 33, "Power-Up Pickpocket"),
     ):
         writes.clear()
         setattr(client, counter_name, 1)

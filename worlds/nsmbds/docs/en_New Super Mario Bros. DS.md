@@ -164,6 +164,7 @@ items. Every trap can also be enabled or disabled separately.
 | Time Drain | Removes 50 seconds from the level timer |
 | Coin Thief | Removes all normal Coins |
 | No Turnaround Trap | Locks horizontal movement to the first chosen direction for 15 seconds |
+| Power-Up Pickpocket Trap | Immediately steals the touchscreen reserve Power-Up |
 
 Most timed traps last 15 seconds. The Spotlight lasts ten seconds and I'm Stuck
 lasts three seconds. Bonk Trap can optionally be allowed to kill Small Mario.

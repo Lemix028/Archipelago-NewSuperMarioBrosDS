@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from ...data.ram_addresses import (
     ADDR_COINS,
+    ADDR_INVENTORY_ITEM,
     ADDR_MARIO_MAX_SPEED,
     ADDR_TIMER,
     ADDR_X_SPEED,
@@ -90,6 +91,42 @@ class TrapHandlingMixin:
         if applied:
             self._pending_coin_thief_notices += 1
             logger.info("Applied Coin Thief by setting the local coin counter to zero.")
+        return applied
+
+    async def _apply_powerup_pickpocket(self, ctx: "BizHawkClientContext") -> bool:
+        """Empty the reserve Power-Up slot without touching queued AP Power-Ups."""
+        from worlds._bizhawk import guarded_read, guarded_write
+
+        guards = self._game_data_guards()
+        current_result = await guarded_read(
+            ctx.bizhawk_ctx,
+            [(ADDR_INVENTORY_ITEM, 1, MEMORY_DOMAIN)],
+            guards,
+        )
+        if (
+            current_result is None
+            or len(current_result) != 1
+            or len(current_result[0]) != 1
+        ):
+            return False
+
+        current_item = current_result[0][0]
+        if current_item == 0:
+            self._pending_powerup_pickpocket_notices += 1
+            logger.info("Power-Up Pickpocket Trap found an empty reserve slot.")
+            return True
+
+        applied = await guarded_write(
+            ctx.bizhawk_ctx,
+            [(ADDR_INVENTORY_ITEM, [0], MEMORY_DOMAIN)],
+            [*guards, (ADDR_INVENTORY_ITEM, [current_item], MEMORY_DOMAIN)],
+        )
+        if applied:
+            self._pending_powerup_pickpocket_notices += 1
+            logger.info(
+                "Power-Up Pickpocket Trap cleared reserve item value 0x%02X.",
+                current_item,
+            )
         return applied
 
     async def _apply_coin_tax(self, ctx: "BizHawkClientContext") -> bool:
@@ -233,6 +270,7 @@ class TrapHandlingMixin:
             ("_pending_coin_tax_notices", 15, "Coin Tax"),
             ("_pending_timer_drain_notices", 16, "Timer Drain"),
             ("_pending_coin_thief_notices", 17, "Coin Thief"),
+            ("_pending_powerup_pickpocket_notices", 33, "Power-Up Pickpocket"),
         ):
             if getattr(self, counter_name, 0) <= 0:
                 continue

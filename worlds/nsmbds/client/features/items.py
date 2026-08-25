@@ -311,6 +311,9 @@ class ItemHandlingMixin:
         if item_name == "Coin Thief":
             return await self._apply_coin_thief(ctx)
 
+        if item_name == "Power-Up Pickpocket Trap":
+            return await self._apply_powerup_pickpocket(ctx)
+
         if item_name == "Super Speed":
             self._queue_speed_trap(1.6)
             return True

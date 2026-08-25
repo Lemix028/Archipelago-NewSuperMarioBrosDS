@@ -497,6 +497,12 @@ class TrapNoTurnaround(Toggle):
     default = 1
 
 
+class TrapPowerupPickpocket(Toggle):
+    """Enable traps that immediately empty the touchscreen reserve Power-Up slot."""
+    display_name = "Trap: Power-Up Pickpocket"
+    default = 1
+
+
 # =============================================================================
 # 5. COSMETIC & CHARACTER CUSTOMIZATION
 # =============================================================================
@@ -622,6 +628,7 @@ class NSMBDSOptions(PerGameCommonOptions):
     trap_timer_drain:                     TrapTimerDrain
     trap_coin_thief:                      TrapCoinThief
     trap_no_turnaround:                   TrapNoTurnaround
+    trap_powerup_pickpocket:              TrapPowerupPickpocket
 
     # Character Palettes
     mario_palette:                        MarioPalette

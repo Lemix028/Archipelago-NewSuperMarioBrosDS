@@ -19,8 +19,6 @@ Focus:
 
 ## Planned
 
-- Add a No Turnaround Trap
-- Add a Remove Backup Power-Up Trap
 - Castle Goals rename to defeat boss
 - PopTracker
 
