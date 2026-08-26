@@ -36,7 +36,7 @@ class PowerUpAlternativeRequirement:
 
 LARGE_MARIO_LOCATIONS = (
     "World 1-1 Star Coin 3", "World 1-4 Star Coin 2", "World 1-4 1-Up Block",
-    "World 2-2 Star Coin 2", "World 3-1 Star Coin 3", "World 5-2 Star Coin 1",
+    "World 2-2 Star Coin 2", "World 5-2 Star Coin 1",
     "World 5-3 Star Coin 2", "World 5-C Star Coin 3", "World 6-6 Star Coin 1",
     "World 6-Tower 2 Star Coin 2", "World 7-2 Star Coin 1",
     "World 7-6 Star Coin 1", "World 7-6 Secret Exit", "World 8-6 Star Coin 2",

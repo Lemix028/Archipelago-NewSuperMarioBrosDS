@@ -146,6 +146,10 @@ class TestStarCoinPowerupAccessRules(NSMBDSTestBase):
         self.collect_by_name("Fire Flower Permit")
         self.assertTrue(self.can_reach_location("World 1-1 Star Coin 3"))
 
+    def test_world_3_1_star_coin_3_needs_no_large_form(self) -> None:
+        self.collect_by_name("Isle Pass")
+        self.assertTrue(self.can_reach_location("World 3-1 Star Coin 3"))
+
     def test_world_3_a_accepts_mini_or_mega(self) -> None:
         self.collect_by_name(["Desert Pass", "Isle Pass"] + ["Star Coin"] * 5)
         self.assertFalse(self.can_reach_location("World 3-A Star Coin 3"))
