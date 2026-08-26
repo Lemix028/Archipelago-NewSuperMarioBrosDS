@@ -148,9 +148,9 @@ TOAD_HOUSE_ENTRY_REQUIREMENTS: dict[str, Requirement] = {
     "World 7 Green Toad House 1": one("World 7-2 Goal"),
     "World 7 Green Toad House 2": one("World 7-Ghost House Secret Exit"),
     "World 7 Green Toad House 3": one("World 7-4 Secret Exit"),
-    "World 8 Green Toad House": one("World 8-1 Goal"),
-    "World 8 Orange Toad House": one("World 8-Tower 1 Goal"),
-    "World 8 Red Toad House": one("World 8-3 Goal"),
+    "World 8 Green Toad House": one("World 8-3 Goal"),
+    "World 8 Orange Toad House": one("World 8-1 Goal"),
+    "World 8 Red Toad House": one("World 8-Tower 1 Goal"),
 }
 
 
