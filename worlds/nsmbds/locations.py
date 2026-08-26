@@ -553,9 +553,9 @@ W7_LEVELS: tuple[StageDefinition, ...] = (
     StageDefinition("World 7-4", 6, 4, 156, secret_exit_status=SecretExitStatus.EXISTS),
     StageDefinition("World 7-5", 6, 5, 157, secret_exit_status=SecretExitStatus.EXISTS),
     StageDefinition("World 7-A", 6, 6, 158),
-    StageDefinition("World 7-6", 6, 7, 160, secret_exit_status=SecretExitStatus.EXISTS),
+    StageDefinition("World 7-6", 6, 7, 166, secret_exit_status=SecretExitStatus.EXISTS),
     StageDefinition("World 7-7", 6, 8, 167),
-    StageDefinition("World 7-Castle", 6, 15, 166),
+    StageDefinition("World 7-Castle", 6, 15, 160),
     *(stage for stage in STATIC_TOAD_HOUSES if stage.world_index == 6),
 )
 
