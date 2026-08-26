@@ -34,6 +34,11 @@ class TestBase(unittest.TestCase):
             ):
                 raise
             cls.app = raw_app
+        except ValueError as e:
+            # as above, for more recent versions of flask this is now a ValueError
+            if "is already registered for this blueprint" not in e.args[0]:
+                raise
+            cls.app = raw_app
 
     def setUp(self) -> None:
         from WebHostLib.models import db
