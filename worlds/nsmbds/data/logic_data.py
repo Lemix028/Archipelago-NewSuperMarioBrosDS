@@ -179,7 +179,15 @@ ALL_SECRET_EXITS = frozenset(
     if atom.endswith(" Secret Exit")
 ) | CANNON_ROUTE_EXITS | INTER_WORLD_SECRET_EXITS
 
-INTRA_WORLD_SECRET_EXITS = ALL_SECRET_EXITS - CANNON_ROUTE_EXITS - INTER_WORLD_SECRET_EXITS
+# World 7-6's Secret Exit is the regular forward route through World 7:
+# 7-6 -> 7-7 -> Castle. It must remain in logic even when optional
+# intra-world shortcuts are disabled.
+INTRA_WORLD_SECRET_EXITS = (
+    ALL_SECRET_EXITS
+    - CANNON_ROUTE_EXITS
+    - INTER_WORLD_SECRET_EXITS
+    - {"World 7-6 Secret Exit"}
+)
 
 
 # Locations which cease to be logically reachable when internal secret paths
@@ -190,7 +198,6 @@ INTRA_SECRET_DEPENDENT_REGIONS = frozenset({
     "World 3-C",
     "World 3 Green Toad House",
     "World 7-A",
-    "World 7-Castle",
     "World 1 Red Toad House 1",
     "World 2 Red Toad House 2",
     "World 4 Green Toad House 1",
