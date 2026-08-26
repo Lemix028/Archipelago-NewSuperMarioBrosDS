@@ -195,6 +195,37 @@ class TestOptionalRouteLogic(NSMBDSTestBase):
         self.assertFalse(location.item_rule(self.world.create_item("Desert Pass")))
 
 
+class TestDisabledShortcutAccess(NSMBDSTestBase):
+    options = {
+        "tower_castle_keys": True,
+        "secret_exit_shortcut_logic": False,
+        "secret_exit_world_unlock_logic": False,
+        "cannon_route_logic": False,
+    }
+
+    def test_world_five_main_route_waits_for_tower_key(self) -> None:
+        self.collect_by_name("Glacier Pass")
+        for name in ("World 5-3 Goal", "World 5-Ghost House Goal", "World 5-4 Goal"):
+            self.assertFalse(self.can_reach_location(name), name)
+
+        self.collect_by_name("Glacier Tower Key")
+        for name in ("World 5-3 Goal", "World 5-Ghost House Goal", "World 5-4 Goal"):
+            self.assertTrue(self.can_reach_location(name), name)
+
+    def test_world_seven_main_route_uses_world_7_6_secret_exit(self) -> None:
+        self.collect_by_name(["Cloud Pass", "Sky Castle Key", "Blue Shell Permit"])
+        for name in ("World 7-6 Secret Exit", "World 7-7 Goal", "World 7-Castle Goal"):
+            self.assertFalse(self.can_reach_location(name), name)
+
+        self.collect_by_name("Sky Tower Key")
+        for name in ("World 7-6 Secret Exit", "World 7-7 Goal", "World 7-Castle Goal"):
+            self.assertTrue(self.can_reach_location(name), name)
+
+        self.assertTrue(self.can_reach_location("World 7-A Goal"))
+        location = self.multiworld.get_location("World 7-A Goal", self.player)
+        self.assertFalse(location.item_rule(self.world.create_item("Cloud Pass")))
+
+
 class TestPowerupLicensesDisabledAccess(NSMBDSTestBase):
     """Disabled License toggles remove Permit items and their access requirements."""
 

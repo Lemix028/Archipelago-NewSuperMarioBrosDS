@@ -8,6 +8,7 @@ from worlds.generic.Rules import add_item_rule, add_rule, set_rule
 
 from .data.logic_data import (
     INTRA_SECRET_DEPENDENT_WORLD_ROUTE_EVENTS,
+    INTRA_WORLD_SECRET_EXITS,
     STAGE_ENTRY_REQUIREMENTS,
     TOAD_HOUSE_ENTRY_REQUIREMENTS,
     Requirement,
@@ -41,10 +42,6 @@ def _requirement_rule(
     world: "NSMBDSWorld", requirement: Requirement
 ) -> Callable[["CollectionState"], bool]:
     player = world.player
-    # Disabled route options affect progression placement, not what the player
-    # can physically visit. This keeps optional branches usable and preserves
-    # full-accessibility seeds while ensuring the fill never depends on them.
-    alternatives = requirement
 
     return lambda state: any(
         all(
@@ -53,8 +50,26 @@ def _requirement_rule(
             else state.can_reach(atom, "Location", player)
             for atom in alternative
         )
-        for alternative in alternatives
+        for alternative in requirement
     )
+
+
+def _active_stage_requirement(
+    world: "NSMBDSWorld", requirement: Requirement
+) -> Requirement:
+    """Prefer a stage's normal route when optional Secret Exit logic is disabled."""
+    if _option_enabled(world, "secret_exit_shortcut_logic"):
+        return requirement
+
+    normal_routes = tuple(
+        alternative
+        for alternative in requirement
+        if not any(atom in INTRA_WORLD_SECRET_EXITS for atom in alternative)
+    )
+    # Secret-only branches remain physically reachable with all-state, but are
+    # marked non-progression during location creation. Only discard a Secret
+    # Exit route when a normal alternative to the same destination exists.
+    return normal_routes or requirement
 
 
 def _register_indirect_conditions(world: "NSMBDSWorld", entrance, requirement: Requirement) -> None:
@@ -137,8 +152,9 @@ def set_rules(world: "NSMBDSWorld") -> None:
         gate = gate_by_target.get(region_name)
         source_name = gate.region_name if gate else f"World {region_name.split(' ', 2)[1].split('-', 1)[0]}"
         entrance = multiworld.get_entrance(f"{source_name} -> {region_name}", player)
-        set_rule(entrance, _requirement_rule(world, requirement))
-        _register_indirect_conditions(world, entrance, requirement)
+        active_requirement = _active_stage_requirement(world, requirement)
+        set_rule(entrance, _requirement_rule(world, active_requirement))
+        _register_indirect_conditions(world, entrance, active_requirement)
 
         if world.options.tower_castle_keys and region_name in STAGE_ENTRY_REQUIREMENTS:
             key_name = _stage_key_name(region_name)

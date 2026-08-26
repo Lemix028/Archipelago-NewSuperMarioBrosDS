@@ -190,7 +190,6 @@ INTRA_SECRET_DEPENDENT_REGIONS = frozenset({
     "World 3-C",
     "World 3 Green Toad House",
     "World 7-A",
-    "World 7-7",
     "World 7-Castle",
     "World 1 Red Toad House 1",
     "World 2 Red Toad House 2",
@@ -204,7 +203,6 @@ INTRA_SECRET_DEPENDENT_REGIONS = frozenset({
 # when intra-world secret-exit logic is disabled.
 INTRA_SECRET_DEPENDENT_WORLD_ROUTE_EVENTS = frozenset({
     "World 2-A Secret Exit",
-    "World 7-Castle Goal",
 })
 
 
