@@ -751,7 +751,9 @@ SECRET_EXIT_RAM_REQUIREMENTS: dict[str, tuple[tuple[int, int], ...]] = {
     "World 2-Castle Secret Exit": ((35, 0x10), (0x2F4, 0x01)),
     "World 3-2 Secret Exit": ((0x111, 0xC0),),
     "World 3-Ghost House Secret Exit": ((0x117, 0xC0),),
-    "World 4-1 Secret Exit": ((0x12E, 0xC0), (0x12F, 0xC0)),
+    # 0x12F is the separate path from the Toad House to the Tower and may be
+    # held closed by the Jungle Tower Key. 0x12E alone identifies this exit.
+    "World 4-1 Secret Exit": ((0x12E, 0xC0),),
     "World 4-Ghost House Secret Exit": ((0x133, 0xC0),),
     "World 5-2 Secret Exit": ((0x14B, 0xC0),),
     "World 5-Ghost House Secret Exit": ((0x155, 0xC0),),
