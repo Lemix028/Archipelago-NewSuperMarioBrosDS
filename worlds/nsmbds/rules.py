@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
-from worlds.generic.Rules import add_item_rule, add_rule, set_rule
+from rule_builder.rules import (
+    And,
+    CanReachLocation,
+    CanReachRegion,
+    Has,
+    HasAny,
+    Or,
+    Rule,
+    True_,
+)
+from worlds.generic.Rules import add_item_rule
 
 from .data.logic_data import (
     INTRA_SECRET_DEPENDENT_WORLD_ROUTE_EVENTS,
@@ -19,11 +29,10 @@ from .data.powerup_licenses import (
     POWERUP_ALTERNATIVE_REQUIREMENTS,
     license_is_enabled,
 )
-from .data.star_coin_gates import STAR_COIN_GATES
+from .data.star_coin_gates import STAR_COIN_GATES, StarCoinGateDefinition
 from .locations import BOSS_LOCATION_COMPLETION_SOURCES
 
 if TYPE_CHECKING:
-    from BaseClasses import CollectionState
     from . import NSMBDSWorld
 
 
@@ -33,29 +42,34 @@ WORLD_KEY_NAMES = {
 }
 
 
-def _option_enabled(world: "NSMBDSWorld", name: str) -> bool:
+def _option_enabled(world: NSMBDSWorld, name: str) -> bool:
     option = getattr(world.options, name)
     return bool(getattr(option, "value", option))
 
 
-def _requirement_rule(
-    world: "NSMBDSWorld", requirement: Requirement
-) -> Callable[["CollectionState"], bool]:
-    player = world.player
+def _atom_rule(atom: str) -> Rule:
+    """Translate one logic-data atom into a structured Rule Builder rule."""
+    if atom.startswith("REGION:"):
+        return CanReachRegion(atom[7:])
+    return CanReachLocation(atom)
 
-    return lambda state: any(
-        all(
-            state.can_reach(atom[7:], "Region", player)
-            if atom.startswith("REGION:")
-            else state.can_reach(atom, "Location", player)
-            for atom in alternative
-        )
-        for alternative in requirement
-    )
+
+def _alternative_rule(alternative: tuple[str, ...]) -> Rule:
+    """Translate one AND branch of an OR-of-AND requirement."""
+    if not alternative:
+        # Archipelago 0.6.7 does not consistently simplify an empty And to
+        # True. Keep free starting routes explicit for installed generators.
+        return True_()
+    return And(*(_atom_rule(atom) for atom in alternative))
+
+
+def _requirement_rule(requirement: Requirement) -> Rule:
+    """Translate an OR-of-AND requirement without changing its semantics."""
+    return Or(*(_alternative_rule(alternative) for alternative in requirement))
 
 
 def _active_stage_requirement(
-    world: "NSMBDSWorld", requirement: Requirement
+    world: NSMBDSWorld, requirement: Requirement
 ) -> Requirement:
     """Prefer a stage's normal route when optional Secret Exit logic is disabled."""
     if _option_enabled(world, "secret_exit_shortcut_logic"):
@@ -72,29 +86,6 @@ def _active_stage_requirement(
     return normal_routes or requirement
 
 
-def _register_indirect_conditions(world: "NSMBDSWorld", entrance, requirement: Requirement) -> None:
-    """Tell Core which cached regions can make this entrance newly reachable."""
-    for alternative in requirement:
-        for atom in alternative:
-            if atom.startswith("REGION:"):
-                dependency_region = world.multiworld.get_region(atom[7:], world.player)
-            else:
-                dependency_region = world.multiworld.get_location(atom, world.player).parent_region
-            world.multiworld.register_indirect_condition(dependency_region, entrance)
-
-
-def _gate_authorized(world: "NSMBDSWorld", gate, state: "CollectionState") -> bool:
-    player = world.player
-    if not state.has("Star Coin", player, gate.star_coin_cost):
-        return False
-    mode = world.options.star_coin_gate_mode.value
-    if mode == 1:
-        return state.has("Progressive Gate Pass", player, gate.progressive_index)
-    if mode == 2:
-        return state.has(gate.permit_item_name, player)
-    return True
-
-
 def _stage_key_name(region_name: str) -> str | None:
     world_number = int(region_name.split(" ", 2)[1].split("-", 1)[0])
     world_name = WORLD_KEY_NAMES[world_number]
@@ -106,7 +97,28 @@ def _stage_key_name(region_name: str) -> str | None:
     return None
 
 
-def set_rules(world: "NSMBDSWorld") -> None:
+def _star_coin_gate_rule(
+    world: NSMBDSWorld, gate: StarCoinGateDefinition
+) -> Rule:
+    """Build the configured authorization rule for one Star-Coin gate."""
+    rule = Has("Star Coin", gate.star_coin_cost)
+    mode = world.options.star_coin_gate_mode.value
+    if mode == 1:
+        rule &= Has("Progressive Gate Pass", gate.progressive_index)
+    elif mode == 2:
+        rule &= Has(gate.permit_item_name)
+    return rule
+
+
+def _append_location_rule(
+    location_rules: dict[str, Rule], location_name: str, rule: Rule
+) -> None:
+    """Accumulate a location's requirements before resolving it exactly once."""
+    existing = location_rules.get(location_name)
+    location_rules[location_name] = rule if existing is None else existing & rule
+
+
+def set_rules(world: NSMBDSWorld) -> None:
     multiworld = world.multiworld
     player = world.player
 
@@ -126,21 +138,14 @@ def set_rules(world: "NSMBDSWorld") -> None:
                     for event in alternative
                 )
             )
-        set_rule(
+
+        world.set_rule(
             multiworld.get_entrance(entrance_name, player),
-            lambda state, pass_item=requirement.pass_item, alternatives=routes: (
-                state.has(pass_item, player)
-                or any(
-                    all(state.can_reach(name, "Location", player) for name in alternative)
-                    for alternative in alternatives
-                )
+            Or(
+                Has(requirement.pass_item),
+                *(_alternative_rule(alternative) for alternative in routes),
             ),
         )
-        entrance = multiworld.get_entrance(entrance_name, player)
-        for alternative in routes:
-            for location_name in alternative:
-                dependency = multiworld.get_location(location_name, player).parent_region
-                multiworld.register_indirect_condition(dependency, entrance)
 
     gate_by_target = {gate.target_stage_name: gate for gate in STAR_COIN_GATES}
 
@@ -153,25 +158,23 @@ def set_rules(world: "NSMBDSWorld") -> None:
         source_name = gate.region_name if gate else f"World {region_name.split(' ', 2)[1].split('-', 1)[0]}"
         entrance = multiworld.get_entrance(f"{source_name} -> {region_name}", player)
         active_requirement = _active_stage_requirement(world, requirement)
-        set_rule(entrance, _requirement_rule(world, active_requirement))
-        _register_indirect_conditions(world, entrance, active_requirement)
+        rule = _requirement_rule(active_requirement)
 
         if world.options.tower_castle_keys and region_name in STAGE_ENTRY_REQUIREMENTS:
             key_name = _stage_key_name(region_name)
             if key_name:
-                add_rule(entrance, lambda state, item=key_name: state.has(item, player))
+                rule &= Has(key_name)
 
-    # A gates front-side route is on the gate->target entrance above. The
-    # world->gate entrance solely models the vanilla five-coin authorization.
+        world.set_rule(entrance, rule)
+
+    # A gate's front-side route is on the gate->target entrance above. The
+    # world->gate entrance solely models the configured gate authorization.
     star_coin_item_id = world.item_name_to_id["Star Coin"]
     for gate in STAR_COIN_GATES:
         gate_entrance = multiworld.get_entrance(
             f"{gate.source_region} -> {gate.region_name}", player
         )
-        set_rule(
-            gate_entrance,
-            lambda state, current_gate=gate: _gate_authorized(world, current_gate, state),
-        )
+        world.set_rule(gate_entrance, _star_coin_gate_rule(world, gate))
         for location in multiworld.get_region(gate.target_stage_name, player).locations:
             add_item_rule(
                 location,
@@ -180,42 +183,71 @@ def set_rules(world: "NSMBDSWorld") -> None:
                 ),
             )
 
-    # Apply all power-up requirements. Optional location categories
-    # may remove a named check, hence the guarded lookup.
+    # Build every location's complete access rule before assigning it. Using
+    # generic add_rule here would wrap structured rules in an opaque lambda.
+    location_rules: dict[str, Rule] = {}
+
     for requirement in POWERUP_ABILITY_REQUIREMENTS:
         if not license_is_enabled(world.options, requirement.license_item):
             continue
         for location_name in requirement.locations:
-            try:
-                add_rule(
-                    multiworld.get_location(location_name, player),
-                    lambda state, item=requirement.license_item: state.has(item, player),
-                )
-            except KeyError:
-                pass
+            _append_location_rule(
+                location_rules,
+                location_name,
+                Has(requirement.license_item),
+            )
 
     for requirement in POWERUP_ALTERNATIVE_REQUIREMENTS:
+        # A disabled License restores vanilla use of that form, satisfying the
+        # alternative without requiring any of the remaining AP items.
+        if any(
+            not license_is_enabled(world.options, item)
+            for item in requirement.license_items
+        ):
+            continue
         for location_name in requirement.locations:
-            try:
-                add_rule(
-                    multiworld.get_location(location_name, player),
-                    lambda state, items=requirement.license_items: any(
-                        not license_is_enabled(world.options, item)
-                        or state.has(item, player)
-                        for item in items
-                    ),
-                )
-            except KeyError:
-                pass
+            _append_location_rule(
+                location_rules,
+                location_name,
+                HasAny(*requirement.license_items),
+            )
 
     # Boss checks inherit the real completion route of their matching Goal.
     # The Mini-Mario castle exits in Worlds 2 and 5 are valid alternatives.
     for boss_name, source_names in BOSS_LOCATION_COMPLETION_SOURCES.items():
-        boss_location = multiworld.get_location(boss_name, player)
-        set_rule(
-            boss_location,
-            lambda state, names=source_names: any(
-                multiworld.get_location(name, player).can_reach(state)
-                for name in names
-            ),
+        _append_location_rule(
+            location_rules,
+            boss_name,
+            Or(*(CanReachLocation(name) for name in source_names)),
         )
+
+    for location_name, rule in location_rules.items():
+        try:
+            world.set_rule(multiworld.get_location(location_name, player), rule)
+        except KeyError:
+            # Optional check categories may remove a named location.
+            pass
+
+
+def set_completion_rules(world: NSMBDSWorld) -> None:
+    """Define the configured goal as a structured, explainable rule."""
+    goal = world.options.goal.value
+    boss_rules = tuple(
+        CanReachLocation(name) for name in world._boss_location_names
+    )
+
+    if goal == 0:  # Defeat Bowser
+        rule = boss_rules[-1]
+    elif goal == 1:  # Star Coin Hunt
+        rule = Has("Star Coin", world.options.required_star_coins.value)
+    elif goal == 2:  # World Tour
+        rule = And(*boss_rules)
+    elif goal == 3:  # Completionist
+        rule = And(
+            *boss_rules,
+            Has("Star Coin", world.options.required_star_coins.value),
+        )
+    else:
+        raise Exception(f"Unsupported goal value: {goal}")
+
+    world.set_completion_rule(rule)

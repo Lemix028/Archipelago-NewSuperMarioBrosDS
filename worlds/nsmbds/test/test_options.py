@@ -145,6 +145,33 @@ class TestBlocksanityEnabled(NSMBDSTestBase):
         self.assertEqual(len(locations), len(BLOCKSANITY_DEFINITIONS))
 
 
+class TestDisabledFillersStayOutOfLocalBlocks(NSMBDSTestBase):
+    """Locked local block placements must respect the filler category toggles."""
+
+    options = {
+        "blocksanity": True,
+        "one_up_block_checks": True,
+        "blocksanity_global_check_percentage": 0,
+        "filler_extra_lives": False,
+        "filler_coins": False,
+        "filler_time_capsule": False,
+        "filler_starman_lite": False,
+        "filler_trap_shield": False,
+        "filler_care_package": False,
+        "filler_life_insurance": False,
+        "trap_percentage": 0,
+    }
+
+    def test_disabled_fillers_are_replaced_with_nothing(self) -> None:
+        local_items = [
+            location.item.name
+            for location in self.multiworld.get_locations(self.player)
+            if getattr(location, "is_local_filler_only", False)
+        ]
+        self.assertTrue(local_items)
+        self.assertEqual(set(local_items), {"Nothing"})
+
+
 class TestWorldSixTwoBonusArea(NSMBDSTestBase):
     options = {
         "blocksanity": True,

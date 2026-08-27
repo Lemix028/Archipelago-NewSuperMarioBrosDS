@@ -142,9 +142,18 @@ class TestStarCoinPowerupAccessRules(NSMBDSTestBase):
         self.assertTrue(self.can_reach_location("World 3-Ghost House Star Coin 3"))
 
     def test_large_mario_accepts_any_large_form_permit(self) -> None:
-        self.assertFalse(self.can_reach_location("World 1-1 Star Coin 3"))
-        self.collect_by_name("Fire Flower Permit")
-        self.assertTrue(self.can_reach_location("World 1-1 Star Coin 3"))
+        permits = (
+            "Mushroom Permit",
+            "Fire Flower Permit",
+            "Blue Shell Permit",
+            "Mega Mushroom Permit",
+        )
+        for permit in permits:
+            with self.subTest(permit=permit):
+                self.assertFalse(self.can_reach_location("World 1-1 Star Coin 3"))
+                self.collect_by_name(permit)
+                self.assertTrue(self.can_reach_location("World 1-1 Star Coin 3"))
+                self.remove_by_name(permit)
 
     def test_world_3_1_star_coin_3_needs_no_large_form(self) -> None:
         self.collect_by_name("Isle Pass")
@@ -157,6 +166,13 @@ class TestStarCoinPowerupAccessRules(NSMBDSTestBase):
         self.assertFalse(self.can_reach_location("World 3-A Star Coin 3"))
         self.collect_by_name("Mini Mushroom Permit")
         self.assertTrue(self.can_reach_location("World 3-A Star Coin 3"))
+
+    def test_powerup_rule_is_explainable(self) -> None:
+        location = self.multiworld.get_location("World 3-A Star Coin 3", self.player)
+        self.assertEqual(
+            location.access_rule.explain_str(self.multiworld.state),
+            "Missing Mini Mushroom Permit",
+        )
 
     def test_world_7_5_requires_mini(self) -> None:
         self.collect_by_name([
@@ -253,6 +269,9 @@ class TestPowerupLicensesDisabledAccess(NSMBDSTestBase):
     def test_secret_exit_needs_no_license(self) -> None:
         self.collect_by_name(["Desert Pass", "Jungle Pass"])
         self.assertTrue(self.can_reach_location("World 2-4 Secret Exit"))
+
+    def test_disabled_large_form_license_satisfies_alternative(self) -> None:
+        self.assertTrue(self.can_reach_location("World 1-1 Star Coin 3"))
 
 
 class TestProgressiveStarCoinGateAccess(NSMBDSTestBase):

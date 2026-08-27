@@ -46,7 +46,7 @@ from .regions import REGION_LIST, REGION_LOCATIONS, REGION_CONNECTIONS
 from .settings import NSMBDSSettings
 from .rom import NSMBDSPatchExtension, NSMBDSProcedurePatch, write_patch_payload
 from .client import NSMBDSClient  # Imported to register the BizHawk handler.
-from .rules import set_rules
+from .rules import set_completion_rules, set_rules
 from .data.star_coin_gates import STAR_COIN_GATES, TOTAL_STAR_COIN_GATE_COST
 from .data.powerup_licenses import license_items_for_mode
 from .data.logic_data import (
@@ -348,7 +348,7 @@ class NSMBDSWorld(World):
 
     def create_items(self) -> None:
         """Fill the item pool based on the number of active locations and user options."""
-        from .items import KEY_ITEM_NAMES, LOCAL_BLOCKSANITY_FILLER_ITEMS
+        from .items import KEY_ITEM_NAMES
 
         def _val(opt: Any) -> int:
             return int(getattr(opt, "value", opt))
@@ -362,6 +362,24 @@ class NSMBDSWorld(World):
                 weights=[FILLER_ITEM_WEIGHTS[name] for name in item_names],
                 k=1,
             )[0]
+
+        def _enabled_excludable_fillers() -> list[str]:
+            fillers = []
+            if _bool(self.options.filler_extra_lives):
+                fillers.extend(["1-Up Mushroom", "3-Up Moon"])
+            if _bool(self.options.filler_coins):
+                fillers.append("Coin Bundle")
+            if _bool(self.options.filler_time_capsule):
+                fillers.append("Time Capsule")
+            if _bool(self.options.filler_starman_lite):
+                fillers.append("Starman Lite")
+            if _bool(self.options.filler_trap_shield):
+                fillers.append("Trap Shield")
+            if _bool(self.options.filler_care_package):
+                fillers.append("Small Care Package")
+            if _bool(self.options.filler_life_insurance):
+                fillers.append("Life Insurance")
+            return fillers
 
         active_traps = []
         if _bool(self.options.trap_hyper_speed): active_traps.append("Super Speed")
@@ -395,14 +413,17 @@ class NSMBDSWorld(World):
 
         trap_pct = _val(self.options.trap_percentage)
 
-        # Pre-fill local-filler-only block locations with local consumables AND local traps
+        # Pre-fill local-filler-only block locations with enabled local consumables and traps.
+        # These locked placements bypass the regular item pool, so they must apply the
+        # filler-category options independently as well.
+        local_blocksanity_fillers = _enabled_excludable_fillers() or ["Nothing"]
         unfilled_locations = self.multiworld.get_unfilled_locations(self.player)
         for loc in unfilled_locations:
             if getattr(loc, "is_local_filler_only", False):
                 if active_traps and trap_pct > 0 and self.random.randint(1, 100) <= trap_pct:
                     item_name = self.random.choice(active_traps)
                 else:
-                    item_name = _weighted_filler_choice(LOCAL_BLOCKSANITY_FILLER_ITEMS)
+                    item_name = _weighted_filler_choice(local_blocksanity_fillers)
                 loc.place_locked_item(self.create_item(item_name))
 
         # Re-query unfilled locations after local pre-fill
@@ -482,26 +503,12 @@ class NSMBDSWorld(World):
             )
 
         # Build active filler pool from enabled filler categories
-        excludable_fillers = []
+        excludable_fillers = _enabled_excludable_fillers()
         useful_fillers = []
         if self.options.filler_powerups:
             useful_fillers.extend(["Mushroom", "Fire Flower", "Blue Shell", "Mini Mushroom", "Mega Mushroom"])
         if self.options.filler_starman:
             useful_fillers.append("Starman Buff")
-        if self.options.filler_extra_lives:
-            excludable_fillers.extend(["1-Up Mushroom", "3-Up Moon"])
-        if self.options.filler_coins:
-            excludable_fillers.append("Coin Bundle")
-        if self.options.filler_time_capsule:
-            excludable_fillers.append("Time Capsule")
-        if self.options.filler_starman_lite:
-            excludable_fillers.append("Starman Lite")
-        if self.options.filler_trap_shield:
-            excludable_fillers.append("Trap Shield")
-        if self.options.filler_care_package:
-            excludable_fillers.append("Small Care Package")
-        if self.options.filler_life_insurance:
-            excludable_fillers.append("Life Insurance")
         guaranteed_filler_pool = excludable_fillers or ["Nothing"]
         active_fillers = [*excludable_fillers, *useful_fillers]
         if not active_fillers:
@@ -614,40 +621,7 @@ class NSMBDSWorld(World):
 
     def generate_basic(self) -> None:
         """Define logical completion conditions from the real boss checks."""
-        goal = self.options.goal.value
-
-        if goal == 0:  # Defeat Bowser
-            self.multiworld.completion_condition[self.player] = \
-                lambda state: state.can_reach(
-                    self._boss_location_names[-1], "Location", self.player
-                )
-        elif goal == 1:  # Star Coin Hunt
-            required = self.options.required_star_coins.value
-            self.multiworld.completion_condition[self.player] = \
-                lambda state: state.has("Star Coin", self.player, required)
-        elif goal == 2:  # World Tour
-            self.multiworld.completion_condition[self.player] = \
-                lambda state: self._count_reachable_locations(
-                    state, self._boss_location_names
-                ) == len(self._boss_location_names)
-        elif goal == 3:  # Completionist
-            required = self.options.required_star_coins.value
-            self.multiworld.completion_condition[self.player] = \
-                lambda state: (
-                    self._count_reachable_locations(
-                        state, self._boss_location_names
-                    ) == len(self._boss_location_names)
-                    and state.has("Star Coin", self.player, required)
-                )
-        else:
-            raise Exception(f"Unsupported goal value: {goal}")
-
-    def _count_reachable_locations(self, state: Any, location_names: tuple[str, ...]) -> int:
-        """Return how many locations are logically reachable in the supplied state."""
-        return sum(
-            self.multiworld.get_location(name, self.player).can_reach(state)
-            for name in location_names
-        )
+        set_completion_rules(self)
 
     def fill_slot_data(self) -> dict[str, Any]:
         """Send options data to the client via the Connected packet."""
