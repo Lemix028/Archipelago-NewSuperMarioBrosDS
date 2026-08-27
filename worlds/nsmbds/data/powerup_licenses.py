@@ -61,6 +61,7 @@ POWERUP_ABILITY_REQUIREMENTS: tuple[PowerUpAbilityRequirement, ...] = (
             "World 2-4 Secret Exit",
             "World 2-Castle Star Coin 3",
             "World 2-Castle Secret Exit",
+            "World 3-A Star Coin 3",
             "World 4-Ghost House Star Coin 3",
             "World 4-Ghost House Secret Exit",
             "World 5-Castle Secret Exit",
@@ -116,10 +117,6 @@ POWERUP_ALTERNATIVE_REQUIREMENTS: tuple[PowerUpAlternativeRequirement, ...] = (
     PowerUpAlternativeRequirement(
         (MUSHROOM_LICENSE, FIRE_FLOWER_LICENSE, BLUE_SHELL_LICENSE, MEGA_MUSHROOM_LICENSE),
         locations=LARGE_MARIO_LOCATIONS,
-    ),
-    PowerUpAlternativeRequirement(
-        (MINI_MUSHROOM_LICENSE, MEGA_MUSHROOM_LICENSE),
-        locations=("World 3-A Star Coin 3",),
     ),
 )
 

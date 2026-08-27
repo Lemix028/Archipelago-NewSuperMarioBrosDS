@@ -150,10 +150,12 @@ class TestStarCoinPowerupAccessRules(NSMBDSTestBase):
         self.collect_by_name("Isle Pass")
         self.assertTrue(self.can_reach_location("World 3-1 Star Coin 3"))
 
-    def test_world_3_a_accepts_mini_or_mega(self) -> None:
+    def test_world_3_a_requires_mini(self) -> None:
         self.collect_by_name(["Desert Pass", "Isle Pass"] + ["Star Coin"] * 5)
         self.assertFalse(self.can_reach_location("World 3-A Star Coin 3"))
         self.collect_by_name("Mega Mushroom Permit")
+        self.assertFalse(self.can_reach_location("World 3-A Star Coin 3"))
+        self.collect_by_name("Mini Mushroom Permit")
         self.assertTrue(self.can_reach_location("World 3-A Star Coin 3"))
 
     def test_world_7_5_requires_mini(self) -> None:
