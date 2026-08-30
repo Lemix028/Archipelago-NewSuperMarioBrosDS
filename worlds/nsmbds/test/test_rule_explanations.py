@@ -63,7 +63,7 @@ class TestRuleExplanations(NSMBDSTestBase):
             ).access_rule
         )
         explanation = rule.explain_str(self.multiworld.state)
-        self.assertIn("Star Coin x5", explanation)
+        self.assertIn("Star Coin x45", explanation)
         self.assertIn("Progressive Gate Pass x9", explanation)
 
     def test_boss_rule_exposes_both_castle_exits(self) -> None:

@@ -29,7 +29,11 @@ from .data.powerup_licenses import (
     POWERUP_ALTERNATIVE_REQUIREMENTS,
     license_is_enabled,
 )
-from .data.star_coin_gates import STAR_COIN_GATES, StarCoinGateDefinition
+from .data.star_coin_gates import (
+    STAR_COIN_GATES,
+    StarCoinGateDefinition,
+    gate_required_lifetime_coins,
+)
 from .locations import BOSS_LOCATION_COMPLETION_SOURCES
 
 if TYPE_CHECKING:
@@ -101,13 +105,25 @@ def _star_coin_gate_rule(
     world: NSMBDSWorld, gate: StarCoinGateDefinition
 ) -> Rule:
     """Build the configured authorization rule for one Star-Coin gate."""
-    rule = Has("Star Coin", gate.star_coin_cost)
     mode = world.options.star_coin_gate_mode.value
+    if mode == 0:
+        tier = world.vanilla_gate_tiers[gate.name]
+        return Has("Star Coin", gate_required_lifetime_coins(gate, tier))
     if mode == 1:
-        rule &= Has("Progressive Gate Pass", gate.progressive_index)
-    elif mode == 2:
-        rule &= Has(gate.permit_item_name)
-    return rule
+        return And(
+            Has("Progressive Gate Pass", gate.progressive_index),
+            Has(
+                "Star Coin",
+                gate_required_lifetime_coins(gate, gate.progressive_index),
+            ),
+        )
+    if mode == 2:
+        tier = world.individual_gate_tiers[gate.permit_item_name]
+        return And(
+            Has(gate.permit_item_name),
+            Has("Star Coin", gate_required_lifetime_coins(gate, tier)),
+        )
+    raise ValueError(f"Unsupported Star Coin Gate mode: {mode}")
 
 
 def _append_location_rule(

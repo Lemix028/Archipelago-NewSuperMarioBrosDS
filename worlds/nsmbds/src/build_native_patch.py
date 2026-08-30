@@ -10,6 +10,7 @@ from pathlib import Path
 
 try:
     import bsdiff4
+    import ndspy.bmg
     import ndspy.code
     import ndspy.codeCompression
     import ndspy.rom
@@ -129,23 +130,20 @@ def build_patched_rom(base_bytes: bytes) -> bytes:
     rom.arm9OverlayTable = ndspy.code.saveOverlayTable(overlays)
 
     bmg_file_id = rom.filenames.idOf(star["COURSE_BMG"])
-    course_bmg = bytearray(rom.files[bmg_file_id])
-    # Message 15 is the final message. Its DAT1-relative offset is stored in
-    # the last INF1 entry; keeping the file size fixed preserves all sections.
-    inf1_offset = course_bmg.index(b"INF1")
-    inf1_entry_size = struct.unpack_from("<H", course_bmg, inf1_offset + 10)[0]
-    inf1_entries_offset = inf1_offset + 16
-    message_offset = struct.unpack_from(
-        "<I", course_bmg, inf1_entries_offset + star["PERMIT_MESSAGE_ID"] * inf1_entry_size
-    )[0]
-    dat1_offset = course_bmg.index(b"DAT1")
-    dat1_payload_offset = dat1_offset + 8
-    file_offset = dat1_payload_offset + message_offset
-    encoded_message = star["PERMIT_MESSAGE"].encode("utf-16le") + b"\0\0"
-    if len(encoded_message) > len(course_bmg) - file_offset:
-        raise ValueError("Star-Coin gate message does not fit in course.bmg.")
-    course_bmg[file_offset:] = encoded_message.ljust(len(course_bmg) - file_offset, b"\0")
-    rom.files[bmg_file_id] = course_bmg
+    course_bmg = ndspy.bmg.BMG(rom.files[bmg_file_id])
+    if len(course_bmg.messages) != star["INVALID_TIER_MESSAGE_ID"] + 1:
+        raise ValueError(
+            "Unexpected course.bmg message count before adding Star-Coin Gate text."
+        )
+    course_bmg.messages[star["INVALID_TIER_MESSAGE_ID"]] = ndspy.bmg.Message(
+        b"", star["INVALID_TIER_MESSAGE"]
+    )
+    for message in star["TIER_MESSAGES"]:
+        course_bmg.messages.append(ndspy.bmg.Message(b"", message))
+    expected_message_count = star["INDIVIDUAL_TIER_MESSAGE_BASE"] + 32
+    if len(course_bmg.messages) != expected_message_count:
+        raise ValueError("Unexpected course.bmg message count after adding gate text.")
+    rom.files[bmg_file_id] = course_bmg.save()
 
     return rom.save()
 

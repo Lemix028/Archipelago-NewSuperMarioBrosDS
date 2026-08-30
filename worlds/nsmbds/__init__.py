@@ -6,7 +6,7 @@ Main entry point for Archipelago multiworld generation.
 import os
 from typing import Any, ClassVar
 
-from BaseClasses import ItemClassification, LocationProgressType, Region
+from BaseClasses import Item, ItemClassification, Location, LocationProgressType, Region
 from settings import get_settings
 from worlds.AutoWorld import World
 from worlds.LauncherComponents import Component, SuffixIdentifier, Type, components, launch_subprocess
@@ -110,6 +110,8 @@ class NSMBDSWorld(World):
         name for name in LOCATION_TABLE if " Star Coin " in name
     )
     _boss_location_names: tuple[str, ...] = BOSS_LOCATION_NAMES
+    individual_gate_tiers: dict[str, int]
+    vanilla_gate_tiers: dict[str, int]
 
     @staticmethod
     def interpret_slot_data(slot_data: dict[str, Any]) -> dict[str, Any]:
@@ -132,6 +134,50 @@ class NSMBDSWorld(World):
                 option = getattr(self.options, name, None)
                 if option is not None:
                     setattr(self.options, name, option.from_any(value))
+
+        def gate_tiers(
+            identifiers: tuple[str, ...],
+            slot_data_key: str,
+        ) -> dict[str, int]:
+            if not slot_data:
+                tiers = list(range(1, len(identifiers) + 1))
+                self.random.shuffle(tiers)
+                return dict(zip(identifiers, tiers))
+
+            if slot_data_key not in slot_data:
+                raise ValueError(
+                    f"Incompatible NSMBDS slot data: missing required {slot_data_key}."
+                )
+            stored = slot_data[slot_data_key]
+
+            # Normal generation consumed one shuffle here. Preserve the RNG
+            # position during UT reconstruction while using the serialized
+            # mapping as the authority.
+            shuffled_tiers = list(range(1, len(identifiers) + 1))
+            self.random.shuffle(shuffled_tiers)
+            restored = {str(identifier): int(tier) for identifier, tier in stored.items()}
+            expected_identifiers = set(identifiers)
+            expected_tiers = set(range(1, len(identifiers) + 1))
+            if set(restored) != expected_identifiers or set(restored.values()) != expected_tiers:
+                raise ValueError(
+                    f"Invalid {slot_data_key} in slot data: expected every gate and tier "
+                    f"from 1 through {len(identifiers)} exactly once."
+                )
+            return restored
+
+        self.individual_gate_tiers = {}
+        self.vanilla_gate_tiers = {}
+        gate_mode = int(self.options.star_coin_gate_mode.value)
+        if gate_mode == 2:
+            self.individual_gate_tiers = gate_tiers(
+                tuple(gate.permit_item_name for gate in STAR_COIN_GATES),
+                "individual_gate_tiers",
+            )
+        elif gate_mode == 0:
+            self.vanilla_gate_tiers = gate_tiers(
+                tuple(gate.name for gate in STAR_COIN_GATES),
+                "vanilla_gate_tiers",
+            )
 
         host_settings = get_settings().nsmbds_options
         allow_unsafe_value = host_settings.allow_unsafe_nsmbds_options
@@ -602,6 +648,30 @@ class NSMBDSWorld(World):
         """Return a safe repeatable replacement for plando and item links."""
         return "Nothing"
 
+    def fill_hook(
+        self,
+        progitempool: list[Item],
+        usefulitempool: list[Item],
+        filleritempool: list[Item],
+        fill_locations: list[Location],
+    ) -> None:
+        """Place gate currency after other progression so cumulative budgets stay fillable."""
+        # Restrictive fill takes progression items from the end. Keeping this
+        # player's Star Coins at the front lets it place Passes and other route
+        # items while the complete lifetime budget is still in its assumed
+        # exploration state. Coin placements are then checked against the
+        # routes those already-placed items actually make reachable.
+        star_coins = [
+            item for item in progitempool
+            if item.player == self.player and item.name == "Star Coin"
+        ]
+        if not star_coins:
+            return
+        progitempool[:] = star_coins + [
+            item for item in progitempool
+            if item.player != self.player or item.name != "Star Coin"
+        ]
+
     def set_rules(self) -> None:
         """Apply logic rules to regions and locations."""
         set_rules(self)
@@ -625,7 +695,7 @@ class NSMBDSWorld(World):
 
     def fill_slot_data(self) -> dict[str, Any]:
         """Send options data to the client via the Connected packet."""
-        return {
+        slot_data: dict[str, Any] = {
             # Universal Tracker needs the complete option set to reconstruct
             # exactly the same regions and rules without the original YAML.
             "options": {
@@ -671,3 +741,8 @@ class NSMBDSWorld(World):
             "death_link": bool(self.options.death_link.value),
             "death_link_triggers_on_insured_death": bool(self.options.death_link_triggers_on_insured_death.value),
         }
+        if self.individual_gate_tiers:
+            slot_data["individual_gate_tiers"] = dict(self.individual_gate_tiers)
+        if self.vanilla_gate_tiers:
+            slot_data["vanilla_gate_tiers"] = dict(self.vanilla_gate_tiers)
+        return slot_data

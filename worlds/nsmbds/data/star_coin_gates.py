@@ -51,6 +51,14 @@ class StarCoinGateDefinition:
         return self.world_number - 1
 
 
+def gate_required_lifetime_coins(
+    gate: StarCoinGateDefinition,
+    tier: int,
+) -> int:
+    """Return the cumulative lifetime Star-Coin budget for a logical gate tier."""
+    return tier * gate.star_coin_cost
+
+
 def _mapping(
     world_number: int,
     target_stage_name: str,

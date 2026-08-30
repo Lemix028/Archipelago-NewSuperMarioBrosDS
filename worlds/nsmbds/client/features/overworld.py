@@ -10,19 +10,25 @@ from ...items import ITEM_TABLE, KEY_ITEM_NAMES
 from ...data.ram_addresses import (
     ADDR_AP_STAR_COIN_GATE_HOOK_MARKER,
     ADDR_AP_STAR_COIN_GATE_PERMIT_MASK,
+    ADDR_AP_STAR_COIN_GATE_TIER_MAILBOX,
     ADDR_AP_STAR_COIN_CURRENCY_MAILBOX,
     ADDR_LEVEL_DATA_BASE,
     ADDR_W8_CASTLE_APPROACH_PATH,
     ADDR_WORLD_FLAGS_BASE,
     AP_STAR_COIN_GATE_HOOK_MARKER,
     AP_STAR_COIN_GATE_PERMIT_MASK_SIZE,
+    AP_STAR_COIN_GATE_TIER_COUNT,
+    AP_STAR_COIN_GATE_TIER_HEADER_SIZE,
+    AP_STAR_COIN_GATE_TIER_MAGIC,
+    AP_STAR_COIN_GATE_TIER_MAILBOX_SIZE,
+    AP_STAR_COIN_GATE_TIER_VERSION,
     AP_STAR_COIN_CURRENCY_MAGIC,
     KEY_PATH_GATE_ADDRESSES,
     MEMORY_DOMAIN,
     W8_CASTLE_APPROACH_PATH_MASK,
     WORLD_ENABLED_VALUE,
 )
-from ...data.star_coin_gates import STAR_COIN_GATES
+from ...data.star_coin_gates import STAR_COIN_GATES, gate_required_lifetime_coins
 
 if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
@@ -46,24 +52,87 @@ class OverworldStateReconcilerMixin:
     """Derive and atomically restore every AP-owned overworld byte."""
 
     @staticmethod
-    def _star_coin_permit_masks(ctx: "BizHawkClientContext") -> bytes:
+    def _star_coin_gate_tiers(ctx: "BizHawkClientContext") -> tuple[int, ...]:
+        gate_mode = int(ctx.slot_data["star_coin_gate_mode"])
+        if len(STAR_COIN_GATES) != AP_STAR_COIN_GATE_TIER_COUNT:
+            raise ValueError(
+                "Star-Coin Gate tier mailbox size does not match the gate catalog."
+            )
+
+        if gate_mode == 0:
+            stored_tiers = ctx.slot_data["vanilla_gate_tiers"]
+            identifiers = tuple(gate.name for gate in STAR_COIN_GATES)
+            if set(stored_tiers) != set(identifiers):
+                raise ValueError(
+                    "Vanilla Star-Coin Gate tier data must identify every gate exactly once."
+                )
+            tiers = tuple(int(stored_tiers[identifier]) for identifier in identifiers)
+        elif gate_mode == 1:
+            tiers = tuple(gate.progressive_index for gate in STAR_COIN_GATES)
+        elif gate_mode == 2:
+            stored_tiers = ctx.slot_data["individual_gate_tiers"]
+            identifiers = tuple(gate.permit_item_name for gate in STAR_COIN_GATES)
+            if set(stored_tiers) != set(identifiers):
+                raise ValueError(
+                    "Individual Star-Coin Gate tier data must identify every gate exactly once."
+                )
+            tiers = tuple(int(stored_tiers[identifier]) for identifier in identifiers)
+        else:
+            raise ValueError(f"Unsupported Star Coin Gate mode: {gate_mode}")
+
+        if set(tiers) != set(range(1, AP_STAR_COIN_GATE_TIER_COUNT + 1)):
+            raise ValueError(
+                "Star-Coin Gate tier data must contain every tier from 1 through "
+                f"{AP_STAR_COIN_GATE_TIER_COUNT} exactly once."
+            )
+        return tiers
+
+    @classmethod
+    def _star_coin_gate_tier_mailbox(cls, ctx: "BizHawkClientContext") -> bytes:
+        gate_mode = int(ctx.slot_data["star_coin_gate_mode"])
+        tiers = cls._star_coin_gate_tiers(ctx)
+        header = (
+            AP_STAR_COIN_GATE_TIER_MAGIC
+            + bytes((AP_STAR_COIN_GATE_TIER_VERSION, gate_mode, 0, 0))
+        )
+        if len(header) != AP_STAR_COIN_GATE_TIER_HEADER_SIZE:
+            raise ValueError("Invalid Star-Coin Gate tier mailbox header size.")
+        mailbox = header + bytes(tiers)
+        if len(mailbox) != AP_STAR_COIN_GATE_TIER_MAILBOX_SIZE:
+            raise ValueError("Invalid Star-Coin Gate tier mailbox size.")
+        return mailbox
+
+    @classmethod
+    def _star_coin_permit_masks(cls, ctx: "BizHawkClientContext") -> bytes:
         masks = bytearray(AP_STAR_COIN_GATE_PERMIT_MASK_SIZE)
-        gate_mode = int(ctx.slot_data.get("star_coin_gate_mode", 0))
-        if gate_mode not in (1, 2):
-            for gate in STAR_COIN_GATES:
-                masks[gate.permit_byte_index] |= 1 << gate.permit_bit
+        gate_mode = int(ctx.slot_data["star_coin_gate_mode"])
+        gate_tiers = cls._star_coin_gate_tiers(ctx)
+        star_coin_id = ITEM_TABLE["Star Coin"][0]
+        lifetime_star_coins = sum(
+            item.item == star_coin_id for item in ctx.items_received
+        )
+        if gate_mode == 0:
+            for gate, tier in zip(STAR_COIN_GATES, gate_tiers):
+                if lifetime_star_coins >= gate_required_lifetime_coins(gate, tier):
+                    masks[gate.permit_byte_index] |= 1 << gate.permit_bit
         elif gate_mode == 1:
             permit_id = ITEM_TABLE["Progressive Gate Pass"][0]
             permit_count = min(
                 sum(item.item == permit_id for item in ctx.items_received),
                 len(STAR_COIN_GATES),
             )
-            for gate in STAR_COIN_GATES[:permit_count]:
-                masks[gate.permit_byte_index] |= 1 << gate.permit_bit
+            for gate, tier in zip(STAR_COIN_GATES[:permit_count], gate_tiers):
+                required_coins = gate_required_lifetime_coins(gate, tier)
+                if lifetime_star_coins >= required_coins:
+                    masks[gate.permit_byte_index] |= 1 << gate.permit_bit
         else:
             received_ids = {item.item for item in ctx.items_received}
-            for gate in STAR_COIN_GATES:
-                if ITEM_TABLE[gate.permit_item_name][0] in received_ids:
+            for gate, tier in zip(STAR_COIN_GATES, gate_tiers):
+                required_coins = gate_required_lifetime_coins(gate, tier)
+                if (
+                    ITEM_TABLE[gate.permit_item_name][0] in received_ids
+                    and lifetime_star_coins >= required_coins
+                ):
                     masks[gate.permit_byte_index] |= 1 << gate.permit_bit
         return bytes(masks)
 
@@ -110,6 +179,11 @@ class OverworldStateReconcilerMixin:
                 MEMORY_DOMAIN,
             ),
             (ADDR_AP_STAR_COIN_CURRENCY_MAILBOX, 8, MEMORY_DOMAIN),
+            (
+                ADDR_AP_STAR_COIN_GATE_TIER_MAILBOX,
+                AP_STAR_COIN_GATE_TIER_MAILBOX_SIZE,
+                MEMORY_DOMAIN,
+            ),
         ]
         current_external = await guarded_read(
             ctx.bizhawk_ctx,
@@ -122,12 +196,14 @@ class OverworldStateReconcilerMixin:
             or len(current_external[0]) != WORLD_FLAG_BYTES
             or len(current_external[1]) != AP_STAR_COIN_GATE_PERMIT_MASK_SIZE
             or len(current_external[2]) != 8
+            or len(current_external[3]) != AP_STAR_COIN_GATE_TIER_MAILBOX_SIZE
         ):
             return
 
         world_flags = current_external[0]
         current_permit_masks = current_external[1]
         current_currency_mailbox = current_external[2]
+        current_tier_mailbox = current_external[3]
         received_ids = {item.item for item in ctx.items_received}
         writes: list[tuple[int, list[int], str]] = []
         target_guards: list[tuple[int, Sequence[int], str]] = []
@@ -168,6 +244,13 @@ class OverworldStateReconcilerMixin:
                     if current is not None:
                         request_write(address, bytes([current]), bytes([target]))
 
+        tier_mailbox = self._star_coin_gate_tier_mailbox(ctx)
+        request_write(
+            ADDR_AP_STAR_COIN_GATE_TIER_MAILBOX,
+            bytes(current_tier_mailbox),
+            tier_mailbox,
+        )
+
         permit_masks = self._star_coin_permit_masks(ctx)
         request_write(
             ADDR_AP_STAR_COIN_GATE_PERMIT_MASK,
@@ -202,9 +285,9 @@ class OverworldStateReconcilerMixin:
             currency_mailbox,
         )
 
-        # Permits authorize the native purchase interaction via ARM ROM hooks.
-        # The native ROM hook checks ADDR_AP_STAR_COIN_GATE_PERMIT_MASK and displays
-        # BMG message 15 ("A Star Coin Gate Pass is required...") when missing.
+        # The native hook uses the final authorization masks to gate purchases,
+        # then selects the seed-specific requirement text from the versioned tier
+        # mailbox. The original purchase path still checks and spends five Coins.
 
         # The selected goal owns only the two approach-path bits.
         final_gate_open = self._final_castle_gate_should_open(ctx)

@@ -163,6 +163,11 @@ class FakeContext:
             "star_coin_checks": True,
             "red_coin_checks": True,
             "death_link": death_link,
+            "star_coin_gate_mode": 0,
+            "vanilla_gate_tiers": {
+                gate.name: gate.progressive_index
+                for gate in client_module.STAR_COIN_GATES
+            },
         }
         self.finished_game = False
         self.server_seed_name = "seed-a"
@@ -176,6 +181,20 @@ class FakeContext:
         self.want_slot_data = False
         self.rom_hash = "test-hash"
         self.items_received = []
+
+
+def complete_gate_tiers(identifier, leading_gates=()) -> dict[str, int]:
+    ordered_gates = tuple(leading_gates) + tuple(
+        gate for gate in client_module.STAR_COIN_GATES if gate not in leading_gates
+    )
+    return {
+        identifier(gate): tier
+        for tier, gate in enumerate(ordered_gates, start=1)
+    }
+
+
+def empty_gate_tier_mailbox() -> bytes:
+    return bytes(ram_addresses.AP_STAR_COIN_GATE_TIER_MAILBOX_SIZE)
 
 
 def check(condition: bool, message: str) -> None:
@@ -2215,7 +2234,7 @@ async def test_key_lock_enforcement() -> None:
     writes: list[tuple] = []
 
     async def fake_guarded_read(_bizhawk_ctx, _read_requests, _guards):
-        return [bytes(16), bytes(8), bytes(8)]
+        return [bytes(16), bytes(8), bytes(8), empty_gate_tier_mailbox()]
 
     async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
         writes.append((write_requests, guards))
@@ -2226,7 +2245,7 @@ async def test_key_lock_enforcement() -> None:
 
     client = client_module.NSMBDSClient()
     ctx = FakeContext()
-    ctx.slot_data = {"tower_castle_keys": True}
+    ctx.slot_data["tower_castle_keys"] = True
     ctx.items_received = []
 
     fake_level_data = bytearray(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
@@ -2280,7 +2299,7 @@ async def test_star_coin_gate_permit_sync() -> None:
     writes: list[tuple] = []
 
     async def fake_guarded_read(_bizhawk_ctx, _read_requests, _guards):
-        return [bytes(16), bytes(8), bytes(8)]
+        return [bytes(16), bytes(8), bytes(8), empty_gate_tier_mailbox()]
 
     async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
         writes.append((write_requests, guards))
@@ -2293,12 +2312,21 @@ async def test_star_coin_gate_permit_sync() -> None:
     ctx = FakeContext()
     ctx.slot_data = {"star_coin_gate_mode": 1}
     permit_id = client_module.ITEM_TABLE["Progressive Gate Pass"][0]
-    ctx.items_received = [types.SimpleNamespace(item=permit_id) for _ in range(5)]
+    star_coin_id = client_module.ITEM_TABLE["Star Coin"][0]
+    ctx.items_received = [
+        *[types.SimpleNamespace(item=permit_id) for _ in range(5)],
+        *[types.SimpleNamespace(item=star_coin_id) for _ in range(25)],
+    ]
 
     level_data = bytes(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
     await client._reconcile_overworld_state(ctx, level_data)
 
     expected_writes = [
+        (
+            ram_addresses.ADDR_AP_STAR_COIN_GATE_TIER_MAILBOX,
+            list(client._star_coin_gate_tier_mailbox(ctx)),
+            ram_addresses.MEMORY_DOMAIN,
+        ),
         (
             ram_addresses.ADDR_AP_STAR_COIN_GATE_PERMIT_MASK,
             [0x0F, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
@@ -2315,7 +2343,7 @@ async def test_vanilla_star_coin_gate_sync() -> None:
     writes: list[tuple] = []
 
     async def fake_guarded_read(_bizhawk_ctx, _read_requests, _guards):
-        return [bytes(16), bytes(8), bytes(8)]
+        return [bytes(16), bytes(8), bytes(8), empty_gate_tier_mailbox()]
 
     async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
         writes.append((write_requests, guards))
@@ -2326,22 +2354,34 @@ async def test_vanilla_star_coin_gate_sync() -> None:
 
     client = client_module.NSMBDSClient()
     ctx = FakeContext()
-    ctx.slot_data = {"star_coin_gate_mode": 0}
-    ctx.items_received = []
+    ctx.slot_data = {
+        "star_coin_gate_mode": 0,
+        "vanilla_gate_tiers": {
+            gate.name: len(client_module.STAR_COIN_GATES) - index
+            for index, gate in enumerate(client_module.STAR_COIN_GATES)
+        },
+    }
+    star_coin_id = client_module.ITEM_TABLE["Star Coin"][0]
+    ctx.items_received = [types.SimpleNamespace(item=star_coin_id) for _ in range(5)]
 
     level_data = bytes(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
     await client._reconcile_overworld_state(ctx, level_data)
 
     expected_writes = [
         (
+            ram_addresses.ADDR_AP_STAR_COIN_GATE_TIER_MAILBOX,
+            list(client._star_coin_gate_tier_mailbox(ctx)),
+            ram_addresses.MEMORY_DOMAIN,
+        ),
+        (
             ram_addresses.ADDR_AP_STAR_COIN_GATE_PERMIT_MASK,
-            [0x0F, 0x0F, 0x07, 0x1F, 0x1F, 0x1F, 0x07, 0x07],
+            [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04],
             ram_addresses.MEMORY_DOMAIN,
         ),
     ]
     check(
         len(writes) == 1 and writes[0][0] == expected_writes,
-        "Vanilla Gate mode authorizes every mapped sign without changing paths",
+        "Vanilla Gate mode authorizes only the sign whose assigned lifetime tier is met",
     )
 
 
@@ -2349,7 +2389,7 @@ async def test_individual_star_coin_gate_permit_sync() -> None:
     writes: list[tuple] = []
 
     async def fake_guarded_read(_bizhawk_ctx, _read_requests, _guards):
-        return [bytes(16), bytes(8), bytes(8)]
+        return [bytes(16), bytes(8), bytes(8), empty_gate_tier_mailbox()]
 
     async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
         writes.append((write_requests, guards))
@@ -2360,17 +2400,31 @@ async def test_individual_star_coin_gate_permit_sync() -> None:
 
     client = client_module.NSMBDSClient()
     ctx = FakeContext()
-    ctx.slot_data = {"star_coin_gate_mode": 2}
     selected_gates = (client_module.STAR_COIN_GATES[1], client_module.STAR_COIN_GATES[4])
+    ctx.slot_data = {
+        "star_coin_gate_mode": 2,
+        "individual_gate_tiers": complete_gate_tiers(
+            lambda gate: gate.permit_item_name, selected_gates
+        ),
+    }
+    star_coin_id = client_module.ITEM_TABLE["Star Coin"][0]
     ctx.items_received = [
-        types.SimpleNamespace(item=client_module.ITEM_TABLE[gate.permit_item_name][0])
-        for gate in selected_gates
+        *[
+            types.SimpleNamespace(item=client_module.ITEM_TABLE[gate.permit_item_name][0])
+            for gate in selected_gates
+        ],
+        *[types.SimpleNamespace(item=star_coin_id) for _ in range(10)],
     ]
 
     level_data = bytes(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
     await client._reconcile_overworld_state(ctx, level_data)
 
     expected_writes = [
+        (
+            ram_addresses.ADDR_AP_STAR_COIN_GATE_TIER_MAILBOX,
+            list(client._star_coin_gate_tier_mailbox(ctx)),
+            ram_addresses.MEMORY_DOMAIN,
+        ),
         (
             ram_addresses.ADDR_AP_STAR_COIN_GATE_PERMIT_MASK,
             [0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
@@ -2383,11 +2437,128 @@ async def test_individual_star_coin_gate_permit_sync() -> None:
     )
 
 
+def test_star_coin_gate_client_budget_authorization() -> None:
+    def is_authorized(masks: bytes, gate) -> bool:
+        return bool(masks[gate.permit_byte_index] & (1 << gate.permit_bit))
+
+    gates = client_module.STAR_COIN_GATES[:3]
+    progressive_ctx = FakeContext()
+    progressive_ctx.slot_data = {"star_coin_gate_mode": 1}
+    progressive_id = client_module.ITEM_TABLE["Progressive Gate Pass"][0]
+    star_coin_id = client_module.ITEM_TABLE["Star Coin"][0]
+    passes = [types.SimpleNamespace(item=progressive_id) for _ in range(3)]
+    for coin_count, expected in (
+        (5, (True, False, False)),
+        (10, (True, True, False)),
+        (15, (True, True, True)),
+    ):
+        progressive_ctx.items_received = [
+            *passes,
+            *[types.SimpleNamespace(item=star_coin_id) for _ in range(coin_count)],
+        ]
+        masks = client_module.NSMBDSClient._star_coin_permit_masks(progressive_ctx)
+        check(
+            tuple(is_authorized(masks, gate) for gate in gates) == expected,
+            f"Progressive client authorization respects the {coin_count}-Coin lifetime budget",
+        )
+
+    individual_ctx = FakeContext()
+    individual_ctx.slot_data = {
+        "star_coin_gate_mode": 2,
+        "individual_gate_tiers": complete_gate_tiers(
+            lambda gate: gate.permit_item_name, gates
+        ),
+    }
+    individual_permits = [
+        types.SimpleNamespace(item=client_module.ITEM_TABLE[gate.permit_item_name][0])
+        for gate in gates
+    ]
+    for coin_count, expected in (
+        (5, (True, False, False)),
+        (10, (True, True, False)),
+        (15, (True, True, True)),
+    ):
+        individual_ctx.items_received = [
+            *individual_permits,
+            *[types.SimpleNamespace(item=star_coin_id) for _ in range(coin_count)],
+        ]
+        masks = client_module.NSMBDSClient._star_coin_permit_masks(individual_ctx)
+        check(
+            tuple(is_authorized(masks, gate) for gate in gates) == expected,
+            f"Individual client authorization respects the {coin_count}-Coin lifetime budget",
+        )
+
+    vanilla_ctx = FakeContext()
+    vanilla_ctx.slot_data = {
+        "star_coin_gate_mode": 0,
+        "vanilla_gate_tiers": complete_gate_tiers(lambda gate: gate.name, gates),
+    }
+    for coin_count, expected in (
+        (5, (True, False, False)),
+        (10, (True, True, False)),
+        (15, (True, True, True)),
+    ):
+        vanilla_ctx.items_received = [
+            types.SimpleNamespace(item=star_coin_id) for _ in range(coin_count)
+        ]
+        masks = client_module.NSMBDSClient._star_coin_permit_masks(vanilla_ctx)
+        check(
+            tuple(is_authorized(masks, gate) for gate in gates) == expected,
+            f"Vanilla client authorization enforces the {coin_count}-Coin lifetime budget",
+        )
+
+
+def test_star_coin_gate_tier_mailbox_rejects_old_slot_data() -> None:
+    progressive_ctx = FakeContext()
+    progressive_ctx.slot_data = {"star_coin_gate_mode": 1}
+    progressive_mailbox = client_module.NSMBDSClient._star_coin_gate_tier_mailbox(
+        progressive_ctx
+    )
+    check(
+        progressive_mailbox[:8]
+        == ram_addresses.AP_STAR_COIN_GATE_TIER_MAGIC
+        + bytes((ram_addresses.AP_STAR_COIN_GATE_TIER_VERSION, 1, 0, 0))
+        and progressive_mailbox[8:] == bytes(range(1, 33)),
+        "Progressive mode publishes a versioned 1-through-32 gate tier mailbox",
+    )
+
+    missing_mapping_ctx = FakeContext()
+    missing_mapping_ctx.slot_data = {"star_coin_gate_mode": 0}
+    missing_rejected = False
+    try:
+        client_module.NSMBDSClient._star_coin_gate_tier_mailbox(missing_mapping_ctx)
+    except KeyError:
+        missing_rejected = True
+    check(
+        missing_rejected,
+        "The new client rejects old Vanilla slot data without a tier mapping",
+    )
+
+    incomplete_mapping_ctx = FakeContext()
+    incomplete_mapping_ctx.slot_data = {
+        "star_coin_gate_mode": 2,
+        "individual_gate_tiers": {
+            client_module.STAR_COIN_GATES[0].permit_item_name: 1,
+        },
+    }
+    incomplete_rejected = False
+    try:
+        client_module.NSMBDSClient._star_coin_gate_tier_mailbox(
+            incomplete_mapping_ctx
+        )
+    except ValueError:
+        incomplete_rejected = True
+    check(
+        incomplete_rejected,
+        "The new client rejects incomplete Individual tier mappings instead of using Tier 1",
+    )
+
+
 async def test_world_two_gate_purchase_is_not_relocked() -> None:
     writes: list[tuple] = []
 
     async def fake_guarded_read(_bizhawk_ctx, _read_requests, _guards):
-        return [bytes(16), bytes(8), bytes(8)]
+        return [bytes(16), bytes(8), bytes(8), empty_gate_tier_mailbox()]
 
     async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
         writes.append((write_requests, guards))
@@ -2398,7 +2569,12 @@ async def test_world_two_gate_purchase_is_not_relocked() -> None:
 
     client = client_module.NSMBDSClient()
     ctx = FakeContext()
-    ctx.slot_data = {"star_coin_gate_mode": 2}
+    ctx.slot_data = {
+        "star_coin_gate_mode": 2,
+        "individual_gate_tiers": complete_gate_tiers(
+            lambda gate: gate.permit_item_name
+        ),
+    }
     ctx.items_received = []
     world_two_gate = next(
         gate for gate in client_module.STAR_COIN_GATES if gate.world_number == 2
@@ -2409,7 +2585,11 @@ async def test_world_two_gate_purchase_is_not_relocked() -> None:
     await client._reconcile_overworld_state(ctx, bytes(level_data))
 
     check(
-        writes == [],
+        all(
+            write[0] != world_two_gate.path_address
+            for batch in writes
+            for write in batch[0]
+        ),
         "Purchased World-2 paths remain open while missing Permits only block new purchases",
     )
 
@@ -2419,7 +2599,7 @@ async def test_overworld_reconciler_restores_savestate_rollback() -> None:
 
     async def fake_guarded_read(_bizhawk_ctx, _read_requests, _guards):
         # Simulate the same old RAM state after loading a savestate twice.
-        return [bytes(16), bytes(8), bytes(8)]
+        return [bytes(16), bytes(8), bytes(8), empty_gate_tier_mailbox()]
 
     async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
         writes.append((write_requests, guards))
@@ -2433,6 +2613,9 @@ async def test_overworld_reconciler_restores_savestate_rollback() -> None:
     ctx.slot_data.update({
         "tower_castle_keys": True,
         "star_coin_gate_mode": 2,
+        "individual_gate_tiers": complete_gate_tiers(
+            lambda gate: gate.permit_item_name
+        ),
     })
     ctx.items_received = [
         types.SimpleNamespace(item=client_module.ITEM_TABLE["Desert Pass"][0]),
@@ -2466,7 +2649,20 @@ async def test_overworld_reconciler_skips_matching_state() -> None:
     world_flags[2:4] = struct.pack("<H", ram_addresses.WORLD_ENABLED_VALUE)
 
     async def fake_guarded_read(_bizhawk_ctx, _read_requests, _guards):
-        return [bytes(world_flags), bytes(8), bytes(8)]
+        ctx = FakeContext()
+        ctx.slot_data.update({
+            "tower_castle_keys": True,
+            "star_coin_gate_mode": 2,
+            "individual_gate_tiers": complete_gate_tiers(
+                lambda gate: gate.permit_item_name
+            ),
+        })
+        return [
+            bytes(world_flags),
+            bytes(8),
+            bytes(8),
+            client_module.NSMBDSClient._star_coin_gate_tier_mailbox(ctx),
+        ]
 
     async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
         writes.append((write_requests, guards))
@@ -2480,6 +2676,9 @@ async def test_overworld_reconciler_skips_matching_state() -> None:
     ctx.slot_data.update({
         "tower_castle_keys": True,
         "star_coin_gate_mode": 2,
+        "individual_gate_tiers": complete_gate_tiers(
+            lambda gate: gate.permit_item_name
+        ),
     })
     ctx.items_received = [
         types.SimpleNamespace(item=client_module.ITEM_TABLE["Desert Pass"][0]),
@@ -2498,17 +2697,18 @@ async def test_star_coin_item_currency_reconciliation() -> None:
 
     async def fake_guarded_read(_bizhawk_ctx, read_requests, _guards):
         check(
-            read_requests[-1] == (
+            (
                 ram_addresses.ADDR_AP_STAR_COIN_CURRENCY_MAILBOX,
                 8,
                 ram_addresses.MEMORY_DOMAIN,
-            ),
+            ) in read_requests,
             "Star Coin item mode reads the native hook currency mailbox",
         )
         return [
             bytes(16),
             bytes([0xFF] * 8),
             bytes(8),
+            empty_gate_tier_mailbox(),
         ]
 
     async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
@@ -2526,7 +2726,7 @@ async def test_star_coin_item_currency_reconciliation() -> None:
         "star_coin_items": True,
     })
     star_coin_id = client_module.ITEM_TABLE["Star Coin"][0]
-    ctx.items_received = [types.SimpleNamespace(item=star_coin_id) for _ in range(12)]
+    ctx.items_received = [types.SimpleNamespace(item=star_coin_id) for _ in range(15)]
     first_gate = client_module.STAR_COIN_GATES[0]
     client._gate_purchase_mask = 0b11
     level_data = bytearray(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
@@ -2537,13 +2737,13 @@ async def test_star_coin_item_currency_reconciliation() -> None:
 
     expected_currency_write = (
         ram_addresses.ADDR_AP_STAR_COIN_CURRENCY_MAILBOX,
-        list(ram_addresses.AP_STAR_COIN_CURRENCY_MAGIC) + [2, 0, 0, 0],
+        list(ram_addresses.AP_STAR_COIN_CURRENCY_MAGIC) + [5, 0, 0, 0],
         ram_addresses.MEMORY_DOMAIN,
     )
     check(
-        client._star_coin_lifetime == 12
+        client._star_coin_lifetime == 15
         and client._star_coin_spent == 10
-        and client._star_coin_available == 2
+        and client._star_coin_available == 5
         and expected_currency_write in writes[-1][0],
         "The native hook receives AP Star Coins minus confirmed purchases",
     )
@@ -2575,7 +2775,12 @@ async def test_star_coin_currency_ignores_dynamic_map_heap() -> None:
     writes: list[list[tuple[int, list[int], str]]] = []
 
     async def fake_guarded_read(_bizhawk_ctx, _read_requests, _guards):
-        return [bytes(16), bytes([0xFF] * 8), bytes(8)]
+        return [
+            bytes(16),
+            bytes([0xFF] * 8),
+            bytes(8),
+            empty_gate_tier_mailbox(),
+        ]
 
     async def fake_guarded_write(_bizhawk_ctx, write_requests, _guards):
         writes.append(write_requests)

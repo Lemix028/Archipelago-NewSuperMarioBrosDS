@@ -1,5 +1,6 @@
 """Unit tests for NSMBDS item access rules and logic dependencies."""
 
+from ..data.star_coin_gates import STAR_COIN_GATES
 from .bases import NSMBDSTestBase
 
 
@@ -282,21 +283,35 @@ class TestProgressiveStarCoinGateAccess(NSMBDSTestBase):
         "tower_castle_keys": False,
     }
 
-    def test_first_gate_requires_one_permit(self) -> None:
-        self.assertFalse(self.can_reach_location("World 1 Green Toad House 1 Goal"))
+    def test_passes_and_cumulative_coin_budget_limit_progression(self) -> None:
+        gates = STAR_COIN_GATES[:3]
+        entrances = [
+            f"{gate.source_region} -> {gate.region_name}" for gate in gates
+        ]
+
         self.collect_n_by_name("Progressive Gate Pass", 1)
         self.collect_n_by_name("Star Coin", 5)
-        self.assertTrue(self.can_reach_location("World 1 Green Toad House 1 Goal"))
-        self.assertFalse(self.can_reach_location("World 1 Orange Toad House Goal"))
+        self.assertTrue(self.can_reach_entrance(entrances[0]))
+        self.assertFalse(self.can_reach_entrance(entrances[1]))
 
-    def test_third_gate_requires_three_permits(self) -> None:
         self.collect_n_by_name("Progressive Gate Pass", 3)
-        self.collect_n_by_name("Star Coin", 5)
-        self.assertTrue(self.can_reach_location("World 1-A Goal"))
+        self.assertTrue(self.can_reach_entrance(entrances[0]))
+        self.assertFalse(self.can_reach_entrance(entrances[1]))
+        self.assertFalse(self.can_reach_entrance(entrances[2]))
+
+        self.collect_n_by_name("Star Coin", 10)
+        self.assertTrue(self.can_reach_entrance(entrances[0]))
+        self.assertTrue(self.can_reach_entrance(entrances[1]))
+        self.assertFalse(self.can_reach_entrance(entrances[2]))
+
+        self.collect_n_by_name("Star Coin", 15)
+        self.assertTrue(self.can_reach_entrance(entrances[0]))
+        self.assertTrue(self.can_reach_entrance(entrances[1]))
+        self.assertTrue(self.can_reach_entrance(entrances[2]))
 
     def test_fifth_gate_enters_world_two_mask(self) -> None:
         self.collect_by_name("Desert Pass")
-        self.collect_n_by_name("Star Coin", 5)
+        self.collect_n_by_name("Star Coin", 25)
         self.collect_n_by_name("Progressive Gate Pass", 4)
         self.assertFalse(self.can_reach_location("World 2 Red Toad House 1 Goal"))
         self.collect_n_by_name("Progressive Gate Pass", 5)
@@ -311,23 +326,139 @@ class TestIndividualStarCoinGateAccess(NSMBDSTestBase):
         "tower_castle_keys": False,
     }
 
-    def test_green_house_one_permit_does_not_open_orange_house(self) -> None:
-        self.collect_by_name(["World 1 Green Toad House 1 Gate Pass"] + ["Star Coin"] * 5)
-        self.assertTrue(self.can_reach_location("World 1 Green Toad House 1 Goal"))
-        self.assertFalse(self.can_reach_location("World 1 Orange Toad House Goal"))
+    def test_randomized_tiers_are_a_complete_non_catalog_permutation(self) -> None:
+        tiers = self.world.individual_gate_tiers
+        self.assertEqual(
+            set(tiers),
+            {gate.permit_item_name for gate in STAR_COIN_GATES},
+        )
+        self.assertEqual(set(tiers.values()), set(range(1, 33)))
+        self.assertTrue(any(
+            tiers[gate.permit_item_name] != gate.progressive_index
+            for gate in STAR_COIN_GATES
+        ))
 
-    def test_world_one_a_requires_its_named_permit(self) -> None:
-        self.collect_by_name(["World 1-A Gate Pass"] + ["Star Coin"] * 5)
-        self.assertTrue(self.can_reach_location("World 1-A Goal"))
+    def test_named_permits_respect_their_cumulative_tiers(self) -> None:
+        gates_by_tier = {
+            tier: next(
+                gate for gate in STAR_COIN_GATES
+                if self.world.individual_gate_tiers[gate.permit_item_name] == tier
+            )
+            for tier in (1, 2, 3)
+        }
+        self.collect_by_name([
+            "Desert Pass", "Isle Pass", "Jungle Pass", "Glacier Pass",
+            "Mountain Pass", "Cloud Pass", "Volcano Pass",
+            *(gate.permit_item_name for gate in gates_by_tier.values()),
+        ])
 
-    def test_world_two_red_one_requires_its_named_permit(self) -> None:
-        self.collect_by_name(["Desert Pass"] + ["Star Coin"] * 5)
-        self.assertFalse(self.can_reach_location("World 2 Red Toad House 1 Goal"))
-        self.collect_by_name("World 2 Red Toad House 1 Gate Pass")
-        self.assertTrue(self.can_reach_location("World 2 Red Toad House 1 Goal"))
+        entrances = {
+            tier: f"{gate.source_region} -> {gate.region_name}"
+            for tier, gate in gates_by_tier.items()
+        }
+        self.collect_n_by_name("Star Coin", 5)
+        self.assertTrue(self.can_reach_entrance(entrances[1]))
+        self.assertFalse(self.can_reach_entrance(entrances[2]))
+        self.assertFalse(self.can_reach_entrance(entrances[3]))
 
-    def test_world_three_red_toad_house_requires_world_three_a_gate(self) -> None:
-        self.collect_by_name(["Desert Pass", "Isle Pass"] + ["Star Coin"] * 5)
-        self.assertFalse(self.can_reach_location("World 3 Red Toad House Goal"))
-        self.collect_by_name("World 3-A Gate Pass")
-        self.assertTrue(self.can_reach_location("World 3 Red Toad House Goal"))
+        self.collect_n_by_name("Star Coin", 10)
+        self.assertTrue(self.can_reach_entrance(entrances[1]))
+        self.assertTrue(self.can_reach_entrance(entrances[2]))
+        self.assertFalse(self.can_reach_entrance(entrances[3]))
+
+        self.collect_n_by_name("Star Coin", 15)
+        self.assertTrue(self.can_reach_entrance(entrances[1]))
+        self.assertTrue(self.can_reach_entrance(entrances[2]))
+        self.assertTrue(self.can_reach_entrance(entrances[3]))
+
+    def test_slot_data_restores_the_exact_tier_mapping(self) -> None:
+        original = dict(self.world.individual_gate_tiers)
+        slot_data = self.world.fill_slot_data()
+        self.multiworld.re_gen_passthrough = {self.world.game: slot_data}
+        self.world.individual_gate_tiers = {}
+
+        self.world.generate_early()
+
+        self.assertEqual(self.world.individual_gate_tiers, original)
+
+    def test_old_slot_data_without_individual_tiers_is_rejected(self) -> None:
+        slot_data = self.world.fill_slot_data()
+        del slot_data["individual_gate_tiers"]
+        self.multiworld.re_gen_passthrough = {self.world.game: slot_data}
+
+        with self.assertRaisesRegex(ValueError, "missing required individual_gate_tiers"):
+            self.world.generate_early()
+
+
+class TestVanillaStarCoinGateAccess(NSMBDSTestBase):
+    """Vanilla gates use randomized logical budgets without permit items."""
+
+    options = {
+        "star_coin_gate_mode": "vanilla",
+        "tower_castle_keys": False,
+    }
+
+    def test_randomized_tiers_are_complete_and_require_no_gate_passes(self) -> None:
+        self.assertEqual(
+            set(self.world.vanilla_gate_tiers),
+            {gate.name for gate in STAR_COIN_GATES},
+        )
+        self.assertEqual(
+            set(self.world.vanilla_gate_tiers.values()),
+            set(range(1, 33)),
+        )
+        item_names = {item.name for item in self.multiworld.get_items()}
+        self.assertNotIn("Progressive Gate Pass", item_names)
+        self.assertFalse(any(
+            gate.permit_item_name in item_names for gate in STAR_COIN_GATES
+        ))
+
+    def test_vanilla_gate_logic_respects_cumulative_tiers(self) -> None:
+        gates_by_tier = {
+            tier: next(
+                gate for gate in STAR_COIN_GATES
+                if self.world.vanilla_gate_tiers[gate.name] == tier
+            )
+            for tier in (1, 2, 3)
+        }
+        self.collect_by_name([
+            "Desert Pass", "Isle Pass", "Jungle Pass", "Glacier Pass",
+            "Mountain Pass", "Cloud Pass", "Volcano Pass",
+        ])
+        entrances = {
+            tier: f"{gate.source_region} -> {gate.region_name}"
+            for tier, gate in gates_by_tier.items()
+        }
+
+        self.collect_n_by_name("Star Coin", 5)
+        self.assertTrue(self.can_reach_entrance(entrances[1]))
+        self.assertFalse(self.can_reach_entrance(entrances[2]))
+        self.assertFalse(self.can_reach_entrance(entrances[3]))
+
+        self.collect_n_by_name("Star Coin", 10)
+        self.assertTrue(self.can_reach_entrance(entrances[1]))
+        self.assertTrue(self.can_reach_entrance(entrances[2]))
+        self.assertFalse(self.can_reach_entrance(entrances[3]))
+
+        self.collect_n_by_name("Star Coin", 15)
+        self.assertTrue(self.can_reach_entrance(entrances[1]))
+        self.assertTrue(self.can_reach_entrance(entrances[2]))
+        self.assertTrue(self.can_reach_entrance(entrances[3]))
+
+    def test_slot_data_restores_the_exact_tier_mapping(self) -> None:
+        original = dict(self.world.vanilla_gate_tiers)
+        slot_data = self.world.fill_slot_data()
+        self.multiworld.re_gen_passthrough = {self.world.game: slot_data}
+        self.world.vanilla_gate_tiers = {}
+
+        self.world.generate_early()
+
+        self.assertEqual(self.world.vanilla_gate_tiers, original)
+
+    def test_old_slot_data_without_vanilla_tiers_is_rejected(self) -> None:
+        slot_data = self.world.fill_slot_data()
+        del slot_data["vanilla_gate_tiers"]
+        self.multiworld.re_gen_passthrough = {self.world.game: slot_data}
+
+        with self.assertRaisesRegex(ValueError, "missing required vanilla_gate_tiers"):
+            self.world.generate_early()

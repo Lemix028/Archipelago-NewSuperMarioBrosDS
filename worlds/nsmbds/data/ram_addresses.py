@@ -140,13 +140,28 @@ AP_MINI_CASTLE_W5_BIT = 0x02
 # This mailbox lives inside Overlay 8 (system 0x020CC2E0..0x020EFFFF).
 # Only write it when Overlay 8 is confirmed loaded in RAM (i.e. when the
 # HOOK_CAVE first word matches the patched STAR_COIN_GATE_HOOK_BYTES[0:4]).
-ADDR_AP_STAR_COIN_GATE_PERMIT_MASK = 0x000EE100  # system 0x020EE100
+ADDR_AP_STAR_COIN_GATE_PERMIT_MASK = 0x000EDC10  # system 0x020EDC10
 AP_STAR_COIN_GATE_PERMIT_MASK_SIZE = 8
 
 # AP Star-Coin currency mailbox consumed by the native ROM hook. The four-byte
 # magic is present only in Star-Coin-item seeds; the uint32 value is available.
-ADDR_AP_STAR_COIN_CURRENCY_MAILBOX = 0x000EE108  # system 0x020EE108, 8 bytes
+ADDR_AP_STAR_COIN_CURRENCY_MAILBOX = 0x000EDC18  # system 0x020EDC18, 8 bytes
 AP_STAR_COIN_CURRENCY_MAGIC = b"APSC"
+
+# Seed-specific Star-Coin Gate presentation data consumed by the native gate
+# hook. The mailbox is intentionally versioned and has no legacy layout:
+# magic[4], version, gate mode, reserved[2], then one tier byte for each gate in
+# deterministic STAR_COIN_GATES order. All Star-Coin mailboxes occupy the
+# aligned part of the separately verified zero-filled Overlay 8 data cave at
+# system 0x020EDC0D..0x020EDE12, away from the native hook code cave.
+ADDR_AP_STAR_COIN_GATE_TIER_MAILBOX = 0x000EDC28  # system 0x020EDC28
+AP_STAR_COIN_GATE_TIER_MAGIC = b"APGT"
+AP_STAR_COIN_GATE_TIER_VERSION = 1
+AP_STAR_COIN_GATE_TIER_HEADER_SIZE = 8
+AP_STAR_COIN_GATE_TIER_COUNT = 32
+AP_STAR_COIN_GATE_TIER_MAILBOX_SIZE = (
+    AP_STAR_COIN_GATE_TIER_HEADER_SIZE + AP_STAR_COIN_GATE_TIER_COUNT
+)
 
 # Do not write system address 0x02088BDC directly. It is the base of the
 # vanilla Star-Coin state structure; the getter reads fields at +0x18/+0x1C.
