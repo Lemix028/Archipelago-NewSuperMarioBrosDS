@@ -29,29 +29,65 @@ PATCH_MARKER_ROM_OFFSET = 0x013A57A8
 PATCH_MARKER = bytes.fromhex("1E FF 2F E1 41 50 4E 53 01 00 00 00 00 00 00 00 00 00 00 00")
 
 
-def _select_base_rom_path() -> Path:
-    """Always ask for the clean source ROM used by this patch operation."""
+def _settings():
+    from settings import get_settings
+
+    return get_settings()
+
+
+def _base_rom_setting_path() -> Path | None:
+    """Resolve the optional saved base-ROM path without requiring it to exist."""
+    try:
+        value = _settings().nsmbds_options.base_rom
+    except (AttributeError, OSError):
+        return None
+    if value is None or str(value) in {"", "None"}:
+        return None
+    resolved = value.resolve() if hasattr(value, "resolve") else str(value)
+    return Path(resolved).expanduser().resolve()
+
+
+def _remember_base_rom_path(path: Path) -> None:
+    settings = _settings()
+    options = settings.nsmbds_options
+    current = getattr(options, "base_rom", None)
+    if current is not None and str(current) not in {"", "None"}:
+        resolved = current.resolve() if hasattr(current, "resolve") else str(current)
+        if Path(resolved).expanduser().resolve() == path.resolve():
+            return
+    value_type = type(current) if current is not None else getattr(type(options), "BaseRom", str)
+    options.base_rom = value_type(str(path))
+    settings.save()
+
+
+def _select_base_rom_path(*, force_browse: bool = False) -> Path:
+    """Use the saved clean ROM when present, otherwise ask the user to select it."""
     from Utils import open_filename
+
+    saved_path = _base_rom_setting_path()
+    if not force_browse and saved_path and saved_path.is_file():
+        return saved_path
 
     chosen = open_filename(
         "Select New Super Mario Bros. DS (USA) Base ROM",
         [("Nintendo DS ROM", ["*.nds"]), ("All Files", ["*.*"])],
+        str(saved_path or ""),
     )
     if not chosen:
         raise FileNotFoundError(
             "No NSMBDS ROM file was selected. Please select a clean USA copy of New Super Mario Bros. DS."
         )
-    rom_path = Path(chosen)
+    rom_path = Path(chosen).expanduser().resolve()
     if not rom_path.is_file():
         raise FileNotFoundError(f"The selected NSMBDS ROM is not a file: {rom_path}")
     return rom_path
 
 
-def _read_validated_base_rom() -> bytes:
-    """Prompt for and load only the ROM revision supported by this patch format."""
-    rom_path = _select_base_rom_path()
-
-    rom_data = rom_path.read_bytes()
+def _validate_base_rom(path: Path) -> bytes:
+    """Load and validate the exact clean ROM revision supported by this patch format."""
+    if not path.is_file():
+        raise FileNotFoundError(f"The selected NSMBDS ROM is not a file: {path}")
+    rom_data = path.read_bytes()
     if len(rom_data) != BASE_ROM_SIZE:
         raise ValueError(
             f"Unsupported NSMBDS ROM size {len(rom_data)}; expected {BASE_ROM_SIZE}."
@@ -70,6 +106,26 @@ def _read_validated_base_rom() -> bytes:
     if marker_region != b"\xFF" * len(PATCH_MARKER):
         raise ValueError("The validated ROM does not have the expected padding reserved for the patch marker.")
     return rom_data
+
+
+def _read_validated_base_rom() -> bytes:
+    """Load a saved clean ROM or keep prompting until a newly selected ROM validates."""
+    from Utils import messagebox
+
+    rom_path = _select_base_rom_path()
+    while True:
+        try:
+            rom_data = _validate_base_rom(rom_path)
+        except (OSError, ValueError) as exc:
+            messagebox(
+                "Invalid NSMBDS Base ROM",
+                f"{exc}\n\nPlease select a clean New Super Mario Bros. DS USA ROM.",
+                error=True,
+            )
+            rom_path = _select_base_rom_path(force_browse=True)
+            continue
+        _remember_base_rom_path(rom_path)
+        return rom_data
 
 
 class NSMBDSPatchExtension(APPatchExtension):

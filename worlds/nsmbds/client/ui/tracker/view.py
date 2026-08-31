@@ -29,8 +29,10 @@ from ...launcher import (
     browse_for_emuhawk,
     browse_for_rom,
     configured_rom_path,
+    emuhawk_launcher_error,
     emulator_feed_config,
     find_emuhawk,
+    is_valid_emuhawk_launcher,
     launch_game,
     launch_state,
     materialize_lua_runtime,
@@ -540,11 +542,7 @@ class NSMBDSLaunchPanel(MDScrollView):
         emuhawk = find_emuhawk()
         rom = configured_rom_path()
 
-        emuhawk_ready = bool(
-            emuhawk
-            and emuhawk.is_file()
-            and emuhawk.name.lower() == "emuhawk.exe"
-        )
+        emuhawk_ready = is_valid_emuhawk_launcher(emuhawk)
 
         rom_ready = bool(
             rom
@@ -557,7 +555,8 @@ class NSMBDSLaunchPanel(MDScrollView):
 
         elif not emuhawk_ready:
             self._set_message(
-                "Automatic launch is waiting for a valid EmuHawk.exe.",
+                "Automatic launch is waiting for a valid BizHawk launcher. "
+                f"{emuhawk_launcher_error(emuhawk)}",
                 error=True,
             )
 
@@ -578,11 +577,7 @@ class NSMBDSLaunchPanel(MDScrollView):
 
         emuhawk = find_emuhawk()
 
-        emuhawk_ready = bool(
-            emuhawk
-            and emuhawk.is_file()
-            and emuhawk.name.lower() == "emuhawk.exe"
-        )
+        emuhawk_ready = is_valid_emuhawk_launcher(emuhawk)
 
         if emuhawk_ready:
             self.bizhawk_status.text = self._status_label(
@@ -595,7 +590,7 @@ class NSMBDSLaunchPanel(MDScrollView):
             self.bizhawk_status.text = self._status_label(
                 "BizHawk",
                 False,
-                f"Invalid path: {emuhawk}",
+                emuhawk_launcher_error(emuhawk) or f"Invalid path: {emuhawk}",
                 error=True,
             )
 
@@ -603,7 +598,7 @@ class NSMBDSLaunchPanel(MDScrollView):
             self.bizhawk_status.text = self._status_label(
                 "BizHawk",
                 False,
-                "Select EmuHawk.exe",
+                "Select BizHawk Launcher",
             )
 
         # ------------------------------------------------------------------

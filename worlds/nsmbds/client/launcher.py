@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.resources
 import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -99,10 +100,31 @@ def _resolved_setting_path(value: object) -> Path | None:
 
 
 def configured_emuhawk_path() -> Path | None:
-    """Return Archipelago's shared EmuHawk setting when it is usable."""
+    """Return Archipelago's shared EmuHawk setting, including an invalid path."""
     value = _settings().bizhawkclient_options.emuhawk_path
-    path = _resolved_setting_path(value)
-    return path if path and path.is_file() else None
+    return _resolved_setting_path(value)
+
+
+def emuhawk_launcher_error(path: Path | None) -> str | None:
+    """Explain why a path cannot be used as the BizHawk launcher."""
+    if path is None:
+        return "BizHawk is not configured. Select a BizHawk launcher first."
+    if not path.is_file():
+        return f"BizHawk launcher was not found: {path}"
+    if sys.platform == "win32":
+        if path.name.lower() != "emuhawk.exe":
+            return f"Selected file is not a valid BizHawk launcher: {path}"
+    elif not os.access(path, os.X_OK):
+        return (
+            f"BizHawk launcher is not executable: {path}. "
+            f'Grant execute permission with chmod +x "{path}".'
+        )
+    return None
+
+
+def is_valid_emuhawk_launcher(path: Path | None) -> bool:
+    """Return whether *path* is a launchable BizHawk entry point on this platform."""
+    return emuhawk_launcher_error(path) is None
 
 
 def _candidate_emuhawk_paths() -> Iterable[Path]:
@@ -113,7 +135,8 @@ def _candidate_emuhawk_paths() -> Iterable[Path]:
     local_app_data = os.environ.get("LOCALAPPDATA")
     program_files = os.environ.get("ProgramFiles")
     user_profile = os.environ.get("USERPROFILE")
-    roots = [Path.cwd()]
+    home = Path.home()
+    roots = [Path.cwd(), home, home / "Downloads", home / "Desktop"]
     if local_app_data:
         roots.append(Path(local_app_data))
     if program_files:
@@ -121,38 +144,54 @@ def _candidate_emuhawk_paths() -> Iterable[Path]:
     if user_profile:
         roots.extend((Path(user_profile) / "Desktop", Path(user_profile) / "Downloads"))
 
+    launcher_name = "EmuHawk.exe" if sys.platform == "win32" else "EmuHawkMono.sh"
     for root in roots:
-        yield root / "BizHawk" / "EmuHawk.exe"
-        yield root / "BizHawk-win-x64" / "EmuHawk.exe"
+        yield root / launcher_name
+        yield root / "BizHawk" / launcher_name
+        if sys.platform == "win32":
+            yield root / "BizHawk-win-x64" / launcher_name
         if root.is_dir():
             for directory in root.glob("BizHawk*"):
                 if directory.is_dir():
-                    yield directory / "EmuHawk.exe"
+                    yield directory / launcher_name
 
 
 def find_emuhawk() -> Path | None:
     """Find a configured or conventionally installed BizHawk executable."""
+    configured = configured_emuhawk_path()
+    invalid_candidate = configured
     seen: set[Path] = set()
     for candidate in _candidate_emuhawk_paths():
         candidate = candidate.expanduser().resolve()
         if candidate in seen:
             continue
         seen.add(candidate)
-        if candidate.is_file():
+        if is_valid_emuhawk_launcher(candidate):
             return candidate
-    return None
+        if invalid_candidate is None and candidate.is_file():
+            invalid_candidate = candidate
+    return invalid_candidate
 
 
 def browse_for_emuhawk() -> Path | None:
-    """Use Archipelago's setting path browser and persist the selection."""
+    """Select and persist a BizHawk launcher using a platform-neutral dialog."""
+    from Utils import open_filename
+
     settings = _settings()
     current = settings.bizhawkclient_options.emuhawk_path
-    chosen = current.browse() if hasattr(current, "browse") else None
+    current_path = _resolved_setting_path(current)
+    patterns = ["*.exe"] if sys.platform == "win32" else ["*.sh", "*"]
+    chosen = open_filename(
+        "Select BizHawk Launcher",
+        [("BizHawk Launcher", patterns), ("All Files", ["*.*"])],
+        str(current_path or ""),
+    )
     if not chosen:
         return None
-    settings.bizhawkclient_options.emuhawk_path = chosen
+    value_type = type(current) if current is not None else str
+    settings.bizhawkclient_options.emuhawk_path = value_type(chosen)
     settings.save()
-    return _resolved_setting_path(chosen)
+    return _resolved_setting_path(settings.bizhawkclient_options.emuhawk_path)
 
 
 def _remember_rom(path: Path) -> None:
@@ -297,8 +336,13 @@ def launch_game() -> subprocess.Popen:
     if launch_state.process is not None and launch_state.process.poll() is None:
         raise RuntimeError("BizHawk was already started from this client.")
     emuhawk = find_emuhawk()
-    if not emuhawk:
-        raise FileNotFoundError("BizHawk is not configured. Select EmuHawk.exe first.")
+    launcher_error = emuhawk_launcher_error(emuhawk)
+    if launcher_error:
+        if emuhawk is None or not emuhawk.is_file():
+            raise FileNotFoundError(launcher_error)
+        if sys.platform != "win32" and not os.access(emuhawk, os.X_OK):
+            raise PermissionError(launcher_error)
+        raise ValueError(launcher_error)
     rom = configured_rom_path()
     if not rom:
         raise FileNotFoundError("No patched NSMBDS seed ROM is selected.")

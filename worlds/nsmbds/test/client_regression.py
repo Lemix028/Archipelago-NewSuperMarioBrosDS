@@ -641,6 +641,103 @@ def test_launcher_patch_path_and_rom_validation() -> None:
     check(rejected, "Launcher rejects a selected ROM with the wrong game code")
 
 
+def test_launcher_accepts_platform_specific_bizhawk_launchers() -> None:
+    original_platform = launcher_module.sys.platform
+    original_access = launcher_module.os.access
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            windows_launcher = root / "EmuHawk.exe"
+            linux_launcher = root / "EmuHawkMono.sh"
+            missing_launcher = root / "missing" / "EmuHawkMono.sh"
+            windows_launcher.write_bytes(b"")
+            linux_launcher.write_text("#!/bin/sh\n", encoding="utf-8")
+
+            launcher_module.sys.platform = "win32"
+            windows_accepted = launcher_module.is_valid_emuhawk_launcher(windows_launcher)
+            linux_name_rejected_on_windows = not launcher_module.is_valid_emuhawk_launcher(linux_launcher)
+
+            launcher_module.sys.platform = "linux"
+            launcher_module.os.access = lambda path, _mode: Path(path) == linux_launcher
+            linux_accepted = launcher_module.is_valid_emuhawk_launcher(linux_launcher)
+            missing_rejected = not launcher_module.is_valid_emuhawk_launcher(missing_launcher)
+
+            launcher_module.os.access = lambda _path, _mode: False
+            permission_error = launcher_module.emuhawk_launcher_error(linux_launcher) or ""
+    finally:
+        launcher_module.sys.platform = original_platform
+        launcher_module.os.access = original_access
+
+    check(
+        windows_accepted
+        and linux_name_rejected_on_windows
+        and linux_accepted
+        and missing_rejected
+        and "chmod +x" in permission_error,
+        "Launcher validates Windows and executable Linux BizHawk entry points with a permission hint",
+    )
+
+
+def test_launcher_ui_and_auto_launch_share_bizhawk_validation() -> None:
+    original_auto_launch = tracker_view_module.auto_launch_enabled
+    original_find = tracker_view_module.find_emuhawk
+    original_rom = tracker_view_module.configured_rom_path
+    original_validator = tracker_view_module.is_valid_emuhawk_launcher
+    original_runtime = tracker_view_module.materialize_lua_runtime
+    original_process = launcher_module.launch_state.process
+    calls = []
+    launched = []
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            launcher = root / "EmuHawkMono.sh"
+            launcher.write_text("#!/bin/sh\n", encoding="utf-8")
+            rom = root / "seed.nds"
+            rom.write_bytes(b"")
+            bootstrap = root / "bootstrap.lua"
+            bootstrap.write_text("-- test\n", encoding="utf-8")
+
+            tracker_view_module.auto_launch_enabled = lambda: True
+            tracker_view_module.find_emuhawk = lambda: launcher
+            tracker_view_module.configured_rom_path = lambda: rom
+
+            def validate_launcher(path: Path) -> bool:
+                calls.append(path)
+                return True
+
+            tracker_view_module.is_valid_emuhawk_launcher = validate_launcher
+            tracker_view_module.materialize_lua_runtime = lambda: bootstrap
+            launcher_module.launch_state.process = None
+
+            panel = types.SimpleNamespace(
+                _auto_launch_attempted=False,
+                _launch=lambda: launched.append(True),
+                _set_message=lambda *_args, **_kwargs: None,
+                _status_label=tracker_view_module.NSMBDSLaunchPanel._status_label,
+                bizhawk_status=types.SimpleNamespace(text=""),
+                rom_status=types.SimpleNamespace(text=""),
+                lua_status=types.SimpleNamespace(text=""),
+                launch_button=types.SimpleNamespace(text="", disabled=True),
+            )
+            tracker_view_module.NSMBDSLaunchPanel.maybe_auto_launch(panel)
+            tracker_view_module.NSMBDSLaunchPanel.refresh(panel)
+    finally:
+        tracker_view_module.auto_launch_enabled = original_auto_launch
+        tracker_view_module.find_emuhawk = original_find
+        tracker_view_module.configured_rom_path = original_rom
+        tracker_view_module.is_valid_emuhawk_launcher = original_validator
+        tracker_view_module.materialize_lua_runtime = original_runtime
+        launcher_module.launch_state.process = original_process
+
+    check(
+        calls == [launcher, launcher]
+        and launched == [True]
+        and panel.launch_button.text == "Launch NSMBDS"
+        and panel.launch_button.disabled is False,
+        "Auto-launch and setup status use the same BizHawk launcher validator",
+    )
+
+
 def test_launcher_starts_bizhawk_with_bootstrap() -> None:
     class FakeProcess:
         def poll(self):
