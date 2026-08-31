@@ -34,6 +34,7 @@ from .data.star_coin_gates import (
     StarCoinGateDefinition,
     gate_required_lifetime_coins,
 )
+from .items import KEY_ITEM_NAMES
 from .locations import BOSS_LOCATION_COMPLETION_SOURCES
 
 if TYPE_CHECKING:
@@ -94,9 +95,13 @@ def _stage_key_name(region_name: str) -> str | None:
     world_number = int(region_name.split(" ", 2)[1].split("-", 1)[0])
     world_name = WORLD_KEY_NAMES[world_number]
     suffix = region_name.split("-", 1)[1]
+    if suffix in ("Tower 1", "Tower 2"):
+        return f"{world_name} {suffix} Key"
     if suffix.startswith("Tower"):
         return f"{world_name} Tower Key"
-    if suffix == "Castle" or suffix == "Bowser's Castle":
+    if suffix == "Bowser's Castle":
+        return f"{world_name} Bowser's Castle Key"
+    if suffix == "Castle":
         return f"{world_name} Castle Key"
     return None
 
@@ -186,6 +191,7 @@ def set_rules(world: NSMBDSWorld) -> None:
     # A gate's front-side route is on the gate->target entrance above. The
     # world->gate entrance solely models the configured gate authorization.
     star_coin_item_id = world.item_name_to_id["Star Coin"]
+    key_item_names = frozenset(KEY_ITEM_NAMES)
     for gate in STAR_COIN_GATES:
         gate_entrance = multiworld.get_entrance(
             f"{gate.source_region} -> {gate.region_name}", player
@@ -194,8 +200,9 @@ def set_rules(world: NSMBDSWorld) -> None:
         for location in multiworld.get_region(gate.target_stage_name, player).locations:
             add_item_rule(
                 location,
-                lambda item, item_id=star_coin_item_id: not (
-                    item.code == item_id and item.advancement
+                lambda item, item_id=star_coin_item_id, keys=key_item_names: not (
+                    item.advancement
+                    and (item.code == item_id or item.name in keys)
                 ),
             )
 

@@ -249,6 +249,49 @@ class TestDisabledShortcutAccess(NSMBDSTestBase):
         self.assertFalse(location.item_rule(self.world.create_item("Cloud Pass")))
 
 
+class TestSplitTowerCastleKeyAccess(NSMBDSTestBase):
+    """Worlds with duplicate structures require one key per structure."""
+
+    options = {
+        "tower_castle_keys": True,
+    }
+
+    def test_world_six_tower_one_requires_its_own_key(self) -> None:
+        self.collect_all_but("Mountain Tower 1 Key")
+        self.assertFalse(self.can_reach_location("World 6-Tower 1 Goal"))
+
+        self.collect_by_name("Mountain Tower 1 Key")
+        self.assertTrue(self.can_reach_location("World 6-Tower 1 Goal"))
+
+    def test_world_six_tower_two_requires_its_own_key(self) -> None:
+        self.collect_all_but("Mountain Tower 2 Key")
+        self.assertFalse(self.can_reach_location("World 6-Tower 2 Goal"))
+
+        self.collect_by_name("Mountain Tower 2 Key")
+        self.assertTrue(self.can_reach_location("World 6-Tower 2 Goal"))
+
+    def test_world_eight_tower_two_requires_its_own_key(self) -> None:
+        self.collect_all_but("Volcano Tower 2 Key")
+        self.assertFalse(self.can_reach_location("World 8-Tower 2 Goal"))
+
+        self.collect_by_name("Volcano Tower 2 Key")
+        self.assertTrue(self.can_reach_location("World 8-Tower 2 Goal"))
+
+    def test_world_eight_tower_one_requires_its_own_key(self) -> None:
+        self.collect_all_but("Volcano Tower 1 Key")
+        self.assertFalse(self.can_reach_location("World 8-Tower 1 Goal"))
+
+        self.collect_by_name("Volcano Tower 1 Key")
+        self.assertTrue(self.can_reach_location("World 8-Tower 1 Goal"))
+
+    def test_bowser_castle_requires_its_own_key(self) -> None:
+        self.collect_all_but("Volcano Bowser's Castle Key")
+        self.assertFalse(self.can_reach_location("World 8-Bowser's Castle Goal"))
+
+        self.collect_by_name("Volcano Bowser's Castle Key")
+        self.assertTrue(self.can_reach_location("World 8-Bowser's Castle Goal"))
+
+
 class TestPowerupLicensesDisabledAccess(NSMBDSTestBase):
     """Disabled License toggles remove Permit items and their access requirements."""
 

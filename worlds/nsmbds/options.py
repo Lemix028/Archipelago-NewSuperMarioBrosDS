@@ -190,8 +190,8 @@ class StarCoinGateMode(Choice):
 
 class TowerCastleKeys(Toggle):
     """
-    Include physical Tower Keys and Castle Keys in the item pool.
-    When enabled, players must find key items to unlock path gates leading to Towers and Castles.
+    Include one physical key for every Tower and Castle in the item pool.
+    When enabled, players must find each matching key to unlock its path gate.
     """
     display_name = "Tower & Castle Keys"
     default = 1

@@ -6,7 +6,7 @@ Main entry point for Archipelago multiworld generation.
 import os
 from typing import Any, ClassVar
 
-from BaseClasses import ItemClassification, LocationProgressType, Region
+from BaseClasses import Item, ItemClassification, Location, LocationProgressType, Region
 from settings import get_settings
 from worlds.AutoWorld import World
 from worlds.LauncherComponents import Component, SuffixIdentifier, Type, components, launch_subprocess
@@ -15,6 +15,7 @@ from .items import (
     calculate_nonprogression_pool_counts,
     FILLER_ITEM_WEIGHTS,
     ITEM_TABLE,
+    KEY_ITEM_NAMES,
     PROGRESSION_ITEM_NAMES,
     NSMBDSItem,
 )
@@ -394,8 +395,6 @@ class NSMBDSWorld(World):
 
     def create_items(self) -> None:
         """Fill the item pool based on the number of active locations and user options."""
-        from .items import KEY_ITEM_NAMES
-
         def _val(opt: Any) -> int:
             return int(getattr(opt, "value", opt))
 
@@ -647,6 +646,31 @@ class NSMBDSWorld(World):
     def get_filler_item_name(self) -> str:
         """Return a safe repeatable replacement for plando and item links."""
         return "Nothing"
+
+    def fill_hook(
+        self,
+        progitempool: list[Item],
+        usefulitempool: list[Item],
+        filleritempool: list[Item],
+        fill_locations: list[Location],
+    ) -> None:
+        """Place items with gated-stage restrictions before unrestricted progression."""
+        # Core's restrictive fill consumes progression from the end of this
+        # list. Star Coins and keys cannot be placed in Star-Coin-gated stages,
+        # so give them first choice of the smaller set of valid locations.
+        restricted_names = frozenset(("Star Coin", *KEY_ITEM_NAMES))
+        restricted_items = [
+            item
+            for item in progitempool
+            if item.player == self.player and item.name in restricted_names
+        ]
+        if not restricted_items:
+            return
+        progitempool[:] = [
+            item
+            for item in progitempool
+            if item.player != self.player or item.name not in restricted_names
+        ] + restricted_items
 
     def set_rules(self) -> None:
         """Apply logic rules to regions and locations."""

@@ -10,6 +10,7 @@ from ...items import (
     BASE_ID,
     INVENTORY_RAM_VALUES,
     ITEM_TABLE,
+    KEY_ITEM_NAMES,
     TRAP_ITEM_NAMES,
     item_id_to_name,
 )
@@ -410,7 +411,7 @@ class ItemHandlingMixin:
             self._queue_bonk_trap()
             return True
 
-        if " Key" in item_name and (item_name.endswith("Tower Key") or item_name.endswith("Castle Key")):
+        if item_name in KEY_ITEM_NAMES:
             return await self._apply_key_item(ctx, item_name)
 
         # Progression keys, licenses, and unhandled items advance the cursor safely.

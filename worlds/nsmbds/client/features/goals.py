@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from ...locations import BOSS_LOCATION_NAMES, LOCATION_TABLE
-from ...items import ITEM_TABLE
+from ...items import FINAL_CASTLE_KEY_NAME, ITEM_TABLE
 from ...data.ram_addresses import AP_NOTIFICATION_GOAL_COMPLETE
 
 if TYPE_CHECKING:
@@ -30,10 +30,17 @@ class GoalHandlingMixin:
         return sum(item.item == star_coin_id for item in ctx.items_received)
 
     def _final_castle_gate_should_open(self, ctx: "BizHawkClientContext") -> bool | None:
-        """Return a forced-open final path, or ``None`` for normal map control."""
-        goal = ctx.slot_data.get("goal", 0) if ctx.slot_data else 0
+        """Return the AP-owned final-path state, or ``None`` for vanilla map control."""
+        slot_data = ctx.slot_data or {}
+        goal = slot_data.get("goal", 0)
         if goal in (0, 1, 2, 3):
-            if W8_TOWER2_GOAL_LOCATION_ID in self._observed_locations:
+            tower_two_complete = W8_TOWER2_GOAL_LOCATION_ID in self._observed_locations
+            keys_enabled = bool(slot_data.get("tower_castle_keys", True))
+            if keys_enabled:
+                received_ids = {item.item for item in ctx.items_received}
+                final_key_received = ITEM_TABLE[FINAL_CASTLE_KEY_NAME][0] in received_ids
+                return tower_two_complete and final_key_received
+            if tower_two_complete:
                 return True
             return None
         logger.error("Received unsupported NSMBDS goal value %s for the final castle gate.", goal)

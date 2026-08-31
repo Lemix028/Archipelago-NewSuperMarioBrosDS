@@ -15,6 +15,9 @@ class NSMBDSItem(Item):
     game = "New Super Mario Bros. DS"
 
 
+FINAL_CASTLE_KEY_NAME = "Volcano Bowser's Castle Key"
+
+
 # Item table: name -> (unique_id, classification).
 ITEM_TABLE: dict[str, tuple[int, ItemClassification]] = {
     # --- Progression: World Access Passes ---
@@ -104,12 +107,15 @@ ITEM_TABLE: dict[str, tuple[int, ItemClassification]] = {
     "Jungle Castle Key":     (BASE_ID + 0x47, ItemClassification.progression),
     "Glacier Tower Key":     (BASE_ID + 0x48, ItemClassification.progression),
     "Glacier Castle Key":    (BASE_ID + 0x49, ItemClassification.progression),
-    "Mountain Tower Key":    (BASE_ID + 0x4A, ItemClassification.progression),
+    "Mountain Tower 1 Key":  (BASE_ID + 0x4A, ItemClassification.progression),
     "Mountain Castle Key":   (BASE_ID + 0x4B, ItemClassification.progression),
     "Sky Tower Key":         (BASE_ID + 0x4C, ItemClassification.progression),
     "Sky Castle Key":        (BASE_ID + 0x4D, ItemClassification.progression),
-    "Volcano Tower Key":     (BASE_ID + 0x4E, ItemClassification.progression),
+    "Volcano Tower 1 Key":   (BASE_ID + 0x4E, ItemClassification.progression),
     "Volcano Castle Key":    (BASE_ID + 0x4F, ItemClassification.progression),
+    "Mountain Tower 2 Key":  (BASE_ID + 0x84, ItemClassification.progression),
+    "Volcano Tower 2 Key":   (BASE_ID + 0x85, ItemClassification.progression),
+    FINAL_CASTLE_KEY_NAME:    (BASE_ID + 0x86, ItemClassification.progression),
 
     # --- Progression: Star-Coin Gate Passes ---
     # The progressive item and first four individual IDs remain stable.
@@ -170,12 +176,15 @@ KEY_ITEM_NAMES: tuple[str, ...] = (
     "Jungle Castle Key",
     "Glacier Tower Key",
     "Glacier Castle Key",
-    "Mountain Tower Key",
+    "Mountain Tower 1 Key",
+    "Mountain Tower 2 Key",
     "Mountain Castle Key",
     "Sky Tower Key",
     "Sky Castle Key",
-    "Volcano Tower Key",
+    "Volcano Tower 1 Key",
+    "Volcano Tower 2 Key",
     "Volcano Castle Key",
+    FINAL_CASTLE_KEY_NAME,
 )
 
 

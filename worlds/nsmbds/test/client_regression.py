@@ -522,6 +522,23 @@ def test_spoiler_free_tracker() -> None:
         not disconnected_snapshot.seed_loaded,
         "Tracker suppresses seed data until a server connection and slot data are available",
     )
+    key_names = {
+        entry.name
+        for category, entries in disconnected_snapshot.inventory
+        if category == "Tower & Castle Keys"
+        for entry in entries
+    }
+    check(
+        {
+            "Mountain Tower 1 Key",
+            "Mountain Tower 2 Key",
+            "Volcano Tower 1 Key",
+            "Volcano Tower 2 Key",
+            "Volcano Bowser's Castle Key",
+        }
+        <= key_names,
+        "Tracker shows every explicitly numbered Tower key",
+    )
 
     context = FakeContext()
     world_1_goal = locations.LOCATION_TABLE["World 1-1 Goal"]
@@ -756,6 +773,7 @@ def test_launcher_starts_bizhawk_with_bootstrap() -> None:
             emuhawk = root / "BizHawk" / "EmuHawk.exe"
             emuhawk.parent.mkdir()
             emuhawk.write_bytes(b"")
+            emuhawk.chmod(emuhawk.stat().st_mode | 0o111)
             bootstrap = root / "lua" / "nsmbds_bizhawk_bootstrap.lua"
             bootstrap.parent.mkdir()
             bootstrap.write_text("-- test", encoding="utf-8")
@@ -1521,33 +1539,52 @@ def test_goals() -> None:
         "Completionist does not finish with enough Star Coins but without all bosses",
     )
 
-    check(
-        client._final_castle_gate_should_open(coin_context(240, 1, 240)) is None
-        and client._final_castle_gate_should_open(coin_context(240, 3, 240)) is None,
-        "Star Coin goals leave the final path under normal map control before World 8-Tower 2",
-    )
-
     tower_two_id = locations.LOCATION_TABLE["World 8-Tower 2 Goal"]
-    client._observed_locations = {tower_two_id}
-    check(
-        client._final_castle_gate_should_open(coin_context(0, 1, 240))
-        and client._final_castle_gate_should_open(coin_context(0, 3, 240)),
-        "World 8-Tower 2 opens Bowser's Castle without a Star Coin goal gate",
-    )
     check(
         client._check_goal(coin_context(240, 1, 240)),
         "Star Coin Hunt still completes at 240 received items independently of the final path",
     )
 
-    client._observed_locations = {tower_two_id}
+    client._observed_locations = set()
+    current_key_context = FakeContext(goal=0)
+    current_key_context.slot_data["tower_castle_keys"] = True
+    final_key_id = client_module.ITEM_TABLE["Volcano Bowser's Castle Key"][0]
+    current_key_context.items_received = [types.SimpleNamespace(item=final_key_id)]
     check(
-        client._final_castle_gate_should_open(FakeContext(goal=2)),
-        "World Tour opens final Bowser after Tower 2 regardless of other Castle bosses",
+        client._final_castle_gate_should_open(current_key_context) is False,
+        "Bowser's Castle Key cannot open the current final path before Tower 2",
+    )
+    client._observed_locations = {tower_two_id}
+    current_key_context.items_received = []
+    check(
+        client._final_castle_gate_should_open(current_key_context) is False,
+        "Tower 2 completion cannot open the current final path without Bowser's Castle Key",
+    )
+    current_key_context.items_received = [types.SimpleNamespace(item=final_key_id)]
+    check(
+        client._final_castle_gate_should_open(current_key_context) is True,
+        "Tower 2 completion plus Bowser's Castle Key opens the current final path",
+    )
+
+    for goal in (1, 2, 3):
+        goal_context = FakeContext(goal=goal)
+        goal_context.slot_data["tower_castle_keys"] = True
+        goal_context.items_received = [types.SimpleNamespace(item=final_key_id)]
+        check(
+            client._final_castle_gate_should_open(goal_context) is True,
+            f"Goal {goal} uses the same Tower-2 plus Bowser's Castle Key gate",
+        )
+
+    current_key_context.slot_data["tower_castle_keys"] = False
+    current_key_context.items_received = []
+    check(
+        client._final_castle_gate_should_open(current_key_context) is True,
+        "Disabling keys keeps the vanilla Tower-2 final-path behavior",
     )
     client._observed_locations = set()
     check(
-        client._final_castle_gate_should_open(FakeContext(goal=0)) is None,
-        "Defeat Bowser leaves the final path under vanilla map control",
+        client._final_castle_gate_should_open(current_key_context) is None,
+        "Disabling keys leaves the unfinished final path under vanilla map control",
     )
 
 
@@ -2355,6 +2392,40 @@ async def test_key_lock_enforcement() -> None:
     )
 
 
+async def test_split_tower_key_reconciliation() -> None:
+    writes: list[tuple] = []
+
+    async def fake_guarded_read(_bizhawk_ctx, _read_requests, _guards):
+        return [bytes(16), bytes(8), bytes(8), empty_gate_tier_mailbox()]
+
+    async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
+        writes.append((write_requests, guards))
+        return True
+
+    fake_bizhawk.guarded_read = fake_guarded_read
+    fake_bizhawk.guarded_write = fake_guarded_write
+
+    client = client_module.NSMBDSClient()
+    ctx = FakeContext()
+    ctx.slot_data["tower_castle_keys"] = True
+    ctx.items_received = [
+        types.SimpleNamespace(item=client_module.ITEM_TABLE["Mountain Tower 1 Key"][0])
+    ]
+    level_data = bytearray(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
+    tower_one_address = ram_addresses.KEY_PATH_GATE_ADDRESSES["Mountain Tower 1 Key"][0]
+    tower_two_address = ram_addresses.KEY_PATH_GATE_ADDRESSES["Mountain Tower 2 Key"][0]
+    level_data[tower_one_address - ram_addresses.ADDR_LEVEL_DATA_BASE] = 0xC0
+    level_data[tower_two_address - ram_addresses.ADDR_LEVEL_DATA_BASE] = 0xC0
+
+    await client._reconcile_overworld_state(ctx, bytes(level_data))
+    split_writes = writes[-1][0]
+    check(
+        (tower_two_address, [0x00], ram_addresses.MEMORY_DOMAIN) in split_writes
+        and all(write[0] != tower_one_address for write in split_writes),
+        "Mountain Tower 1 Key opens only Tower 1",
+    )
+
+
 def test_lua_connector_connection_status_messages() -> None:
     connector_path = (
         Path(NSMBDS_DIR) / "lua_runtime" / "vendor" / "connector_bizhawk_generic.lua"
@@ -2375,20 +2446,26 @@ def test_tower_keys_own_verified_entrance_paths() -> None:
         # Secret Exit from World 4-1 approaches the Tower from behind the Toad House.
         "Jungle Tower Key": (0x00088D71, 0x00088D7B),
         "Glacier Tower Key": (0x00088D90,),
-        # Worlds 6 and 8 each contain two Towers, so both entrance paths stay.
-        "Mountain Tower Key": (0x00088DAE, 0x00088DB1),
+        "Mountain Tower 1 Key": (0x00088DAE,),
+        "Mountain Tower 2 Key": (0x00088DB1,),
         # Secret Exit from World 7-Ghost House approaches the Tower from behind the Toad House.
         "Sky Tower Key": (0x00088DCC, 0x00088DD6),
-        "Volcano Tower Key": (0x00088DE8, 0x00088DF0),
+        "Volcano Tower 1 Key": (0x00088DE8,),
+        "Volcano Tower 2 Key": (0x00088DF0,),
     }
     actual_tower_paths = {
         name: addresses
         for name, addresses in ram_addresses.KEY_PATH_GATE_ADDRESSES.items()
-        if name.endswith("Tower Key")
+        if "Tower" in name and name.endswith("Key")
     }
     check(
         actual_tower_paths == expected_tower_paths,
         "Tower Keys own every verified Tower approach while post-Tower exits remain vanilla-owned",
+    )
+    check(
+        ram_addresses.KEY_PATH_GATE_ADDRESSES["Volcano Bowser's Castle Key"]
+        == (ram_addresses.ADDR_W8_CASTLE_APPROACH_PATH,),
+        "Bowser's Castle Key owns the final verified approach path",
     )
 
 

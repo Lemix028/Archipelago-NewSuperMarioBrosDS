@@ -7,7 +7,7 @@ from BaseClasses import LocationProgressType
 
 from .bases import NSMBDSTestBase
 from ..data.star_coin_gates import STAR_COIN_GATES, TOTAL_STAR_COIN_GATE_COST
-from ..items import FILLER_ITEM_WEIGHTS
+from ..items import FILLER_ITEM_WEIGHTS, KEY_ITEM_NAMES
 from ..locations import (
     BLOCKSANITY_DEFINITIONS,
     BOSS_LOCATION_NAMES,
@@ -26,6 +26,17 @@ def advancement_star_coins_behind_gates(test: NSMBDSTestBase) -> list:
         and location.item is not None
         and location.item.name == "Star Coin"
         and location.item.advancement
+    ]
+
+
+def keys_behind_gates(test: NSMBDSTestBase) -> list:
+    gated_regions = {gate.target_stage_name for gate in STAR_COIN_GATES}
+    return [
+        location
+        for location in test.multiworld.get_locations(test.player)
+        if location.parent_region.name in gated_regions
+        and location.item is not None
+        and location.item.name in KEY_ITEM_NAMES
     ]
 
 
@@ -302,8 +313,11 @@ class TestTowerCastleKeysEnabled(NSMBDSTestBase):
     def test_keys_in_item_pool(self) -> None:
         """Keys should be added to the item pool when enabled."""
         item_names = [item.name for item in self.multiworld.get_items()]
-        self.assertIn("Grassland Tower Key", item_names)
-        self.assertIn("Grassland Castle Key", item_names)
+        for key_name in KEY_ITEM_NAMES:
+            self.assertEqual(item_names.count(key_name), 1, key_name)
+
+    def test_keys_stay_outside_optional_star_coin_gates(self) -> None:
+        self.assertFalse(keys_behind_gates(self))
 
 
 class TestPowerupLicensesOff(NSMBDSTestBase):

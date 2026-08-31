@@ -68,9 +68,11 @@ finish every earlier level.
 
 ### Tower and Castle Keys
 
-When enabled, every world has a Tower Key and a Castle Key. You must receive
-the matching key before passing its locked route. This option can be disabled
-for a more vanilla-like overworld.
+When enabled, every Tower and Castle has its own matching Key. Worlds 6 and 8
+therefore have separate Keys for Tower 1 and Tower 2, while World 8 has separate
+Keys for its Castle and Bowser's Castle. You must receive the matching Key before
+passing its locked route. This option can be disabled for a more vanilla-like
+overworld.
 
 ### Star Coin gates
 

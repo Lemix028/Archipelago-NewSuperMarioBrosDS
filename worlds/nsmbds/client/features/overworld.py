@@ -6,7 +6,7 @@ import logging
 import struct
 from typing import TYPE_CHECKING, Sequence
 
-from ...items import ITEM_TABLE, KEY_ITEM_NAMES
+from ...items import FINAL_CASTLE_KEY_NAME, ITEM_TABLE, KEY_ITEM_NAMES
 from ...data.ram_addresses import (
     ADDR_AP_STAR_COIN_GATE_HOOK_MARKER,
     ADDR_AP_STAR_COIN_GATE_PERMIT_MASK,
@@ -238,6 +238,10 @@ class OverworldStateReconcilerMixin:
         # Physical Tower/Castle keys fully own their verified path bytes.
         if bool(ctx.slot_data.get("tower_castle_keys", True)):
             for key_name in KEY_ITEM_NAMES:
+                # The final approach is also completion-gated. Its combined
+                # Tower-2/key state is reconciled below instead.
+                if key_name == FINAL_CASTLE_KEY_NAME:
+                    continue
                 target = 0xC0 if ITEM_TABLE[key_name][0] in received_ids else 0x00
                 for address in KEY_PATH_GATE_ADDRESSES.get(key_name, ()):
                     current = self._level_byte(level_data, address)
@@ -289,7 +293,8 @@ class OverworldStateReconcilerMixin:
         # then selects the seed-specific requirement text from the versioned tier
         # mailbox. The original purchase path still checks and spends five Coins.
 
-        # The selected goal owns only the two approach-path bits.
+        # Tower 2 completion and, for current key seeds, Bowser's Castle Key
+        # jointly own the two final approach-path bits.
         final_gate_open = self._final_castle_gate_should_open(ctx)
         current_final_gate = self._level_byte(level_data, ADDR_W8_CASTLE_APPROACH_PATH)
         if final_gate_open is not None and current_final_gate is not None:

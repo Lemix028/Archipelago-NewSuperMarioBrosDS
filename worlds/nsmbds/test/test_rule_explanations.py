@@ -13,7 +13,6 @@ class TestRequirementConversion(TestCase):
     def test_empty_alternative_is_explicitly_true(self) -> None:
         self.assertIsInstance(_alternative_rule(()), True_)
 
-
 class TestRuleExplanations(NSMBDSTestBase):
     options: ClassVar[dict[str, object]] = {
         "goal": "world_tour",
@@ -42,6 +41,24 @@ class TestRuleExplanations(NSMBDSTestBase):
         explanation = rule.explain_str(self.multiworld.state)
         self.assertIn("Glacier Tower Key", explanation)
         self.assertIn("World 5-2 Goal", explanation)
+
+    def test_duplicate_structures_expose_their_distinct_keys(self) -> None:
+        cases = (
+            ("World 6 -> World 6-Tower 2", "Mountain Tower 2 Key", "Mountain Tower 1 Key"),
+            ("World 8 -> World 8-Tower 2", "Volcano Tower 2 Key", "Volcano Tower 1 Key"),
+            (
+                "World 8 -> World 8-Bowser's Castle",
+                "Volcano Bowser's Castle Key",
+                "Volcano Castle Key",
+            ),
+        )
+        for entrance_name, required_key, other_key in cases:
+            with self.subTest(entrance=entrance_name):
+                rule = self.assert_resolved_rule(
+                    self.multiworld.get_entrance(entrance_name, self.player).access_rule
+                )
+                self.assertIn(required_key, rule.item_dependencies())
+                self.assertNotIn(other_key, rule.item_dependencies())
 
     def test_powerup_alternatives_remain_structured(self) -> None:
         rule = self.assert_resolved_rule(
