@@ -32,6 +32,10 @@ class TestFullLocationGeneration(NSMBDSTestBase):
         "death_link": True,
     }
 
+    def test_fill_regression_seed_111743869767600775(self) -> None:
+        self.world_setup(seed=111743869767600775)
+        self.test_fill()
+
 
 class TestProgressiveGeneration(NSMBDSTestBase):
     options = {

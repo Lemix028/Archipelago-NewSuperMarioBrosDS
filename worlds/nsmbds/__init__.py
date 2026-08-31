@@ -6,7 +6,7 @@ Main entry point for Archipelago multiworld generation.
 import os
 from typing import Any, ClassVar
 
-from BaseClasses import Item, ItemClassification, Location, LocationProgressType, Region
+from BaseClasses import ItemClassification, LocationProgressType, Region
 from settings import get_settings
 from worlds.AutoWorld import World
 from worlds.LauncherComponents import Component, SuffixIdentifier, Type, components, launch_subprocess
@@ -647,30 +647,6 @@ class NSMBDSWorld(World):
     def get_filler_item_name(self) -> str:
         """Return a safe repeatable replacement for plando and item links."""
         return "Nothing"
-
-    def fill_hook(
-        self,
-        progitempool: list[Item],
-        usefulitempool: list[Item],
-        filleritempool: list[Item],
-        fill_locations: list[Location],
-    ) -> None:
-        """Place gate currency after other progression so cumulative budgets stay fillable."""
-        # Restrictive fill takes progression items from the end. Keeping this
-        # player's Star Coins at the front lets it place Passes and other route
-        # items while the complete lifetime budget is still in its assumed
-        # exploration state. Coin placements are then checked against the
-        # routes those already-placed items actually make reachable.
-        star_coins = [
-            item for item in progitempool
-            if item.player == self.player and item.name == "Star Coin"
-        ]
-        if not star_coins:
-            return
-        progitempool[:] = star_coins + [
-            item for item in progitempool
-            if item.player != self.player or item.name != "Star Coin"
-        ]
 
     def set_rules(self) -> None:
         """Apply logic rules to regions and locations."""

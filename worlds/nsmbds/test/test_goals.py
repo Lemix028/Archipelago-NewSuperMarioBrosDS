@@ -8,6 +8,10 @@ class TestDefeatBowser(NSMBDSTestBase):
         "goal": "defeat_bowser",
     }
 
+    def test_fill_regression_seed_4380723837207189548(self) -> None:
+        self.world_setup(seed=4380723837207189548)
+        self.test_fill()
+
 
 class TestStarCoinHunt(NSMBDSTestBase):
     options = {
