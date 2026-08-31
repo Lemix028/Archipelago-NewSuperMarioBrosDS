@@ -27,7 +27,6 @@ local emulator_feed = require("nsmbds.emulator_feed")
 local traps = require("nsmbds.traps")
 local runtime = require("nsmbds.runtime")
 local context = state.context
-local GROUND_POUND_HOOK_ARM_FRAMES = 60
 local reported_ui_errors = {}
 
 local function version_is_at_least(version, minimum)
@@ -95,7 +94,6 @@ traps.disable_input_filter_hooks()
 
 -- Remove hooks that are only needed during gameplay.
 local function disable_gameplay_observer_hooks()
-    hooks.disable_change_tile_execute_hook()
     hooks.disable_hit_block_execute_hook()
     if event and event.unregisterbyname then
         pcall(event.unregisterbyname, "NSMBDS Red Coin Counter 1")
@@ -103,8 +101,6 @@ local function disable_gameplay_observer_hooks()
     end
     context.red_coin_write_hook_initialized = false
     context.last_observed_lives = nil
-    context.ground_pound_hook_armed_frames = 0
-    context.ground_pound_down_held = false
 end
 
 -- Remove every hook owned by this script.
@@ -167,6 +163,10 @@ local function sideloading_tick()
         state.input_trap_state.player_was_moving_up = false
     end
 
+    -- Drain callbacks even on the frame where Mario disappears. Each record
+    -- already owns the hit-time course identity and remains valid in transit.
+    pcall(blocksanity.observe_native_block_hits)
+
     -- Reset observer state after a pause, rewind, or large frame jump.
     if context.last_observer_frame ~= nil
         and (frame <= context.last_observer_frame or frame > context.last_observer_frame + 5) then
@@ -184,39 +184,15 @@ local function sideloading_tick()
             and state.input_trap_state.screen_flip_suspended then
             state.input_trap_state.resume_screen_flip()
         end
-        -- Arm the expensive native hooks only after a fresh Down press.  A
-        -- Ground Pound cannot impact before that input, so this captures exact
-        -- one- and two-block hits without paying callback cost throughout the
-        -- rest of an actor-heavy level.
-        local pad = joypad and joypad.get and joypad.get(1) or nil
-        local down_held = pad ~= nil and pad.Down == true
-        if down_held and not context.ground_pound_down_held then
-            context.ground_pound_hook_armed_frames = GROUND_POUND_HOOK_ARM_FRAMES
-            context.native_tile_changes = {}
-            context.native_block_hits = {}
-            context.native_tile_change_write_index = 1
-            context.native_block_hit_write_index = 1
-        end
-        context.ground_pound_down_held = down_held
-
-        local ground_pound_hooks_armed = context.ground_pound_hook_armed_frames > 0
-        if ground_pound_hooks_armed then
-            hooks.ensure_change_tile_execute_hook()
-        else
-            hooks.disable_change_tile_execute_hook()
-        end
-        if ground_pound_hooks_armed or context.active_mode == "head_bonk" then
-            hooks.ensure_hit_block_execute_hook()
-        else
-            hooks.disable_hit_block_execute_hook()
-        end
+        -- hitBlock is the primary source for every static block. The callback
+        -- only snapshots two registers, course identity, and the hit record;
+        -- queue work remains in this per-frame observer.
+        hooks.ensure_hit_block_execute_hook()
+        hooks.sync_head_bonk_execute_hook()
         red_coins.ensure_red_coin_write_hook()
         pcall(blocksanity.observe_ground_pound_blocks, player)
         pcall(blocksanity.observe_block_bumps, objects)
         pcall(blocksanity.finalize_ground_pound_capture)
-        if context.ground_pound_hook_armed_frames > 0 then
-            context.ground_pound_hook_armed_frames = context.ground_pound_hook_armed_frames - 1
-        end
     elseif had_player_last_frame then
         -- Mario left the level: stop gameplay-only effects and hooks.
         if context.active_mode == "crazy_pixels" then

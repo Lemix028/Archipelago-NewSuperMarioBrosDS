@@ -17,7 +17,13 @@ local queued_block_events = {}
 local MAX_QUEUED_BLOCK_EVENTS = 64
 
 function M.block_event_key(event_type, world, level, area, tile_x, tile_y)
-    return string.format("%d:%d:%d:%d:%d:%d", event_type, world, level, area, tile_x, tile_y)
+    -- Native and Actor fallback observations of the same static block must
+    -- share one queue identity even if one classified the hit as a Ground
+    -- Pound. Moving blocks retain their own namespace.
+    local identity_type = event_type == constants.AP_EVENT_TYPE_MOVING_BLOCK_OPEN
+        and event_type
+        or 0
+    return string.format("%d:%d:%d:%d:%d:%d", identity_type, world, level, area, tile_x, tile_y)
 end
 
 function M.clear_invalid_pending_block_event()
@@ -71,6 +77,28 @@ function M.queue_block_object(object, known_tile_x, known_tile_y)
         tile_x,
         tile_y
     )
+end
+
+-- Drain the exact coordinates captured inside the native Execute callback.
+-- The callback also snapshots the course identity, so a transition after the
+-- hit cannot relabel the event with the next area.
+function M.observe_native_block_hits()
+    if #context.native_block_hits == 0 then
+        return
+    end
+    local hits = context.native_block_hits
+    context.native_block_hits = {}
+    context.native_block_hit_overflow_logged = false
+    for _, hit in ipairs(hits) do
+        M.queue_block_event(
+            hit.event_type,
+            hit.world,
+            hit.level,
+            hit.area,
+            hit.tile_x,
+            hit.tile_y
+        )
+    end
 end
 
 function M.publish_next_block_event()
@@ -128,13 +156,6 @@ function M.reset_block_observer_state()
     ground_pound_capture = nil
     capture_actor_baseline_ready = false
     known_moving_blocks = {}
-    block_event_queue = {}
-    queued_block_events = {}
-    context.native_tile_changes = {}
-    context.native_block_hits = {}
-    context.native_tile_change_write_index = 1
-    context.native_block_hit_write_index = 1
-    context.ground_pound_hook_armed_frames = 0
 end
 
 local function tile_is_near_ground_pound(tile_x, tile_y)
@@ -201,63 +222,6 @@ local function capture_ground_pound_tile(tile_x, tile_y)
     )
 end
 
-local function capture_recent_native_tile_changes()
-    if ground_pound_capture == nil or #context.native_tile_changes == 0 then
-        return
-    end
-    local current_frame = emu and emu.framecount and emu.framecount() or 0
-    local retained = {}
-    for _, change in ipairs(context.native_tile_changes) do
-        if change.frame >= current_frame - 2 then
-            retained[#retained + 1] = change
-        end
-        if change.frame >= current_frame - 1 then
-            local tile_x = math.floor(change.pos_x / 16)
-            local tile_y = -math.floor(change.pos_y / 16)
-            capture_ground_pound_tile(tile_x, tile_y)
-        end
-    end
-    context.native_tile_changes = retained
-    context.native_tile_change_write_index = #retained % 64 + 1
-end
-
-local function capture_recent_native_block_hits()
-    if ground_pound_capture == nil or #context.native_block_hits == 0 then
-        return
-    end
-    local current_frame = emu and emu.framecount and emu.framecount() or 0
-    local hit_count = 0
-    local retained = {}
-    for _, hit in ipairs(context.native_block_hits) do
-        if hit.frame >= current_frame - 30 then
-            retained[#retained + 1] = hit
-        end
-        if not hit.consumed
-            and hit.frame >= current_frame - constants.GROUND_POUND_HIT_LOOKBACK_FRAMES
-            and hit.frame <= current_frame then
-            hit.consumed = true
-            hit_count = hit_count + 1
-        end
-    end
-    context.native_block_hits = retained
-    context.native_block_hit_write_index = #retained % 64 + 1
-    if hit_count == 0 then
-        return
-    end
-
-    -- Mario's ground-pound collision spans roughly six pixels on either side
-    -- of the stored X origin. One impact can therefore touch two tile columns.
-    local left_tile = math.floor(
-        (ground_pound_capture.raw_x - constants.GROUND_POUND_HALF_WIDTH) / 0x10000
-    )
-    local right_tile = math.floor(
-        (ground_pound_capture.raw_x + constants.GROUND_POUND_HALF_WIDTH) / 0x10000
-    )
-    for tile_x = left_tile, right_tile do
-        capture_ground_pound_tile(tile_x, ground_pound_capture.tile_y)
-    end
-end
-
 -- Track ordinary bumps through the transient block actors.
 function M.observe_block_bumps(objects)
     local world, level, area = actors.current_course_identity()
@@ -279,6 +243,8 @@ function M.observe_block_bumps(objects)
         observed_course_key = course_key
     end
 
+    -- Keep Actor sampling alive as a corroborating fallback. Native records
+    -- are drained first, and block_event_key() deduplicates the same tile.
     local capture_actors = ground_pound_capture ~= nil
     if not capture_actors and capture_actor_baseline_ready then
         known_actors.object_tiles = {}
@@ -472,8 +438,8 @@ function M.observe_ground_pound_blocks(player)
         captured_tiles = {},
     }
     -- The orchestrator runs the actor observer immediately after this call.
-    -- Native hits are correlated in finalize_ground_pound_capture(), once the
-    -- moving-block coordinates for this frame have been sampled.
+    -- It supplies exact fallback tiles only while the native callback has not
+    -- demonstrated usable register access.
     capture_actor_baseline_ready = false
 end
 
@@ -482,8 +448,6 @@ function M.finalize_ground_pound_capture()
     if ground_pound_capture == nil then
         return
     end
-    capture_recent_native_tile_changes()
-    capture_recent_native_block_hits()
     ground_pound_capture.frames = ground_pound_capture.frames - 1
     if ground_pound_capture.frames > 0 then
         return
@@ -501,7 +465,6 @@ function M.finalize_ground_pound_capture()
         )
     end
     ground_pound_capture = nil
-    context.ground_pound_hook_armed_frames = 0
 end
 
 

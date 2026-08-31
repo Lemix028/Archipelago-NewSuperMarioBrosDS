@@ -10,6 +10,42 @@ from ..rom import BASE_ROM_MD5, BASE_ROM_SHA256, BASE_ROM_SIZE
 
 
 class TestNativeHookSources(unittest.TestCase):
+    def test_native_hit_block_is_primary_and_preserves_pending_queue(self) -> None:
+        runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime"
+        hooks_source = (runtime_root / "nsmbds" / "hooks.lua").read_text(encoding="utf-8")
+        blocks_source = (runtime_root / "nsmbds" / "blocksanity.lua").read_text(encoding="utf-8")
+        constants_source = (runtime_root / "nsmbds" / "constants.lua").read_text(encoding="utf-8")
+        orchestrator_source = (runtime_root / "nsmbds_sideloading.lua").read_text(encoding="utf-8")
+
+        self.assertIn('memory.read_arm9_register("R1")', hooks_source)
+        self.assertIn('memory.read_arm9_register("R2")', hooks_source)
+        self.assertNotIn("ADDR_HIT_BLOCK_X_MASK", hooks_source)
+        for address in ("0x0209E914", "0x0209E9F4", "0x0209EB24", "0x0209EB54"):
+            self.assertIn(address, hooks_source + constants_source)
+        self.assertIn("SYS_CHANGE_TILE_FUNCTION = 0x020AF30C", constants_source)
+        self.assertIn('memory.read_arm9_register("LR")', hooks_source)
+        self.assertIn('return "W2-A Block 6"', hooks_source)
+        self.assertIn('return "W2-A Block 7"', hooks_source)
+        self.assertIn('context.active_mode == "head_bonk"', hooks_source)
+        self.assertIn("function M.observe_native_block_hits()", blocks_source)
+        self.assertNotIn("and not context.hit_block_execute_hook_usable", blocks_source)
+        self.assertIn("local capture_ok, capture_error = pcall(capture_native_block_hit)", hooks_source)
+        self.assertIn("MOVING_BLOCK_OPEN_STATE_OFFSET = 0x3E4", blocks_source)
+        self.assertIn("AP_EVENT_TYPE_MOVING_BLOCK_OPEN", blocks_source)
+        self.assertIn("hooks.ensure_hit_block_execute_hook()", orchestrator_source)
+        self.assertIn("hooks.sync_head_bonk_execute_hook()", orchestrator_source)
+        self.assertNotIn(
+            'context.active_mode == "head_bonk" then\n            hooks.ensure_hit_block_execute_hook()',
+            orchestrator_source,
+        )
+
+        reset_body = blocks_source.split(
+            "function M.reset_block_observer_state()", 1
+        )[1].split("\nend", 1)[0]
+        self.assertNotIn("block_event_queue = {}", reset_body)
+        self.assertNotIn("queued_block_events = {}", reset_body)
+        self.assertNotIn("native_block_hits = {}", reset_body)
+
     def test_emulator_feed_supports_runtime_presentation_settings(self) -> None:
         runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime"
         feed_source = (runtime_root / "nsmbds" / "emulator_feed.lua").read_text(encoding="utf-8")
