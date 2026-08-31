@@ -193,7 +193,7 @@ in-level lower-screen wallpapers or use one selected wallpaper in every level.
 The available fixed designs are White Bricks, Star Pattern, Blue Bricks, Mario
 Silhouette, and Classic Overworld.
 
-![Secondary Screen Background choices](images/secondary_screen_backgrounds.png)
+![Secondary Screen Background choices](secondary_screen_backgrounds.png)
 
 ## Client and emulator features
 
