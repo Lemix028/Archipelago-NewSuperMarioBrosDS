@@ -34,6 +34,7 @@ from .locations import (
     RED_COIN_LOCATION_NAMES,
     RED_COIN_LOCATION_IDS,
     NSMBDSLocation,
+    TOAD_HOUSE_LOCATION_NAMES,
     WORLD_6_2_BONUS_AREA_LOCATION_NAMES,
 )
 
@@ -110,6 +111,16 @@ class NSMBDSWorld(World):
     _star_coin_location_names: tuple[str, ...] = tuple(
         name for name in LOCATION_TABLE if " Star Coin " in name
     )
+    location_name_groups = {
+        "Star Coins": frozenset(_star_coin_location_names),
+        "Secret Exits": frozenset(
+            name for name in LOCATION_TABLE if name.endswith(" Secret Exit")
+        ),
+        "Red Coin Challenges": RED_COIN_LOCATION_NAMES,
+        "1-Up Blocks": ONE_UP_BLOCK_LOCATION_NAMES,
+        "Blocksanity": BLOCKSANITY_LOCATION_NAMES,
+        "Toad Houses": TOAD_HOUSE_LOCATION_NAMES,
+    }
     _boss_location_names: tuple[str, ...] = BOSS_LOCATION_NAMES
     individual_gate_tiers: dict[str, int]
     vanilla_gate_tiers: dict[str, int]

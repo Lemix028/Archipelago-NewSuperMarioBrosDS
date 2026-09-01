@@ -207,6 +207,10 @@ STATIC_TOAD_HOUSES: tuple[StageDefinition, ...] = (
     StageDefinition("World 8 Red Toad House", 7, 14, 192, False, kind=LocationKind.STATIC_TOAD_HOUSE),
 )
 
+TOAD_HOUSE_LOCATION_NAMES: frozenset[str] = frozenset(
+    f"{definition.name} Goal" for definition in STATIC_TOAD_HOUSES
+)
+
 STATIC_MAP_REWARDS: tuple[StageDefinition, ...] = (
     # StageDefinition("World 1 Toad's Forest Shop", 0, 13, 17, False, kind=LocationKind.STATIC_MAP_REWARD),
 )

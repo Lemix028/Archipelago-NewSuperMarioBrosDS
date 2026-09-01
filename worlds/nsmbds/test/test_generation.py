@@ -1,6 +1,22 @@
 """Representative Core generation profiles for NSMBDS."""
 
+from unittest import TestCase
+
+from .. import NSMBDSWorld
 from .bases import NSMBDSTestBase
+
+
+class TestLocationNameGroups(TestCase):
+
+    def test_toad_houses(self) -> None:
+        expected = frozenset(
+            name for name in NSMBDSWorld.location_name_to_id
+            if " Toad House" in name and name.endswith(" Goal")
+        )
+        group = NSMBDSWorld.location_name_groups["Toad Houses"]
+
+        self.assertEqual(group, expected)
+        self.assertEqual({name.split()[1] for name in group}, set("12345678"))
 
 
 class TestMinimalGeneration(NSMBDSTestBase):
