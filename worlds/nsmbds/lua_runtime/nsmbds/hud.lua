@@ -124,6 +124,10 @@ function M.draw_protection_hud(snapshot)
     context.last_drawn_shield_count = shield_count
     context.last_drawn_insurance_count = insurance_count
 
+    -- No icons to draw: avoid querying the NDS layout and building screen
+    -- geometry every frame while still updating mailbox readiness above.
+    if shield_count <= 0 and insurance_count <= 0 then return end
+
     -- Tiny pixel icons beside the vanilla timer; on multiple screens.
     for _, screen in ipairs(get_hud_screens()) do
         local scale = screen.duplicate and 2 or 1

@@ -19,6 +19,10 @@ local SLOW_TARGET = constants.SLOW_TARGET
 local ICE_GRIP_COMPENSATION = constants.ICE_GRIP_COMPENSATION
 local input_filter_hook_warning_printed = false
 local memory_input_filter_hooks_initialized = false
+local input_filter_hook_kind = nil
+local camera_held_flag = 0
+local camera_pressed_flag = 0
+local camera_filters_pressed = false
 
 local function clear_byte_flag(value, flag)
     if math.floor(value / flag) % 2 == 1 then
@@ -214,34 +218,48 @@ local function apply_sticky_buttons_at(address)
     if low ~= original_low then _G.memory.writebyte(address, low) end
 end
 
-local function set_camera_shoulder_at(address, direction)
+local function camera_shoulder_flag(direction)
+    if direction < 0 then return 0x02 end
+    if direction > 0 then return 0x01 end
+    return 0
+end
+
+local function set_camera_shoulder_flag_at(address, shoulder_flag)
     local original_high = _G.memory.readbyte(address + 1)
     -- DS keypad high byte: R=0x01 and L=0x02.
-    local high = clear_byte_flag(clear_byte_flag(original_high, 0x01), 0x02)
-    if direction < 0 then
-        high = set_byte_flag(high, 0x02)
-    elseif direction > 0 then
-        high = set_byte_flag(high, 0x01)
-    end
+    local high = original_high - original_high % 4 + shoulder_flag
     if high ~= original_high then _G.memory.writebyte(address + 1, high) end
 end
 
-local function apply_camera_trap_at(address)
+local function refresh_camera_filter_state()
     local elapsed = math.max(0, context.trap_total_frames - context.trap_remaining_frames)
     local direction = state.input_trap_state.camera_direction
     if context.active_mode == "camera_drift" then
         local ramping = elapsed < state.input_trap_state.camera_drift_ramp_frames
         local pulse_frame = elapsed % state.input_trap_state.camera_drift_pulse_period
-        if address == addresses.ADDR_BUTTONS_PRESSED then
-            direction = ramping and pulse_frame == 0 and direction or 0
-        elseif ramping and pulse_frame >= state.input_trap_state.camera_drift_pulse_frames then
-            direction = 0
+        local held_direction = direction
+        if ramping and pulse_frame >= state.input_trap_state.camera_drift_pulse_frames then
+            held_direction = 0
         end
-    elseif context.active_mode == "camera_sway" then
-        if address == addresses.ADDR_BUTTONS_PRESSED then return end
+        local pressed_direction = ramping and pulse_frame == 0 and direction or 0
+        camera_held_flag = camera_shoulder_flag(held_direction)
+        camera_pressed_flag = camera_shoulder_flag(pressed_direction)
+        camera_filters_pressed = true
+    else
         direction = math.floor(elapsed / state.input_trap_state.camera_sway_period) % 2 == 0 and -1 or 1
+        camera_held_flag = camera_shoulder_flag(direction)
+        camera_pressed_flag = 0
+        camera_filters_pressed = false
     end
-    set_camera_shoulder_at(address, direction)
+end
+
+local function apply_camera_trap_at(address)
+    if address == addresses.ADDR_BUTTONS_PRESSED then
+        if not camera_filters_pressed then return end
+        set_camera_shoulder_flag_at(address, camera_pressed_flag)
+        return
+    end
+    set_camera_shoulder_flag_at(address, camera_held_flag)
 end
 
 local function apply_boo_curse_at(address)
@@ -318,8 +336,32 @@ local function apply_button_input_filter()
     apply_input_filter_at(addresses.ADDR_BUTTONS_PRESSED)
 end
 
+-- Camera Traps keep the exact two execute-hook addresses used by the generic
+-- input filter, but skip mode dispatch and per-callback pulse calculations.
+local function apply_camera_general_input_filter()
+    if context.trap_remaining_frames <= 0 then return end
+    set_camera_shoulder_flag_at(addresses.ADDR_PRESSED_KEYS, camera_held_flag)
+end
+
+local function apply_camera_button_input_filter()
+    if context.trap_remaining_frames <= 0 then return end
+    set_camera_shoulder_flag_at(addresses.ADDR_BUTTONS_HELD, camera_held_flag)
+    if camera_filters_pressed then
+        set_camera_shoulder_flag_at(addresses.ADDR_BUTTONS_PRESSED, camera_pressed_flag)
+    end
+end
+
 function M.ensure_input_filter_hooks()
-    if context.input_filter_hooks_initialized then return true end
+    local hook_kind = "generic"
+    if context.active_mode == "camera_drift" or context.active_mode == "camera_sway" then
+        hook_kind = "camera"
+    end
+    if context.input_filter_hooks_initialized then
+        if input_filter_hook_kind == hook_kind then return true end
+        -- A new trap can replace an active one. Do not retain the previous
+        -- trap's specialized callbacks; this runs only when the kind changes.
+        M.disable_input_filter_hooks()
+    end
 
     context.input_filter_hooks_attempted = true
     local on_execute = event and (event.on_bus_exec or event.onmemoryexecute)
@@ -331,16 +373,22 @@ function M.ensure_input_filter_hooks()
         local buttons_hook_address = memory.sys_bus_domain
             and constants.SYS_INPUT_BUTTONS_AFTER_WRITE
             or memory.to_domain_addr(constants.SYS_INPUT_BUTTONS_AFTER_WRITE)
+        local general_filter = apply_general_input_filter
+        local button_filter = apply_button_input_filter
+        if hook_kind == "camera" then
+            general_filter = apply_camera_general_input_filter
+            button_filter = apply_camera_button_input_filter
+        end
         local general_ok, general_error = pcall(
             on_execute,
-            apply_general_input_filter,
+            general_filter,
             general_hook_address,
             "nsmbds_input_filter_general_after_write",
             scope
         )
         local buttons_ok, buttons_error = pcall(
             on_execute,
-            apply_button_input_filter,
+            button_filter,
             buttons_hook_address,
             "nsmbds_input_filter_buttons_after_write",
             scope
@@ -348,6 +396,7 @@ function M.ensure_input_filter_hooks()
         memory_input_filter_hooks_initialized = general_ok and buttons_ok
         if memory_input_filter_hooks_initialized then
             context.input_filter_hooks_initialized = true
+            input_filter_hook_kind = hook_kind
             input_filter_hook_warning_printed = false
             return true
         end
@@ -374,7 +423,10 @@ function M.ensure_input_filter_hooks()
             "nsmbds_input_filter_frame_start"
         )
         context.input_filter_hooks_initialized = ok
-        if ok then return true end
+        if ok then
+            input_filter_hook_kind = hook_kind
+            return true
+        end
         if not input_filter_hook_warning_printed then
             print("NSMBDS input Trap fallback registration failed: " .. tostring(hook_error))
             input_filter_hook_warning_printed = true
@@ -396,6 +448,10 @@ function M.disable_input_filter_hooks()
         pcall(event.unregisterbyname, "nsmbds_input_filter_buttons_after_write")
     end
     memory_input_filter_hooks_initialized = false
+    input_filter_hook_kind = nil
+    camera_held_flag = 0
+    camera_pressed_flag = 0
+    camera_filters_pressed = false
     context.input_filter_hooks_initialized = false
     context.input_filter_hooks_attempted = false
     input_filter_hook_warning_printed = false
@@ -417,6 +473,11 @@ function M.update_input_filter_hooks(has_active_player)
             or mode == "no_turnaround")
     if needs_input_filter then
         M.ensure_input_filter_hooks()
+        -- Installation can clear the previous trap's cached flags. Refresh
+        -- afterwards, before emulation resumes and either input hook fires.
+        if mode == "camera_drift" or mode == "camera_sway" then
+            refresh_camera_filter_state()
+        end
     elseif context.input_filter_hooks_initialized or context.input_filter_hooks_attempted then
         M.disable_input_filter_hooks()
     end

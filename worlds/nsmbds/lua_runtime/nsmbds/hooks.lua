@@ -76,7 +76,9 @@ end
 
 function M.disable_hit_block_execute_hook()
     if not context.hit_block_execute_hook_initialized
-        and not context.hit_block_execute_hook_attempted then
+        and not context.hit_block_execute_hook_attempted
+        and not context.head_bonk_execute_hook_initialized
+        and not context.head_bonk_execute_hook_attempted then
         return
     end
     if event and event.unregisterbyname then
@@ -220,6 +222,7 @@ function M.ensure_hit_block_execute_hook()
     -- Remove hook names used by earlier revisions in case BizHawk retained
     -- them across a hot reload.
     if event.unregisterbyname then
+        pcall(event.unregisterbyname, HIT_BLOCK_TILE_HOOK_NAME)
         pcall(event.unregisterbyname, LEGACY_HIT_BLOCK_ENTRY_HOOK_NAME)
         for index = 1, 4 do
             pcall(event.unregisterbyname, LEGACY_HIT_BLOCK_TILE_HOOK_NAME_PREFIX .. index)

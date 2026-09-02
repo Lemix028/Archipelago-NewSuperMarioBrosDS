@@ -333,6 +333,8 @@ def set_emulator_feed_fade_seconds(seconds: int) -> None:
 
 def launch_game() -> subprocess.Popen:
     """Start the selected patched ROM with the bundled NSMBDS Lua runtime."""
+    global _materialized_bootstrap
+
     if launch_state.process is not None and launch_state.process.poll() is None:
         raise RuntimeError("BizHawk was already started from this client.")
     emuhawk = find_emuhawk()
@@ -347,6 +349,9 @@ def launch_game() -> subprocess.Popen:
     if not rom:
         raise FileNotFoundError("No patched NSMBDS seed ROM is selected.")
     validate_seed_rom(rom)
+    # Status checks may reuse the path, but a fresh emulator process must load
+    # the current Lua sources, including edits made during this client session.
+    _materialized_bootstrap = None
     bootstrap = materialize_lua_runtime()
     from Utils import local_path
 
