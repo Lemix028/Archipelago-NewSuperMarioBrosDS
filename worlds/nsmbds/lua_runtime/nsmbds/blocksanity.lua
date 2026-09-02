@@ -142,6 +142,9 @@ local ground_pound_capture = nil
 local capture_actor_baseline_ready = false
 local MOVING_BLOCK_ACTOR_TYPE = 0x0104
 local MOVING_BLOCK_OPEN_STATE_OFFSET = 0x3E4
+local MOVING_BLOCK_CONTENT_OFFSET = 0x5F0
+local MOVING_BLOCK_SWITCH_CONTENT = 4
+local MOVING_BLOCK_SPAWNED_ACTOR_ID_OFFSET = 0x600
 local known_moving_blocks = {}
 
 function M.reset_block_observer_state()
@@ -322,9 +325,26 @@ function M.observe_block_bumps(objects)
             end
 
             if is_verified_moving_block then
+                local is_switch_block
+                if moving_state ~= nil then
+                    is_switch_block = moving_state.is_switch_block
+                else
+                    is_switch_block = _G.memory.readbyte(
+                        memory.to_domain_addr(object + MOVING_BLOCK_CONTENT_OFFSET)
+                    ) == MOVING_BLOCK_SWITCH_CONTENT
+                end
                 local open_state = _G.memory.read_u32_le(
                     memory.to_domain_addr(object + MOVING_BLOCK_OPEN_STATE_OFFSET)
                 ) % 2
+                -- A2DE ov54: 0x0215B090 skips the used-block flag for switches.
+                -- Successful switch creation stores its actor ID at +0x600
+                -- (0x0215AF20); onCreate initializes that field to zero.
+                -- Count the release even before the player presses the switch.
+                if is_switch_block and _G.memory.read_u32_le(
+                    memory.to_domain_addr(object + MOVING_BLOCK_SPAWNED_ACTOR_ID_OFFSET)
+                ) ~= 0 then
+                    open_state = 1
+                end
                 if moving_state == nil then
                     if tile_x == nil then
                         tile_x, tile_y = actors.object_tile(object)
@@ -335,6 +355,7 @@ function M.observe_block_bumps(objects)
                         spawn_y = tile_y,
                         current_x = tile_x,
                         current_y = tile_y,
+                        is_switch_block = is_switch_block,
                         open_state = open_state,
                         seen_generation = scan_generation,
                     }
