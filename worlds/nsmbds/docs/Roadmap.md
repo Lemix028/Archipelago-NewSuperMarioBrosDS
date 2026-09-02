@@ -2,14 +2,14 @@
 
 ## Current
 
-Focus:
-- PopTracker
 
 ## Planned
 
 - Add minigame support
 - Warp Cannon Access item
 - Performance Optimization
+- Movesanity
+- PopTracker
 
 
 ## Later / Ideas
