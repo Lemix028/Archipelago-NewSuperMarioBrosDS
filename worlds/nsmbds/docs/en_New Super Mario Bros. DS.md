@@ -132,6 +132,22 @@ also use **Non-Progression** by default.
 The Blocksanity global percentage controls how many of these checks may hold
 items for other players. The remaining blocks contain local filler or traps.
 
+### Location groups
+
+For Archipelago options that accept location groups, such as
+`exclude_locations`, this world provides the following category names:
+
+- `Star Coins`
+- `Secret Exits`
+- `Red Coin Challenges`
+- `1-Up Blocks`
+- `Blocksanity`
+- `Toad Houses`
+
+These groups let you refer to a whole category instead of listing each location.
+They do not enable categories that are disabled in your seed options. Excluding
+a location from progression placement does not remove its check from the game.
+
 ## Traps
 
 The trap percentage controls how often traps replace ordinary non-progression
