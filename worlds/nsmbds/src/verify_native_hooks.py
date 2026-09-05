@@ -21,10 +21,12 @@ def sha256(data: bytes) -> str:
 def load_checked_in_hooks() -> dict[str, bytes]:
     star_metadata = runpy.run_path(METADATA_ROOT / "star_coin_gate_hook.py")
     powerup_metadata = runpy.run_path(METADATA_ROOT / "powerup_license_hook.py")
+    block_metadata = runpy.run_path(METADATA_ROOT / "block_hit_hook.py")
     return {
         "star_coin_gate_hook": star_metadata["STAR_COIN_GATE_HOOK_BYTES"],
         "star_coin_currency_hook": star_metadata["STAR_COIN_CURRENCY_HOOK_BYTES"],
         "powerup_license_hook": powerup_metadata["POWERUP_LICENSE_HOOK_BYTES"],
+        "block_hit_hook": block_metadata["BLOCK_HIT_HOOK_BYTES"],
     }
 
 
@@ -40,6 +42,7 @@ def verify(build_directory: Path | None = None) -> list[str]:
             hooks["star_coin_gate_hook"] + hooks["star_coin_currency_hook"]
         ),
         "powerup_license_hook_sha256": sha256(hooks["powerup_license_hook"]),
+        "block_hit_hook_sha256": sha256(hooks["block_hit_hook"]),
         "native_hooks_bsdiff4_sha256": sha256(
             (WORLD_ROOT / "rom" / "native_hooks.bsdiff4").read_bytes()
         ),

@@ -91,10 +91,11 @@ emulator_feed.initialize()
 check_bizhawk_version()
 -- Remove any high-frequency input hooks left by an older loaded revision.
 traps.disable_input_filter_hooks()
+hooks.cleanup_previous_block_hooks()
 
 -- Remove hooks that are only needed during gameplay.
 local function disable_gameplay_observer_hooks()
-    hooks.disable_hit_block_execute_hook()
+    hooks.disable_head_bonk_execute_hook()
     if event and event.unregisterbyname then
         pcall(event.unregisterbyname, "NSMBDS Red Coin Counter 1")
         pcall(event.unregisterbyname, "NSMBDS Red Coin Counter 2")
@@ -163,9 +164,23 @@ local function sideloading_tick()
         state.input_trap_state.player_was_moving_up = false
     end
 
-    -- Drain callbacks even on the frame where Mario disappears. Each record
+    -- Drain the ROM ring even on the frame where Mario disappears. Each record
     -- already owns the hit-time course identity and remains valid in transit.
-    pcall(blocksanity.observe_native_block_hits)
+    local blocks_ok, blocks_ready = pcall(blocksanity.observe_native_block_hits)
+    if not blocks_ok then
+        if not context.block_error_reported then
+            print("NSMBDS native block delivery failed: " .. tostring(blocks_ready))
+            context.block_error_reported = true
+        end
+    elseif not blocks_ready then
+        -- An old savestate can replace the new ARM9 code and ring in RAM.
+        -- Fail closed instead of silently falling back to execution hooks.
+        disable_all_hooks()
+        context.is_initialized = false
+        return
+    else
+        context.block_error_reported = false
+    end
 
     -- Reset observer state after a pause, rewind, or large frame jump.
     if context.last_observer_frame ~= nil
@@ -184,10 +199,7 @@ local function sideloading_tick()
             and state.input_trap_state.screen_flip_suspended then
             state.input_trap_state.resume_screen_flip()
         end
-        -- hitBlock is the primary source for every static block. The callback
-        -- only snapshots two registers, course identity, and the hit record;
-        -- queue work remains in this per-frame observer.
-        hooks.ensure_hit_block_execute_hook()
+        -- Static blocks are produced by the patched ROM; no Execute hook.
         hooks.sync_head_bonk_execute_hook()
         red_coins.ensure_red_coin_write_hook()
         pcall(blocksanity.observe_ground_pound_blocks, player)

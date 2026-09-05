@@ -1,6 +1,7 @@
 {
   "star_coin_gate_hook_sha256": "4d6636282494c9895f7217afd5e80140dfdd258bbab3aaf49ad0115b517bccaf",
   "powerup_license_hook_sha256": "d487c2f5a4116898428d8838fd8185293bd8ce439d97710ea67ca3c29c1cddd2",
-  "native_hooks_bsdiff4_sha256": "be8c8457da09b33ed2d1572ceafa5c2aaecf43c84c3ccc06950ffce492461e1e",
-  "patched_rom_sha256": "b330391d84e0834c73594ddc4b5bcccd05372f8f60f0a1c1f95d223045cbde7b"
+  "block_hit_hook_sha256": "6280f6c44b66e298c61f583c8d6d3f346f410cb46797de0bf39d14e0aec5d690",
+  "native_hooks_bsdiff4_sha256": "dfa9ab8ede4c22886730f5f40b241b41472767953bc7f47a9fd6bfffba061c7e",
+  "patched_rom_sha256": "50278305d378e27def2980d1e696ddea7024d8f8414a0259fd78af57aac6e31f"
 }

@@ -270,6 +270,9 @@ class NSMBDSClient(
             self._last_published_poptracker_view = None
             return
 
+        if not await self._sync_native_block_configuration(ctx):
+            return
+
         level_data = await self._read_level_data(ctx)
         if level_data is None:
             return

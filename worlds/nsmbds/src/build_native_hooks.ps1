@@ -50,6 +50,7 @@ function Build-ArmBinary {
 Build-ArmBinary -Name 'star_coin_gate_hook' -LinkAddress '0x020EDFC4'
 Build-ArmBinary -Name 'star_coin_currency_hook' -LinkAddress '0x02002EC0'
 Build-ArmBinary -Name 'powerup_license_hook' -LinkAddress '0x02002F00'
+Build-ArmBinary -Name 'block_hit_hook' -LinkAddress '0x02001A00'
 
 & (Join-Path $PSScriptRoot 'build_marker.ps1') -DevkitArm $DevkitArm -OutputDirectory $resolvedOutput
 if ($LASTEXITCODE -ne 0) { throw 'Patch marker build failed.' }

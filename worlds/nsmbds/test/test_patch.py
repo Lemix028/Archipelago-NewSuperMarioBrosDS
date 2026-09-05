@@ -162,6 +162,7 @@ class TestProcedurePatch(NSMBDSTestBase):
                     ["apply_tokens", ["token_data.bin"]],
                     ["apply_secondary_screen_backgrounds", ["nsmbds_patch_config.json"]],
                     ["apply_player_palettes", ["nsmbds_patch_config.json"]],
+                    ["verify_native_patch_marker", []],
                 ],
             )
             self.assertTrue({

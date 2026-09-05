@@ -25,6 +25,8 @@ SOURCE_ROOT = Path(__file__).resolve().parent
 WORLD_ROOT = SOURCE_ROOT.parent
 METADATA_ROOT = SOURCE_ROOT / "native_hooks"
 EXPECTED_BASE_SHA256 = "9f67fef1b4c73e966767f6153431ada3751dc1b0da2c70f386c14a5e3017f354"
+BASE_ROM_SIZE = 0x02000000
+PATCH_MARKER_ROM_OFFSET = runpy.run_path(WORLD_ROOT / "data" / "patch_protocol.py")["PATCH_MARKER_ROM_OFFSET"]
 
 
 def sha256(data: bytes) -> str:
@@ -69,12 +71,19 @@ def build_patched_rom(base_bytes: bytes) -> bytes:
 
     star = runpy.run_path(METADATA_ROOT / "star_coin_gate_hook.py")
     powerup = runpy.run_path(METADATA_ROOT / "powerup_license_hook.py")
+    block = runpy.run_path(METADATA_ROOT / "block_hit_hook.py")
     save_menu = runpy.run_path(METADATA_ROOT / "native_save_menu.py")
     rom = ndspy.rom.NintendoDSRom(base_bytes)
     overlays = rom.loadArm9Overlays()
 
     arm9 = bytearray(ndspy.codeCompression.decompress(rom.arm9))
+    block_payload = block["BLOCK_HIT_HOOK_BYTES"]
+    if (len(block["BLOCK_HIT_CODE"]) > 0x200
+            or len(block_payload) != block["BLOCK_HIT_END"] - block["BLOCK_HIT_HOOK_CAVE"]
+            or block["BLOCK_HIT_END"] > star["CURRENCY_GETTER_CAVE"]):
+        raise ValueError("Native block code/ring overlaps another reserved region.")
     for address, payload, label in (
+        (block["BLOCK_HIT_HOOK_CAVE"], block_payload, "Block-hit code and ring cave"),
         (star["CURRENCY_GETTER_CAVE"], star["STAR_COIN_CURRENCY_HOOK_BYTES"], "Star-Coin currency cave"),
         (powerup["POWERUP_HOOK_CAVE"], powerup["POWERUP_LICENSE_HOOK_BYTES"], "Power-Up License cave"),
     ):
@@ -91,6 +100,15 @@ def build_patched_rom(base_bytes: bytes) -> bytes:
     rom.arm9 = ndspy.codeCompression.compress(arm9, isArm9=True)
 
     overlay_0 = overlays[powerup["POWERUP_OVERLAY_ID"]]
+    block_overlay = overlays[block["BLOCK_HIT_OVERLAY_ID"]]
+    for address, expected in block["BLOCK_HIT_CALL_SITES"]:
+        if expected != arm_branch(address, block["BLOCK_HIT_CHANGE_TILE"], link=True):
+            raise ValueError(f"Unexpected original block call target at {address:#x}")
+        patch_overlay_word(
+            block_overlay, address, expected,
+            arm_branch(address, block["BLOCK_HIT_HOOK_CAVE"], link=True),
+            "Native block-hit call",
+        )
     patch_overlay_word(
         overlay_0,
         powerup["POWERUP_HOOK_SITE"],
@@ -145,7 +163,13 @@ def build_patched_rom(base_bytes: bytes) -> bytes:
         raise ValueError("Unexpected course.bmg message count after adding gate text.")
     rom.files[bmg_file_id] = course_bmg.save()
 
-    return rom.save()
+    packed = rom.save()
+    # Repacking shifts NitroFS files: the old fixed marker at 0x013A57A8 can
+    # now be inside an asset. Reserve the last 32 bytes of the 32-MiB cart;
+    # seed tokens and palette/background patches must not overlap this tail.
+    if len(packed) > PATCH_MARKER_ROM_OFFSET:
+        raise ValueError("Packed ROM overlaps the reserved patch-marker tail.")
+    return packed.ljust(BASE_ROM_SIZE, b"\xFF")
 
 
 def main() -> None:

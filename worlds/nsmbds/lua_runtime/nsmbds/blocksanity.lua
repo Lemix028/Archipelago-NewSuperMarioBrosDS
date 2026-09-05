@@ -9,17 +9,26 @@ local constants = require("nsmbds.constants")
 local addresses = require("nsmbds.addresses")
 local state = require("nsmbds.state")
 local actors = require("nsmbds.actors")
+local native_blocks = require("nsmbds.native_blocks")
 local context = state.context
 
 
-local block_event_queue = {}
-local queued_block_events = {}
-local MAX_QUEUED_BLOCK_EVENTS = 64
+-- Hot reload preserves queued deliveries for this exact ROM. No 64-event
+-- truncation: the 128 moving blocks in W6-2 alone can exceed that limit.
+local delivery = nil
+function M.initialize_delivery()
+    local rom_hash = gameinfo.getromhash()
+    local saved = rawget(_G, "nsmbds_block_delivery")
+    if not saved or saved.rom_hash ~= rom_hash then
+        saved = {rom_hash = rom_hash, queue = {}, keys = {}, first = 1, last = 0}
+        _G.nsmbds_block_delivery = saved
+    end
+    delivery = saved
+end
 
 function M.block_event_key(event_type, world, level, area, tile_x, tile_y)
-    -- Native and Actor fallback observations of the same static block must
-    -- share one queue identity even if one classified the hit as a Ground
-    -- Pound. Moving blocks retain their own namespace.
+    -- A static tile has one identity regardless of hit direction.
+    -- Moving blocks retain their own spawn-coordinate namespace.
     local identity_type = event_type == constants.AP_EVENT_TYPE_MOVING_BLOCK_OPEN
         and event_type
         or 0
@@ -45,13 +54,10 @@ end
 
 function M.queue_block_event(event_type, world, level, area, tile_x, tile_y)
     local key = M.block_event_key(event_type, world, level, area, tile_x, tile_y)
-    if queued_block_events[key] then
-        return
-    end
-    if #block_event_queue >= MAX_QUEUED_BLOCK_EVENTS then
-        return
-    end
-    block_event_queue[#block_event_queue + 1] = {
+    if not delivery then M.initialize_delivery() end
+    if delivery.keys[key] then return true end
+    delivery.last = delivery.last + 1
+    delivery.queue[delivery.last] = {
         event_type = event_type,
         world = world,
         level = level,
@@ -60,49 +66,17 @@ function M.queue_block_event(event_type, world, level, area, tile_x, tile_y)
         tile_y = tile_y,
         key = key,
     }
-    queued_block_events[key] = true
+    delivery.keys[key] = true
+    return true
 end
 
-function M.queue_block_object(object, known_tile_x, known_tile_y)
-    local tile_x, tile_y = known_tile_x, known_tile_y
-    if tile_x == nil or tile_y == nil then
-        tile_x, tile_y = actors.object_tile(object)
-    end
-    local world, level, area = actors.current_course_identity()
-    M.queue_block_event(
-        constants.AP_EVENT_TYPE_BLOCK_BUMP,
-        world,
-        level,
-        area,
-        tile_x,
-        tile_y
-    )
-end
-
--- Drain the exact coordinates captured inside the native Execute callback.
--- The callback also snapshots the course identity, so a transition after the
--- hit cannot relabel the event with the next area.
+-- Drain exact ROM-produced records, including on area/level-exit frames.
 function M.observe_native_block_hits()
-    if #context.native_block_hits == 0 then
-        return
-    end
-    local hits = context.native_block_hits
-    context.native_block_hits = {}
-    context.native_block_hit_overflow_logged = false
-    for _, hit in ipairs(hits) do
-        M.queue_block_event(
-            hit.event_type,
-            hit.world,
-            hit.level,
-            hit.area,
-            hit.tile_x,
-            hit.tile_y
-        )
-    end
+    return native_blocks.drain(M.queue_block_event)
 end
 
 function M.publish_next_block_event()
-    if #block_event_queue == 0 then
+    if not delivery or delivery.first > delivery.last then
         return
     end
 
@@ -112,7 +86,7 @@ function M.publish_next_block_event()
         return
     end
 
-    local pending = block_event_queue[1]
+    local pending = delivery.queue[delivery.first]
     local next_sequence = (sequence + 1) % 256
     _G.memory.writebyte(addresses.ADDR_AP_BLOCK_EVENT_TYPE, pending.event_type)
     _G.memory.write_u32_le(addresses.ADDR_AP_BLOCK_EVENT_WORLD, pending.world)
@@ -121,8 +95,12 @@ function M.publish_next_block_event()
     _G.memory.write_s32_le(addresses.ADDR_AP_BLOCK_EVENT_TILE_X, pending.tile_x)
     _G.memory.write_s32_le(addresses.ADDR_AP_BLOCK_EVENT_TILE_Y, pending.tile_y)
     _G.memory.writebyte(addresses.ADDR_AP_BLOCK_EVENT_SEQUENCE, next_sequence)
-    queued_block_events[pending.key] = nil
-    table.remove(block_event_queue, 1)
+    delivery.keys[pending.key] = nil
+    delivery.queue[delivery.first] = nil
+    delivery.first = delivery.first + 1
+    if delivery.first > delivery.last then
+        delivery.first, delivery.last = 1, 0
+    end
 end
 
 
@@ -198,7 +176,7 @@ local function capture_ground_pound_tile(tile_x, tile_y)
     ground_pound_capture.captured_tiles[tile_key] = true
 
     -- A ground pound may open a moving block before its open-state transition
-    -- is visible to the per-frame actor scan. Bind the native impact back to
+    -- is visible to the per-frame actor scan. Bind the impact back to
     -- every exact moving actor and publish its immutable spawn coordinate.
     local moving_hits = moving_blocks_at_impact(tile_x, tile_y)
     if #moving_hits > 0 then
@@ -215,17 +193,10 @@ local function capture_ground_pound_tile(tile_x, tile_y)
         return
     end
 
-    M.queue_block_event(
-        constants.AP_EVENT_TYPE_BLOCK_GROUND_POUND,
-        ground_pound_capture.world,
-        ground_pound_capture.level,
-        ground_pound_capture.area,
-        tile_x,
-        tile_y
-    )
+    -- Static block coordinates come exclusively from the ROM producer.
 end
 
--- Track ordinary bumps through the transient block actors.
+-- Moving-block openings and their short Ground-Pound correlation window.
 function M.observe_block_bumps(objects)
     local world, level, area = actors.current_course_identity()
     if world > 7 or level > constants.MAX_RUNTIME_COURSE_LEVEL or area == 0xFF then
@@ -246,8 +217,7 @@ function M.observe_block_bumps(objects)
         observed_course_key = course_key
     end
 
-    -- Keep Actor sampling alive as a corroborating fallback. Native records
-    -- are drained first, and block_event_key() deduplicates the same tile.
+    -- Keep actor correlation for moving blocks, not static block fallbacks.
     local capture_actors = ground_pound_capture ~= nil
     if not capture_actors and capture_actor_baseline_ready then
         known_actors.object_tiles = {}
@@ -281,30 +251,6 @@ function M.observe_block_bumps(objects)
                 and class_id ~= constants.PLAYER_CLASS_ID
                 and (previous_type ~= type or previous_class ~= class_id) then
                 capture_ground_pound_tile(tile_x, tile_y)
-            end
-        end
-
-        if object_baseline_ready
-            and (type == constants.BUMPED_BLOCK_TYPE or type == constants.BROKEN_BRICK_TYPE)
-            and previous_type ~= type then
-            if tile_x == nil then
-                tile_x, tile_y = actors.object_tile(object)
-            end
-            local player = state.input_trap_state.active_player
-            local is_ground_pound_block = false
-            if player ~= nil then
-                local ground_pound_state = _G.memory.readbyte(memory.to_domain_addr(
-                    player + constants.PLAYER_GROUND_POUND_STATE_OFFSET
-                ))
-                is_ground_pound_block = ground_pound_state
-                    == constants.PLAYER_GROUND_POUND_ACTIVE_STATE
-            end
-            if is_ground_pound_block then
-                -- These actors transition one frame before the impact animation
-                M.queue_block_event(
-                    constants.AP_EVENT_TYPE_BLOCK_GROUND_POUND, world, level, area, tile_x, tile_y + 1)
-            else
-                M.queue_block_object(object, tile_x, tile_y)
             end
         end
 
@@ -458,13 +404,11 @@ function M.observe_ground_pound_blocks(player)
         raw_x = raw_x,
         captured_tiles = {},
     }
-    -- The orchestrator runs the actor observer immediately after this call.
-    -- It supplies exact fallback tiles only while the native callback has not
-    -- demonstrated usable register access.
+    -- The following actor observer correlates moving-block impacts only.
     capture_actor_baseline_ready = false
 end
 
--- Publish a legacy position fallback only if native hooks are unavailable.
+-- Expire moving-block correlation; never guess static block coordinates.
 function M.finalize_ground_pound_capture()
     if ground_pound_capture == nil then
         return
@@ -474,17 +418,6 @@ function M.finalize_ground_pound_capture()
         return
     end
 
-    if next(ground_pound_capture.captured_tiles) == nil
-        and not context.hit_block_execute_hook_initialized then
-        M.queue_block_event(
-            constants.AP_EVENT_TYPE_BLOCK_GROUND_POUND,
-            ground_pound_capture.world,
-            ground_pound_capture.level,
-            ground_pound_capture.area,
-            ground_pound_capture.tile_x,
-            ground_pound_capture.tile_y
-        )
-    end
     ground_pound_capture = nil
 end
 

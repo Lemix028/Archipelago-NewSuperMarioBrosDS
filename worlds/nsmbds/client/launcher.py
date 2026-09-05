@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Iterable
 
 from ..version import DISPLAY_VERSION
+from ..data.patch_protocol import PATCH_MARKER, PATCH_MARKER_ROM_OFFSET as PATCH_MARKER_OFFSET
 
 
 PATCH_SUFFIX = ".apnsmbds"
@@ -18,8 +19,6 @@ ROM_SUFFIX = ".nds"
 BOOTSTRAP_NAME = "nsmbds_bizhawk_bootstrap.lua"
 ROM_GAME_CODE = b"A2DE"
 ROM_GAME_CODE_OFFSET = 0x0C
-PATCH_MARKER_OFFSET = 0x013A57A8
-PATCH_MARKER = bytes.fromhex("1E FF 2F E1 41 50 4E 53 01 00 00 00 00 00 00 00 00 00 00 00")
 EMULATOR_FEED_POSITIONS = (
     "bottom_left",
     "bottom_right",
@@ -245,7 +244,11 @@ def validate_seed_rom(path: Path) -> None:
     if game_code != ROM_GAME_CODE:
         raise ValueError("Selected ROM is not the supported USA NSMBDS ROM (A2DE).")
     if patch_marker != PATCH_MARKER:
-        raise ValueError("Selected ROM is a clean or incompatible ROM, not a patched NSMBDS seed ROM.")
+        raise ValueError(
+            "Selected ROM is clean or uses an older patch. Regenerate the seed patch with "
+            "the current APWorld, apply it, and cold-boot the new ROM. Reapplying an old "
+            ".apnsmbds file or loading an old savestate does not install the native block hook."
+        )
 
 
 def _copy_resource_tree(source, destination: Path) -> None:

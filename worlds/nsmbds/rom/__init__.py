@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.resources
 import json
+import struct
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -13,6 +14,7 @@ from worlds.Files import APPatchExtension, APProcedurePatch, APTokenMixin, APTok
 from .palette import patch_player_palettes_from_json
 from .secondary_screen import patch_secondary_screen_backgrounds_from_json
 from ..version import APWORLD_VERSION, DISPLAY_VERSION, RELEASE_CHANNEL
+from ..data.patch_protocol import PATCH_MARKER, PATCH_MARKER_ROM_OFFSET, PATCH_PROTOCOL_VERSION
 
 if TYPE_CHECKING:
     from .. import NSMBDSWorld
@@ -23,10 +25,6 @@ BASE_ROM_SHA256 = "9F67FEF1B4C73E966767F6153431ADA3751DC1B0DA2C70F386C14A5E3017F
 BASE_ROM_SIZE = 33_554_432
 BASE_GAME_CODE = b"A2DE"
 BASE_ROM_GAME_CODE = BASE_GAME_CODE
-PATCH_PROTOCOL_VERSION = 1
-
-PATCH_MARKER_ROM_OFFSET = 0x013A57A8
-PATCH_MARKER = bytes.fromhex("1E FF 2F E1 41 50 4E 53 01 00 00 00 00 00 00 00 00 00 00 00")
 
 
 def _settings():
@@ -149,6 +147,21 @@ class NSMBDSPatchExtension(APPatchExtension):
         """Apply the deterministic in-level lower-screen wallpaper shuffle."""
         return patch_secondary_screen_backgrounds_from_json(rom, caller.get_file(config_file))
 
+    @staticmethod
+    def verify_native_patch_marker(caller: APProcedurePatch, rom: bytes) -> bytes:
+        """Catch later asset patches consuming the reserved ROM-tail marker."""
+        fat_offset, fat_size = struct.unpack_from("<II", rom, 0x48)
+        if fat_size % 8 or fat_offset + fat_size > len(rom):
+            raise ValueError("Seed ROM has an invalid NitroFS allocation table.")
+        if any(
+            struct.unpack_from("<II", rom, entry)[1] > PATCH_MARKER_ROM_OFFSET
+            for entry in range(fat_offset, fat_offset + fat_size, 8)
+        ):
+            raise ValueError("Seed ROM assets overlap the reserved patch-marker tail.")
+        if rom[PATCH_MARKER_ROM_OFFSET:PATCH_MARKER_ROM_OFFSET + len(PATCH_MARKER)] != PATCH_MARKER:
+            raise ValueError("Seed ROM has no valid native-block patch marker or an asset overwrote it.")
+        return rom
+
 
 class NSMBDSProcedurePatch(APProcedurePatch, APTokenMixin):
     """Create a per-player patch."""
@@ -162,6 +175,7 @@ class NSMBDSProcedurePatch(APProcedurePatch, APTokenMixin):
         ("apply_tokens", ["token_data.bin"]),
         ("apply_secondary_screen_backgrounds", ["nsmbds_patch_config.json"]),
         ("apply_player_palettes", ["nsmbds_patch_config.json"]),
+        ("verify_native_patch_marker", []),
     ]
 
     @classmethod

@@ -128,6 +128,19 @@ AP_EVENT_TYPE_BLOCK_BUMP = 0x11
 AP_EVENT_TYPE_BLOCK_GROUND_POUND = 0x12
 AP_EVENT_TYPE_MOVING_BLOCK_OPEN = 0x13
 
+# ROM-native static block producer in permanent ARM9 linker padding. Producer
+# and Lua-owned consumer occupy separate 32-byte data-cache lines. Never write
+# the producer line from the client; the ARM hook cleans it after each event.
+ADDR_NATIVE_BLOCK_PRODUCER = 0x00001C00
+ADDR_NATIVE_BLOCK_CONSUMER = 0x00001C20
+ADDR_NATIVE_BLOCK_ENABLED = ADDR_NATIVE_BLOCK_CONSUMER + 4
+ADDR_NATIVE_BLOCK_RECORDS = 0x00001C40
+NATIVE_BLOCK_MAGIC = b"APBH"
+NATIVE_BLOCK_VERSION = 1
+NATIVE_BLOCK_HEADER = NATIVE_BLOCK_MAGIC + NATIVE_BLOCK_VERSION.to_bytes(4, "little")
+NATIVE_BLOCK_CAPACITY = 256
+NATIVE_BLOCK_RECORD_SIZE = 16
+
 # Live Mini Mario Castle Secret Exit completion flags (written by Lua, read by Python client in level_data offset 0x2F4)
 ADDR_AP_MINI_CASTLE_FLAGS = 0x00088F40  # system 0x02088F40, 1 byte, uint8
 ADDR_AP_MINI_CASTLE_FLAGS_PERM = 0x00002FF3  # system 0x02002FF3, 1 byte, uint8

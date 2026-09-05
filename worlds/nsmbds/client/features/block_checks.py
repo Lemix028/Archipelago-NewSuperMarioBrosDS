@@ -1,4 +1,4 @@
-"""Static and moving block-check detection through the Lua block mailbox."""
+"""ROM-native static and actor-observed moving checks via the Lua mailbox."""
 
 from __future__ import annotations
 
@@ -27,6 +27,9 @@ from ...data.ram_addresses import (
     AP_EVENT_TYPE_BLOCK_GROUND_POUND,
     AP_EVENT_TYPE_MOVING_BLOCK_OPEN,
     MEMORY_DOMAIN,
+    ADDR_NATIVE_BLOCK_PRODUCER,
+    ADDR_NATIVE_BLOCK_ENABLED,
+    NATIVE_BLOCK_HEADER,
 )
 
 if TYPE_CHECKING:
@@ -37,7 +40,36 @@ logger = logging.getLogger("NSMBDS")
 
 
 class BlockCheckTrackingMixin:
-    """Resolve Lua-observed static bumps and moving-block openings."""
+    """Resolve ROM-captured static hits and Lua-observed moving openings."""
+
+    async def _sync_native_block_configuration(self, ctx: "BizHawkClientContext") -> bool:
+        """Reject old ROMs and disable static capture when no block checks exist."""
+        from worlds._bizhawk import guarded_write, read
+
+        result = await read(ctx.bizhawk_ctx, [
+            (ADDR_NATIVE_BLOCK_PRODUCER, len(NATIVE_BLOCK_HEADER), MEMORY_DOMAIN),
+            (ADDR_NATIVE_BLOCK_ENABLED, 4, MEMORY_DOMAIN),
+        ])
+        if len(result) != 2 or bytes(result[0]) != NATIVE_BLOCK_HEADER or len(result[1]) != 4:
+            if not getattr(self, "_native_block_patch_warning", False):
+                logger.error(
+                    "Native block ROM patch missing or incompatible. Regenerate the seed patch "
+                    "with the current APWorld and cold-boot the new ROM. Old .apnsmbds files "
+                    "and savestates still contain the old code. Item writes are paused."
+                )
+                self._native_block_patch_warning = True
+            return False
+        self._native_block_patch_warning = False
+        slot_data = ctx.slot_data or {}
+        enabled = bool(slot_data.get("blocksanity", False) or slot_data.get("one_up_block_checks", True))
+        desired = int(enabled).to_bytes(4, "little")
+        if bytes(result[1]) != desired:
+            return bool(await guarded_write(
+                ctx.bizhawk_ctx,
+                [(ADDR_NATIVE_BLOCK_ENABLED, list(desired), MEMORY_DOMAIN)],
+                [(ADDR_NATIVE_BLOCK_PRODUCER, list(NATIVE_BLOCK_HEADER), MEMORY_DOMAIN)],
+            ))
+        return True
 
     async def _detect_and_send_block_check(self, ctx: "BizHawkClientContext") -> None:
         """Consume and acknowledge one pending bumped-block event."""

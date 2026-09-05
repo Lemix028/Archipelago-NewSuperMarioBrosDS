@@ -55,34 +55,6 @@ function M.to_domain_addr(sys_addr)
     return sys_addr
 end
 
-local arm9_register_names = {}
-
-function M.read_arm9_register(name)
-    local getregister = emu and emu.getregister
-    if not getregister then return nil end
-    -- Reuse the working alias: no candidate table or strings in the hot path.
-    local preferred = arm9_register_names[name] or name
-    local ok, value = pcall(getregister, preferred)
-    if ok and type(value) == "number" then
-        arm9_register_names[name] = preferred
-        return value
-    end
-
-    -- Rediscover the alias if a core change makes the cached one unavailable.
-    arm9_register_names[name] = nil
-    local candidates = { name, string.lower(name), "ARM9 " .. name }
-    for _, candidate in ipairs(candidates) do
-        if candidate ~= preferred then
-            ok, value = pcall(getregister, candidate)
-            if ok and type(value) == "number" then
-                arm9_register_names[name] = candidate
-                return value
-            end
-        end
-    end
-    return nil
-end
-
 function M.clear_byte_flag(byte_val, flag_mask)
     return math.floor(byte_val) % (flag_mask * 2) >= flag_mask
         and (byte_val - flag_mask)
