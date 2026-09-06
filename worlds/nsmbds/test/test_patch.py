@@ -9,8 +9,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import call, patch
 
-from .bases import NSMBDSTestBase
 from ..rom import _read_validated_base_rom, _select_base_rom_path
+from .bases import NSMBDSTestBase
 
 
 class TestProcedurePatch(NSMBDSTestBase):
@@ -174,6 +174,9 @@ class TestProcedurePatch(NSMBDSTestBase):
             self.assertEqual(patch_config["options"]["death_link_grace_percentage"], 0)
             self.assertEqual(patch_config["options"]["death_link_cooldown_seconds"], 0)
             self.assertEqual(patch_config["options"]["death_link_effect"], 0)
+            self.assertEqual(patch_config["options"]["trap_percentage"], 15)
+            self.assertTrue(patch_config["options"]["filler_items"])
+            self.assertTrue(patch_config["options"]["traps"])
             self.assertEqual(
                 set(patch_config["options"]["death_link_random_effects"]),
                 {"death", "damage", "timer_drain", "lose_all_coins"},

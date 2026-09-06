@@ -3,9 +3,8 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from BaseClasses import LocationProgressType
+from BaseClasses import ItemClassification, LocationProgressType
 
-from .bases import NSMBDSTestBase
 from ..data.star_coin_gates import STAR_COIN_GATES, TOTAL_STAR_COIN_GATE_COST
 from ..items import FILLER_ITEM_WEIGHTS, KEY_ITEM_NAMES
 from ..locations import (
@@ -15,14 +14,25 @@ from ..locations import (
     WORLD_6_2_BONUS_AREA_LOCATION_NAMES,
 )
 from ..options import (
+    CannonRouteLogic,
     DeathLinkCooldownSeconds,
     DeathLinkEffect,
     DeathLinkGracePercentage,
     DeathLinkRandomEffects,
+    FillerItems,
+    LicenseMushroom,
+    LicenseTouchscreenPocket,
+    OneUpBlockChecks,
     RequiredStarCoins,
     SecondaryScreenBackground,
+    SecretExitChecks,
+    SecretExitShortcutLogic,
+    SecretExitWorldUnlockLogic,
     TrapPercentage,
+    Traps,
+    WorldSixTwoBonusArea,
 )
+from .bases import NSMBDSTestBase
 
 
 def advancement_star_coins_behind_gates(test: NSMBDSTestBase) -> list:
@@ -92,9 +102,24 @@ class TestBalancingDefaults(NSMBDSTestBase):
     def test_goal_and_trap_defaults(self) -> None:
         self.assertEqual(RequiredStarCoins.range_start, 30)
         self.assertEqual(RequiredStarCoins.default, 80)
-        self.assertEqual(TrapPercentage.default, 20)
+        self.assertEqual(TrapPercentage.default, 15)
         self.assertEqual(SecondaryScreenBackground.default, 0)
         self.assertEqual(SecondaryScreenBackground.options["classic_overworld"], 6)
+
+    def test_casual_defaults(self) -> None:
+        self.assertEqual(OneUpBlockChecks.default, 0)
+        self.assertEqual(WorldSixTwoBonusArea.default, 0)
+        self.assertEqual(SecretExitChecks.default, 0)
+        self.assertEqual(SecretExitShortcutLogic.default, 0)
+        self.assertEqual(SecretExitWorldUnlockLogic.default, 0)
+        self.assertEqual(CannonRouteLogic.default, 0)
+        self.assertEqual(LicenseMushroom.default, 0)
+        self.assertEqual(LicenseTouchscreenPocket.default, 0)
+
+    def test_filler_and_trap_list_defaults(self) -> None:
+        self.assertTrue(FillerItems.default)
+        self.assertEqual(FillerItems.default, FillerItems.valid_keys)
+        self.assertEqual(Traps.default, Traps.valid_keys)
 
     def test_death_link_defaults_and_ranges(self) -> None:
         self.assertEqual(DeathLinkGracePercentage.range_start, 0)
@@ -144,6 +169,19 @@ class TestDeathLinkConfiguration(NSMBDSTestBase):
         self.assertEqual(slot_data["death_link_effect"], DeathLinkEffect.option_random_effect)
         self.assertEqual(slot_data["death_link_random_effects"], ["damage", "timer_drain"])
         self.assertTrue(slot_data["death_link_triggers_on_insured_death"])
+
+
+class TestEmptyTrapList(NSMBDSTestBase):
+    options = {
+        "trap_percentage": 50,
+        "traps": set(),
+    }
+
+    def test_empty_trap_list_disables_all_traps(self) -> None:
+        self.assertFalse(any(
+            item.classification & ItemClassification.trap
+            for item in self.multiworld.get_items()
+        ))
 
 
 class TestRedCoinChecksDisabled(NSMBDSTestBase):
@@ -198,6 +236,7 @@ class TestBlocksanityDisabled(NSMBDSTestBase):
 class TestBlocksanityEnabled(NSMBDSTestBase):
     options = {
         "blocksanity": True,
+        "world_6_2_bonus_area": True,
     }
 
     def test_all_blocksanity_locations_included(self) -> None:
@@ -209,19 +248,14 @@ class TestBlocksanityEnabled(NSMBDSTestBase):
 
 
 class TestDisabledFillersStayOutOfLocalBlocks(NSMBDSTestBase):
-    """Locked local block placements must respect the filler category toggles."""
+    """Locked local block placements must respect the filler category list."""
 
     options = {
         "blocksanity": True,
         "one_up_block_checks": True,
         "blocksanity_global_check_percentage": 0,
-        "filler_extra_lives": False,
-        "filler_coins": False,
-        "filler_time_capsule": False,
-        "filler_starman_lite": False,
-        "filler_trap_shield": False,
-        "filler_care_package": False,
-        "filler_life_insurance": False,
+        "filler_items": {"powerups"},
+        "traps": set(),
         "trap_percentage": 0,
     }
 
@@ -239,6 +273,7 @@ class TestWorldSixTwoBonusArea(NSMBDSTestBase):
     options = {
         "blocksanity": True,
         "one_up_block_checks": True,
+        "world_6_2_bonus_area": True,
     }
 
     def test_bonus_area_is_separate_and_nonprogression(self) -> None:
@@ -275,6 +310,9 @@ class TestNormalBlockPlacementProgression(NSMBDSTestBase):
         "blocksanity_item_placement": "progression",
         "one_up_block_item_placement": "progression",
         "world_6_2_bonus_area": False,
+        "secret_exit_shortcut_logic": True,
+        "secret_exit_world_unlock_logic": True,
+        "cannon_route_logic": True,
     }
 
     def test_normal_block_checks_allow_progression(self) -> None:
@@ -334,6 +372,27 @@ class TestNormalBlockPlacementNonProgression(NSMBDSTestBase):
 
 
 class TestUnsafeHostOptions(NSMBDSTestBase):
+    def test_filler_list_cannot_be_empty(self) -> None:
+        world = self.multiworld.worlds[self.player]
+        world.options.filler_items.value = set()
+        world.options.traps.value = set()
+        host = SimpleNamespace(nsmbds_options=SimpleNamespace(
+            allow_unsafe_nsmbds_options=False,
+        ))
+        with patch("worlds.nsmbds.get_settings", return_value=host):
+            with self.assertRaisesRegex(Exception, "at least one enabled category"):
+                world.generate_early()
+
+    def test_traps_can_be_empty_with_nonzero_percentage(self) -> None:
+        world = self.multiworld.worlds[self.player]
+        world.options.trap_percentage.value = 15
+        world.options.traps.value = set()
+        host = SimpleNamespace(nsmbds_options=SimpleNamespace(
+            allow_unsafe_nsmbds_options=False,
+        ))
+        with patch("worlds.nsmbds.get_settings", return_value=host):
+            world.generate_early()
+
     def test_random_death_link_requires_at_least_one_effect(self) -> None:
         world = self.multiworld.worlds[self.player]
         world.options.death_link_effect.value = DeathLinkEffect.option_random_effect
@@ -452,6 +511,8 @@ class TestMajorPowerupLicenses(NSMBDSTestBase):
 class TestFullPowerupLicenses(NSMBDSTestBase):
     options = {
         "tower_castle_keys": False,
+        "license_mushroom": True,
+        "license_touchscreen_pocket": True,
     }
 
     def test_all_licenses_are_added(self) -> None:
@@ -512,6 +573,7 @@ class TestAdvancedLocationsNonProgression(NSMBDSTestBase):
         "blocksanity_item_placement": "progression",
         "one_up_block_item_placement": "progression",
         "world_6_2_bonus_area": False,
+        "secret_exit_checks": True,
     }
 
     def test_advanced_locations_reject_progression(self) -> None:

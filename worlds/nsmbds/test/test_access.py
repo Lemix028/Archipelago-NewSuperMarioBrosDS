@@ -78,6 +78,10 @@ class TestVanillaWorldRoutes(NSMBDSTestBase):
     options = {
         "goal": "defeat_bowser",
         "tower_castle_keys": True,
+        "secret_exit_checks": True,
+        "secret_exit_shortcut_logic": True,
+        "secret_exit_world_unlock_logic": True,
+        "cannon_route_logic": True,
     }
 
     def test_world_five_castle_goal_opens_world_six(self) -> None:
@@ -132,6 +136,7 @@ class TestStarCoinPowerupAccessRules(NSMBDSTestBase):
 
     options = {
         "tower_castle_keys": False,
+        "license_mushroom": True,
     }
 
     def test_mini_mushroom_star_coin(self) -> None:
@@ -188,6 +193,7 @@ class TestStarCoinPowerupAccessRules(NSMBDSTestBase):
 class TestOptionalRouteLogic(NSMBDSTestBase):
     options = {
         "tower_castle_keys": False,
+        "secret_exit_checks": True,
         "secret_exit_shortcut_logic": False,
         "secret_exit_world_unlock_logic": False,
         "cannon_route_logic": False,

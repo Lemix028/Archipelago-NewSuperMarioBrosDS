@@ -11,47 +11,7 @@ from settings import get_settings
 from worlds.AutoWorld import World
 from worlds.LauncherComponents import Component, SuffixIdentifier, Type, components, launch_subprocess
 
-from .items import (
-    calculate_nonprogression_pool_counts,
-    FILLER_ITEM_WEIGHTS,
-    ITEM_TABLE,
-    KEY_ITEM_NAMES,
-    PROGRESSION_ITEM_NAMES,
-    NSMBDSItem,
-)
-from .locations import (
-    LOCATION_TABLE,
-    LOCATION_RAM_MAP,
-    ACTIVE_LOCATION_ID_INDICES,
-    ALL_ACTIVE_DEFINITIONS,
-    BLOCKSANITY_DEFINITIONS,
-    BLOCKSANITY_LOCATION_IDS,
-    BLOCKSANITY_LOCATION_NAMES,
-    BOSS_LOCATION_NAMES,
-    ONE_UP_BLOCK_DEFINITIONS,
-    ONE_UP_BLOCK_LOCATION_NAMES,
-    ONE_UP_BLOCK_LOCATION_IDS,
-    RED_COIN_LOCATION_NAMES,
-    RED_COIN_LOCATION_IDS,
-    NSMBDSLocation,
-    TOAD_HOUSE_LOCATION_NAMES,
-    WORLD_6_2_BONUS_AREA_LOCATION_NAMES,
-)
-
-from .options import (
-    DeathLinkEffect,
-    ITEM_PLACEMENT_EXCLUDED,
-    ITEM_PLACEMENT_NON_PROGRESSION,
-    ITEM_PLACEMENT_PROGRESSION,
-    NSMBDSOptions,
-)
-from .regions import REGION_LIST, REGION_LOCATIONS, REGION_CONNECTIONS
-from .settings import NSMBDSSettings
-from .rom import NSMBDSPatchExtension, NSMBDSProcedurePatch, write_patch_payload
 from .client import NSMBDSClient  # Imported to register the BizHawk handler.
-from .rules import set_completion_rules, set_rules
-from .data.star_coin_gates import STAR_COIN_GATES, TOTAL_STAR_COIN_GATE_COST
-from .data.powerup_licenses import license_items_for_mode
 from .data.logic_data import (
     ADVANCED_LOCATION_NAMES,
     ALL_SECRET_EXITS,
@@ -61,7 +21,47 @@ from .data.logic_data import (
     INTRA_SECRET_DEPENDENT_REGIONS,
     INTRA_WORLD_SECRET_EXITS,
 )
-
+from .data.powerup_licenses import license_items_for_mode
+from .data.star_coin_gates import STAR_COIN_GATES, TOTAL_STAR_COIN_GATE_COST
+from .items import (
+    FILLER_ITEM_WEIGHTS,
+    ITEM_TABLE,
+    KEY_ITEM_NAMES,
+    PROGRESSION_ITEM_NAMES,
+    NSMBDSItem,
+    calculate_nonprogression_pool_counts,
+)
+from .locations import (
+    ACTIVE_LOCATION_ID_INDICES,
+    ALL_ACTIVE_DEFINITIONS,
+    BLOCKSANITY_DEFINITIONS,
+    BLOCKSANITY_LOCATION_IDS,
+    BLOCKSANITY_LOCATION_NAMES,
+    BOSS_LOCATION_NAMES,
+    LOCATION_RAM_MAP,
+    LOCATION_TABLE,
+    ONE_UP_BLOCK_DEFINITIONS,
+    ONE_UP_BLOCK_LOCATION_IDS,
+    ONE_UP_BLOCK_LOCATION_NAMES,
+    RED_COIN_LOCATION_IDS,
+    RED_COIN_LOCATION_NAMES,
+    TOAD_HOUSE_LOCATION_NAMES,
+    WORLD_6_2_BONUS_AREA_LOCATION_NAMES,
+    NSMBDSLocation,
+)
+from .options import (
+    FILLER_ITEMS_BY_KEY,
+    ITEM_PLACEMENT_EXCLUDED,
+    ITEM_PLACEMENT_NON_PROGRESSION,
+    ITEM_PLACEMENT_PROGRESSION,
+    TRAP_ITEMS_BY_KEY,
+    DeathLinkEffect,
+    NSMBDSOptions,
+)
+from .regions import REGION_CONNECTIONS, REGION_LIST, REGION_LOCATIONS
+from .rom import NSMBDSPatchExtension, NSMBDSProcedurePatch, write_patch_payload
+from .rules import set_completion_rules, set_rules
+from .settings import NSMBDSSettings
 
 VANILLA_ROUTE_EVENT_NAMES = ALL_SECRET_EXITS
 
@@ -236,39 +236,8 @@ class NSMBDSWorld(World):
                     "Required Star Coins cannot exceed 240."
                 )
 
-        fillers_enabled = any([
-            _bool(self.options.filler_powerups),
-            _bool(self.options.filler_starman),
-            _bool(self.options.filler_extra_lives),
-            _bool(self.options.filler_coins),
-            _bool(self.options.filler_time_capsule),
-            _bool(self.options.filler_starman_lite),
-            _bool(self.options.filler_trap_shield),
-            _bool(self.options.filler_care_package),
-            _bool(self.options.filler_life_insurance),
-        ])
-        traps_enabled = any([
-            _bool(self.options.trap_hyper_speed), _bool(self.options.trap_slow_speed), _bool(self.options.trap_walljump_lock),
-            _bool(self.options.trap_no_jump), _bool(self.options.trap_reverse_controls), _bool(self.options.trap_no_sprint),
-            _bool(self.options.trap_button_roulette), _bool(self.options.trap_ice_shoes), _bool(self.options.trap_heavy_mario),
-            _bool(self.options.trap_auto_run), _bool(self.options.trap_sticky_buttons), _bool(self.options.trap_coin_tax),
-            _bool(self.options.trap_camera_drift), _bool(self.options.trap_screen_flip), _bool(self.options.trap_camera_sway),
-            _bool(self.options.trap_boo_curse), _bool(self.options.trap_im_stuck), _bool(self.options.trap_screen_tint),
-            _bool(self.options.trap_retro_filter), _bool(self.options.trap_spotlight), _bool(self.options.trap_ground_clap),
-            _bool(self.options.trap_head_bonk), _bool(self.options.trap_crazy_pixels), _bool(self.options.trap_bonk),
-            _bool(self.options.trap_timer_drain), _bool(self.options.trap_coin_thief),
-            _bool(self.options.trap_no_turnaround),
-            _bool(self.options.trap_powerup_pickpocket),
-        ])
-        if trap_pct > 0 and not traps_enabled:
-            raise Exception(
-                "Trap Percentage is greater than 0%, but all individual trap types are disabled."
-            )
-        if not fillers_enabled and (trap_pct == 0 or not traps_enabled):
-            raise Exception(
-                "No filler items or traps are available to fill non-progression item pool slots. "
-                "Please enable at least one filler category or trap type."
-            )
+        if not self.options.filler_items.value:
+            raise Exception("Filler Items must contain at least one enabled category.")
 
     def create_regions(self) -> None:
         """Create all game regions, connect them, and populate with locations."""
@@ -416,9 +385,6 @@ class NSMBDSWorld(World):
         def _val(opt: Any) -> int:
             return int(getattr(opt, "value", opt))
 
-        def _bool(opt: Any) -> bool:
-            return bool(getattr(opt, "value", opt))
-
         def _weighted_filler_choice(item_names: list[str] | tuple[str, ...]) -> str:
             return self.random.choices(
                 item_names,
@@ -427,52 +393,19 @@ class NSMBDSWorld(World):
             )[0]
 
         def _enabled_excludable_fillers() -> list[str]:
-            fillers = []
-            if _bool(self.options.filler_extra_lives):
-                fillers.extend(["1-Up Mushroom", "3-Up Moon"])
-            if _bool(self.options.filler_coins):
-                fillers.append("Coin Bundle")
-            if _bool(self.options.filler_time_capsule):
-                fillers.append("Time Capsule")
-            if _bool(self.options.filler_starman_lite):
-                fillers.append("Starman Lite")
-            if _bool(self.options.filler_trap_shield):
-                fillers.append("Trap Shield")
-            if _bool(self.options.filler_care_package):
-                fillers.append("Small Care Package")
-            if _bool(self.options.filler_life_insurance):
-                fillers.append("Life Insurance")
-            return fillers
+            return [
+                item_name
+                for key, item_names in FILLER_ITEMS_BY_KEY.items()
+                if key in self.options.filler_items.value
+                for item_name in item_names
+                if ITEM_TABLE[item_name][1] == ItemClassification.filler
+            ]
 
-        active_traps = []
-        if _bool(self.options.trap_hyper_speed): active_traps.append("Super Speed")
-        if _bool(self.options.trap_slow_speed): active_traps.append("Slowness")
-        if _bool(self.options.trap_walljump_lock): active_traps.append("Slippery Gloves")
-        if _bool(self.options.trap_no_jump): active_traps.append("Ground Bound")
-        if _bool(self.options.trap_reverse_controls): active_traps.append("Hyper Confusion")
-        if _bool(self.options.trap_no_sprint): active_traps.append("No Sprint")
-        if _bool(self.options.trap_button_roulette): active_traps.append("Button Swap")
-        if _bool(self.options.trap_ice_shoes): active_traps.append("Ice Shoes")
-        if _bool(self.options.trap_heavy_mario): active_traps.append("Heavy Mario")
-        if _bool(self.options.trap_auto_run): active_traps.append("Can't Stop")
-        if _bool(self.options.trap_sticky_buttons): active_traps.append("Sticky Buttons")
-        if _bool(self.options.trap_coin_tax): active_traps.append("Coin Tax")
-        if _bool(self.options.trap_camera_drift): active_traps.append("Camera Drift")
-        if _bool(self.options.trap_screen_flip): active_traps.append("Screen Flip")
-        if _bool(self.options.trap_camera_sway): active_traps.append("Drunk Camera")
-        if _bool(self.options.trap_boo_curse): active_traps.append("Boo Curse")
-        if _bool(self.options.trap_im_stuck): active_traps.append("I'm Stuck")
-        if _bool(self.options.trap_screen_tint): active_traps.append("Screen Tint")
-        if _bool(self.options.trap_retro_filter): active_traps.append("Retro Filter")
-        if _bool(self.options.trap_spotlight): active_traps.append("Spotlight")
-        if _bool(self.options.trap_ground_clap): active_traps.append("Ground Clap")
-        if _bool(self.options.trap_head_bonk): active_traps.append("Head Bonk")
-        if _bool(self.options.trap_crazy_pixels): active_traps.append("Pixelation")
-        if _bool(self.options.trap_bonk): active_traps.append("Bonk Trap")
-        if _bool(self.options.trap_timer_drain): active_traps.append("Time Drain")
-        if _bool(self.options.trap_coin_thief): active_traps.append("Coin Thief")
-        if _bool(self.options.trap_no_turnaround): active_traps.append("No Turnaround Trap")
-        if _bool(self.options.trap_powerup_pickpocket): active_traps.append("Power-Up Pickpocket Trap")
+        active_traps = [
+            item_name
+            for key, item_name in TRAP_ITEMS_BY_KEY.items()
+            if key in self.options.traps.value
+        ]
 
         trap_pct = _val(self.options.trap_percentage)
 
@@ -567,74 +500,17 @@ class NSMBDSWorld(World):
 
         # Build active filler pool from enabled filler categories
         excludable_fillers = _enabled_excludable_fillers()
-        useful_fillers = []
-        if self.options.filler_powerups:
-            useful_fillers.extend(["Mushroom", "Fire Flower", "Blue Shell", "Mini Mushroom", "Mega Mushroom"])
-        if self.options.filler_starman:
-            useful_fillers.append("Starman Buff")
+        useful_fillers = [
+            item_name
+            for key, item_names in FILLER_ITEMS_BY_KEY.items()
+            if key in self.options.filler_items.value
+            for item_name in item_names
+            if ITEM_TABLE[item_name][1] == ItemClassification.useful
+        ]
         guaranteed_filler_pool = excludable_fillers or ["Nothing"]
         active_fillers = [*excludable_fillers, *useful_fillers]
         if not active_fillers:
             active_fillers = ["Nothing"]
-
-        # Build active trap pool from enabled trap toggles
-        active_traps = []
-        if self.options.trap_hyper_speed:
-            active_traps.append("Super Speed")
-        if self.options.trap_slow_speed:
-            active_traps.append("Slowness")
-        if self.options.trap_walljump_lock:
-            active_traps.append("Slippery Gloves")
-        if self.options.trap_no_jump:
-            active_traps.append("Ground Bound")
-        if self.options.trap_reverse_controls:
-            active_traps.append("Hyper Confusion")
-        if self.options.trap_no_sprint:
-            active_traps.append("No Sprint")
-        if self.options.trap_button_roulette:
-            active_traps.append("Button Swap")
-        if self.options.trap_ice_shoes:
-            active_traps.append("Ice Shoes")
-        if self.options.trap_heavy_mario:
-            active_traps.append("Heavy Mario")
-        if self.options.trap_auto_run:
-            active_traps.append("Can't Stop")
-        if self.options.trap_sticky_buttons:
-            active_traps.append("Sticky Buttons")
-        if self.options.trap_coin_tax:
-            active_traps.append("Coin Tax")
-        if self.options.trap_camera_drift:
-            active_traps.append("Camera Drift")
-        if self.options.trap_screen_flip:
-            active_traps.append("Screen Flip")
-        if self.options.trap_camera_sway:
-            active_traps.append("Drunk Camera")
-        if self.options.trap_boo_curse:
-            active_traps.append("Boo Curse")
-        if self.options.trap_im_stuck:
-            active_traps.append("I'm Stuck")
-        if self.options.trap_screen_tint:
-            active_traps.append("Screen Tint")
-        if self.options.trap_retro_filter:
-            active_traps.append("Retro Filter")
-        if self.options.trap_spotlight:
-            active_traps.append("Spotlight")
-        if self.options.trap_ground_clap:
-            active_traps.append("Ground Clap")
-        if self.options.trap_head_bonk:
-            active_traps.append("Head Bonk")
-        if self.options.trap_crazy_pixels:
-            active_traps.append("Pixelation")
-        if self.options.trap_bonk:
-            active_traps.append("Bonk Trap")
-        if self.options.trap_timer_drain:
-            active_traps.append("Time Drain")
-        if self.options.trap_coin_thief:
-            active_traps.append("Coin Thief")
-        if self.options.trap_no_turnaround:
-            active_traps.append("No Turnaround Trap")
-        if self.options.trap_powerup_pickpocket:
-            active_traps.append("Power-Up Pickpocket Trap")
 
         trap_count, guaranteed_filler_count, flexible_count = (
             calculate_nonprogression_pool_counts(
@@ -751,11 +627,8 @@ class NSMBDSWorld(World):
             "luigi_palette": self.options.luigi_palette.value,
             "secondary_screen_background": self.options.secondary_screen_background.value,
             "bonk_trap_can_kill": bool(self.options.bonk_trap_can_kill.value),
-            "filler_time_capsule": bool(self.options.filler_time_capsule.value),
-            "filler_starman_lite": bool(self.options.filler_starman_lite.value),
-            "filler_trap_shield": bool(self.options.filler_trap_shield.value),
-            "filler_care_package": bool(self.options.filler_care_package.value),
-            "filler_life_insurance": bool(self.options.filler_life_insurance.value),
+            "filler_items": sorted(self.options.filler_items.value),
+            "traps": sorted(self.options.traps.value),
             "death_link": bool(self.options.death_link.value),
             "death_link_grace_percentage": self.options.death_link_grace_percentage.value,
             "death_link_cooldown_seconds": self.options.death_link_cooldown_seconds.value,

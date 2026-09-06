@@ -76,14 +76,13 @@ overworld.
 
 ### Star Coin gates
 
-All gate modes use received Star Coin items as their currency. You can choose
-how access to the overworld signs works:
+In every mode, gates are arranged in tiers. Early tiers are cheaper and later
+tiers require more received Star Coins:
 
-- **Vanilla:** signs behave like the original game and cost Star Coins.
-- **Progressive:** each Progressive Gate Pass unlocks the next sign in order;
-  you also need the sign's Star Coin cost.
-- **Individual:** every sign has its own named Gate Pass and still requires its
-  Star Coin cost.
+- **Vanilla:** collect enough Star Coins to open each tier.
+- **Progressive:** collect Star Coins and Progressive Gate Passes to unlock the
+  tiers one after another.
+- **Individual:** collect Star Coins and the matching named Gate Pass for each tier.
 
 ### Power-Up Permits
 
@@ -151,7 +150,9 @@ a location from progression placement does not remove its check from the game.
 ## Traps
 
 The trap percentage controls how often traps replace ordinary non-progression
-items. Every trap can also be enabled or disabled separately.
+items. The `traps` YAML list selects the allowed types. An empty list disables
+all traps, regardless of the configured percentage. The `filler_items` list
+works the same way for positive filler categories, but must keep at least one entry.
 
 | Trap | Effect |
 |---|---|
@@ -262,9 +263,9 @@ you will find there:
 - **Locations:** Red Coin Challenges, 1-Up Blocks, Secret Exits, Toad Houses,
   and Blocksanity.
 - **Progression:** Star Coin gate mode, Tower/Castle Keys, and Power-Up Permits.
-- **Filler:** choose which Power-Ups, lives, Coins, bonuses, and protection
-  items may appear.
-- **Traps:** set the overall percentage and toggle individual effects.
+- **Filler:** select which Power-Ups, lives, Coins, bonuses, and protection
+  items may appear through one list.
+- **Traps:** set the overall percentage and select allowed effects through one list.
 - **Multiplayer:** configure Death Link effects, grace, cooldown, and Life Insurance behavior.
 - **Cosmetics:** select separate Mario and Luigi palettes and optionally
   shuffle the in-level secondary-screen backgrounds.

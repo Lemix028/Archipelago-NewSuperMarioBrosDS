@@ -11,10 +11,10 @@ from typing import TYPE_CHECKING
 
 from worlds.Files import APPatchExtension, APProcedurePatch, APTokenMixin, APTokenTypes
 
+from ..data.patch_protocol import PATCH_MARKER, PATCH_MARKER_ROM_OFFSET, PATCH_PROTOCOL_VERSION
+from ..version import APWORLD_VERSION, DISPLAY_VERSION, RELEASE_CHANNEL
 from .palette import patch_player_palettes_from_json
 from .secondary_screen import patch_secondary_screen_backgrounds_from_json
-from ..version import APWORLD_VERSION, DISPLAY_VERSION, RELEASE_CHANNEL
-from ..data.patch_protocol import PATCH_MARKER, PATCH_MARKER_ROM_OFFSET, PATCH_PROTOCOL_VERSION
 
 if TYPE_CHECKING:
     from .. import NSMBDSWorld
@@ -201,6 +201,8 @@ def write_patch_payload(world: "NSMBDSWorld", patch: NSMBDSProcedurePatch) -> No
         "advanced_location_item_placement": world.options.advanced_location_item_placement.value,
         "required_star_coins": world.options.required_star_coins.value,
         "trap_percentage": world.options.trap_percentage.value,
+        "filler_items": sorted(world.options.filler_items.value),
+        "traps": sorted(world.options.traps.value),
         "mario_palette": world.options.mario_palette.value,
         "luigi_palette": world.options.luigi_palette.value,
         "secondary_screen_background": world.options.secondary_screen_background.value,

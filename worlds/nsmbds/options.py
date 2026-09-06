@@ -56,7 +56,7 @@ class RedCoinChecks(Toggle):
 class OneUpBlockChecks(Toggle):
     """Include 1-Up Blocks across all levels as check locations."""
     display_name = "1-Up Block Checks"
-    default = 1
+    default = 0
 
 
 class OneUpBlockItemPlacement(Choice):
@@ -122,13 +122,13 @@ class WorldSixTwoBonusArea(Toggle):
       all remaining 112+ blocks in the room are reserved for local filler and traps.
     """
     display_name = "World 6-2 Bonus Area"
-    default = 1
+    default = 0
 
 
 class SecretExitChecks(Toggle):
     """Include the 18 Secret Exit locations across the world map in the check pool."""
     display_name = "Secret Exit Checks"
-    default = 1
+    default = 0
 
 
 class ToadHouseChecks(Toggle):
@@ -140,27 +140,29 @@ class ToadHouseChecks(Toggle):
 class SecretExitShortcutLogic(Toggle):
     """Allow secret-exit paths as shortcuts in world logic."""
     display_name = "Secret Exit Shortcut Logic"
-    default = 1
+    default = 0
 
 
 class SecretExitWorldUnlockLogic(Toggle):
     """Allow the Mini-Mario castle exits to Worlds 4 and 7 in world logic."""
     display_name = "Secret Exit World Unlock Logic"
-    default = 1
+    default = 0
 
 
 class CannonRouteLogic(Toggle):
     """Allow Warp Cannon routes to other worlds in world logic."""
     display_name = "Cannon Route Logic"
-    default = 1
+    default = 0
 
 
 class AdvancedLocationItemPlacement(Choice):
     """
-    Controls whether hard-to-reach or well-hidden locations (such as hidden blocks) can contain required progression items.
+    Controls whether hard-to-reach or well-hidden locations (such as hidden
+    blocks) can contain required progression items.
 
-    allow_progression: Hard and hidden locations are treated normally and can hold required items. (Default)
-    non_progression: Prevents progression items from spawning in hard or hidden locations. Makes the playthrough smoother by keeping required items out of obscure checks.
+    allow_progression: Hard and hidden locations are treated normally and can
+                       hold required items. (Default)
+    non_progression:  Keeps required items out of hard or obscure checks.
     """
     display_name = "Advanced Location Item Placement"
     option_allow_progression = 0
@@ -176,10 +178,13 @@ class StarCoinGateMode(Choice):
     """
     Controls Star-Coin signs on the overworld map.
 
-    vanilla:     Original Star-Coin purchase behavior.
-    progressive: Each received Progressive Star Coin Gate Pass authorizes the
-                 next gate in the deterministic 32-gate catalog.
-    individual:  Each Star Coin Gate requires its own named Gate Pass.
+    In every mode, gates are arranged in tiers. Early tiers are cheaper and
+    later tiers require more Star Coins.
+
+    vanilla:     Collect enough Star Coins to open each tier.
+    progressive: Collect Star Coins and Progressive Gate Passes to unlock the
+                 tiers one after another.
+    individual:  Collect Star Coins and the matching named Gate Pass for each tier.
     """
     display_name = "Star Coin Gate Mode"
     option_vanilla = 0
@@ -223,7 +228,7 @@ class LicenseMegaMushroom(Toggle):
 class LicenseMushroom(Toggle):
     """Include Super Mushroom Permit in the item pool and logic."""
     display_name = "License: Super Mushroom"
-    default = 1
+    default = 0
 
 
 class LicenseFireFlower(Toggle):
@@ -236,65 +241,44 @@ class LicenseTouchscreenPocket(Toggle):
     """Include Touchscreen Pocket Permit (reserve item storage) in the item pool and logic.
        If enabled, players cannot use the Touchscreen Pocket until they find the Permit item in the multiworld."""
     display_name = "License: Touchscreen Pocket"
-    default = 1
+    default = 0
 
 
 # =============================================================================
 # 3. FILLER ITEM OPTIONS
 # =============================================================================
 
-class FillerPowerups(Toggle):
-    """Include standard power-ups (Super Mushroom, Fire Flower, Blue Shell, Mini Mushroom, Mega Mushroom) in filler item pool."""
-    display_name = "Filler: Power-Ups"
-    default = 1
+FILLER_ITEMS_BY_KEY: dict[str, tuple[str, ...]] = {
+    "powerups": ("Mushroom", "Fire Flower", "Blue Shell", "Mini Mushroom", "Mega Mushroom"),
+    "starman": ("Starman Buff",),
+    "extra_lives": ("1-Up Mushroom", "3-Up Moon"),
+    "coins": ("Coin Bundle",),
+    "time_capsule": ("Time Capsule",),
+    "starman_lite": ("Starman Lite",),
+    "trap_shield": ("Trap Shield",),
+    "care_package": ("Small Care Package",),
+    "life_insurance": ("Life Insurance",),
+}
 
 
-class FillerStarman(Toggle):
-    """Include full Starman invincibility bonuses in the filler item pool."""
-    display_name = "Filler: Starman"
-    default = 1
+class FillerItems(OptionSet):
+    """
+    Filler item categories enabled for the item pool. Remove an entry to disable
+    that category. At least one entry must remain enabled.
 
-
-class FillerExtraLives(Toggle):
-    """Include 1-Up Mushrooms and 3-Up Moons in the filler item pool."""
-    display_name = "Filler: Extra Lives"
-    default = 1
-
-
-class FillerCoins(Toggle):
-    """Include 50-Coin Bundles in the filler item pool."""
-    display_name = "Filler: Coins"
-    default = 1
-
-
-class FillerTimeCapsule(Toggle):
-    """Include Time Capsules (+30 level seconds) in the filler pool."""
-    display_name = "Filler: Time Capsule"
-    default = 1
-
-
-class FillerStarmanLite(Toggle):
-    """Include five-second Starman Lite bonuses in the filler pool."""
-    display_name = "Filler: Starman Lite"
-    default = 1
-
-
-class FillerTrapShield(Toggle):
-    """Include shields that cancel the next received AP trap."""
-    display_name = "Filler: Trap Shield"
-    default = 1
-
-
-class FillerCarePackage(Toggle):
-    """Include small packages that grant time, coins, and one life together."""
-    display_name = "Filler: Small Care Package"
-    default = 1
-
-
-class FillerLifeInsurance(Toggle):
-    """Include charges that prevent the next death from consuming a life."""
-    display_name = "Filler: Life Insurance"
-    default = 1
+    powerups:      Mushrooms, Fire Flowers, Blue Shells, Mini Mushrooms, and Mega Mushrooms.
+    starman:       15 seconds of invincibility.
+    extra_lives:   1-Up Mushrooms and rare 3-Up Moons.
+    coins:         Bundles of 50 Coins.
+    time_capsule:  Adds 30 seconds to the current level timer.
+    starman_lite:  Five seconds of invincibility.
+    trap_shield:   Blocks the next received trap.
+    care_package:  Grants time, Coins, and one life.
+    life_insurance: Prevents the next death from consuming a life.
+    """
+    display_name = "Filler Items"
+    valid_keys = frozenset(FILLER_ITEMS_BY_KEY)
+    default = valid_keys
 
 
 # =============================================================================
@@ -311,7 +295,7 @@ class TrapPercentage(Range):
     display_name = "Trap Percentage"
     range_start = 0
     range_end   = 100
-    default     = 20
+    default     = 15
 
 
 class BonkTrapCanKill(Toggle):
@@ -388,173 +372,75 @@ class DeathLinkRandomEffects(OptionSet):
     default = valid_keys
 
 
-# Individual Trap Toggles
-class TrapHyperSpeed(Toggle):
-    """Enable Super Speed traps (speeds up Mario's movement by +60% for 15s)."""
-    display_name = "Trap: Super Speed"
-    default = 1
+TRAP_ITEMS_BY_KEY: dict[str, str] = {
+    "hyper_speed": "Super Speed",
+    "slow_speed": "Slowness",
+    "walljump_lock": "Slippery Gloves",
+    "no_jump": "Ground Bound",
+    "reverse_controls": "Hyper Confusion",
+    "no_sprint": "No Sprint",
+    "button_roulette": "Button Swap",
+    "ice_shoes": "Ice Shoes",
+    "heavy_mario": "Heavy Mario",
+    "auto_run": "Can't Stop",
+    "sticky_buttons": "Sticky Buttons",
+    "coin_tax": "Coin Tax",
+    "camera_drift": "Camera Drift",
+    "screen_flip": "Screen Flip",
+    "camera_sway": "Drunk Camera",
+    "boo_curse": "Boo Curse",
+    "im_stuck": "I'm Stuck",
+    "screen_tint": "Screen Tint",
+    "retro_filter": "Retro Filter",
+    "spotlight": "Spotlight",
+    "ground_clap": "Ground Clap",
+    "head_bonk": "Head Bonk",
+    "crazy_pixels": "Pixelation",
+    "bonk": "Bonk Trap",
+    "timer_drain": "Time Drain",
+    "coin_thief": "Coin Thief",
+    "no_turnaround": "No Turnaround Trap",
+    "powerup_pickpocket": "Power-Up Pickpocket Trap",
+}
 
 
-class TrapSlowSpeed(Toggle):
-    """Enable Slowness traps (reduces Mario's movement by -50% for 15s)."""
-    display_name = "Trap: Slowness"
-    default = 1
+class Traps(OptionSet):
+    """
+    Trap types enabled for the item pool. Remove an entry to disable that trap.
+    An empty list disables all traps, regardless of Trap Percentage.
 
-
-class TrapWalljumpLock(Toggle):
-    """Enable Slippery Gloves traps (disables wall-jumping mechanics for 15s)."""
-    display_name = "Trap: Slippery Gloves"
-    default = 1
-
-
-class TrapNoJump(Toggle):
-    """Enable Ground Bound traps (disables jumping input for 15s)."""
-    display_name = "Trap: Ground Bound"
-    default = 1
-
-
-class TrapReverseControls(Toggle):
-    """Enable Hyper Confusion traps (inverts left and right movement for 15s)."""
-    display_name = "Trap: Hyper Confusion"
-    default = 1
-
-
-class TrapNoSprint(Toggle):
-    """Enable No Sprint traps (disables both configured dash buttons for 15s)."""
-    display_name = "Trap: No Sprint"
-    default = 1
-
-
-class TrapButtonRoulette(Toggle):
-    """Enable Button Swap traps (swaps configured jump and dash buttons for 15s)."""
-    display_name = "Trap: Button Swap"
-    default = 1
-
-
-class TrapIceShoes(Toggle):
-    """Enable Ice Shoes traps (reduces horizontal braking and turning grip for 15s)."""
-    display_name = "Trap: Ice Shoes"
-    default = 1
-
-
-class TrapHeavyMario(Toggle):
-    """Enable Heavy Mario traps (lowers jumps and accelerates falling for 15s)."""
-    display_name = "Trap: Heavy Mario"
-    default = 1
-
-
-class TrapAutoRun(Toggle):
-    """Enable Can't Stop traps (forces running while direction and jump remain controllable for 15s)."""
-    display_name = "Trap: Can't Stop"
-    default = 1
-
-
-class TrapStickyButtons(Toggle):
-    """Enable Sticky Buttons traps (briefly latches released directions for 15s)."""
-    display_name = "Trap: Sticky Buttons"
-    default = 1
-
-
-class TrapCoinTax(Toggle):
-    """Enable Coin Tax traps (removes up to 10 coins immediately)."""
-    display_name = "Trap: Coin Tax"
-    default = 1
-
-
-class TrapCameraDrift(Toggle):
-    """Enable native camera drift to one side for 15 seconds."""
-    display_name = "Trap: Camera Drift"
-    default = 1
-
-
-class TrapScreenFlip(Toggle):
-    """Enable a reversible 180-degree DS screen rotation for 15 seconds."""
-    display_name = "Trap: Screen Flip"
-    default = 1
-
-
-class TrapCameraSway(Toggle):
-    """Enable Drunk Camera traps (slow native camera swaying for 15 seconds)."""
-    display_name = "Trap: Drunk Camera"
-    default = 1
-
-
-class TrapBooCurse(Toggle):
-    """Enable periodic horizontal control reversal for 15 seconds."""
-    display_name = "Trap: Boo Curse"
-    default = 1
-
-
-class TrapImStuck(Toggle):
-    """Enable three-second I'm Stuck traps that immobilize Mario."""
-    display_name = "Trap: I'm Stuck"
-    default = 1
-
-
-class TrapScreenTint(Toggle):
-    """Enable translucent color overlays for 15 seconds."""
-    display_name = "Trap: Screen Tint"
-    default = 1
-
-
-class TrapRetroFilter(Toggle):
-    """Enable a lightweight tint and scanline filter for 15 seconds."""
-    display_name = "Trap: Retro Filter"
-    default = 1
-
-
-class TrapSpotlight(Toggle):
-    """Enable a darkened gameplay view with a central spotlight for 10 seconds."""
-    display_name = "Trap: Spotlight"
-    default = 1
-
-
-class TrapGroundClap(Toggle):
-    """Enable damage when Mario performs a ground-pound impact for 15 seconds."""
-    display_name = "Trap: Ground Clap"
-    default = 1
-
-
-class TrapHeadBonk(Toggle):
-    """Enable damage when Mario hits a block from below for 15 seconds."""
-    display_name = "Trap: Head Bonk"
-    default = 1
-
-
-class TrapCrazyPixels(Toggle):
-    """Enable Pixelation traps (native DS hardware Mosaic effect for 15 seconds)."""
-    display_name = "Trap: Pixelation"
-    default = 1
-
-
-class TrapBonk(Toggle):
-    """Enable Bonk Trap traps (inflicts a damage hit on Mario)."""
-    display_name = "Trap: Bonk Trap"
-    default = 1
-
-
-class TrapTimerDrain(Toggle):
-    """Enable Time Drain traps (subtracts 50s from level timer)."""
-    display_name = "Trap: Time Drain"
-    default = 1
-
-
-class TrapCoinThief(Toggle):
-    """Enable Coin Thief traps (empties Mario's coins to 0)."""
-    display_name = "Trap: Coin Thief"
-    default = 1
-
-
-class TrapNoTurnaround(Toggle):
-    """Enable No Turnaround traps (locks horizontal movement to one direction for 15s)."""
-    display_name = "Trap: No Turnaround"
-    default = 1
-
-
-class TrapPowerupPickpocket(Toggle):
-    """Enable traps that immediately empty the touchscreen reserve Power-Up slot."""
-    display_name = "Trap: Power-Up Pickpocket"
-    default = 1
+    hyper_speed:         Makes Mario run much faster.
+    slow_speed:          Makes Mario move more slowly.
+    walljump_lock:       Temporarily disables wall jumps.
+    no_jump:             Temporarily prevents jumping.
+    reverse_controls:    Reverses left and right.
+    no_sprint:           Temporarily disables sprinting.
+    button_roulette:     Swaps the jump and sprint buttons.
+    ice_shoes:           Makes stopping and turning slippery.
+    heavy_mario:         Lowers jumps and makes Mario fall faster.
+    auto_run:            Forces Mario to keep running.
+    sticky_buttons:      Briefly keeps released directions held.
+    coin_tax:            Removes up to ten Coins.
+    camera_drift:        Pulls the camera to one side.
+    screen_flip:         Turns both DS screens upside down.
+    camera_sway:         Makes the camera sway left and right.
+    boo_curse:           Repeatedly reverses horizontal controls.
+    im_stuck:            Holds Mario in place for three seconds.
+    screen_tint:         Covers the game with a colored tint.
+    retro_filter:        Adds an old-screen color and scanline effect.
+    spotlight:           Darkens everything outside a small visible area.
+    ground_clap:         Ground pounds damage Mario temporarily.
+    head_bonk:           Hitting a block from below damages Mario temporarily.
+    crazy_pixels:        Makes the game view appear pixelated.
+    bonk:                Immediately damages Mario.
+    timer_drain:         Removes 50 seconds from the level timer.
+    coin_thief:          Removes all normal Coins.
+    no_turnaround:       Temporarily locks movement to the first chosen direction.
+    powerup_pickpocket:  Steals the touchscreen reserve Power-Up.
+    """
+    display_name = "Traps"
+    valid_keys = frozenset(TRAP_ITEMS_BY_KEY)
+    default = valid_keys
 
 
 # =============================================================================
@@ -661,16 +547,9 @@ class NSMBDSOptions(PerGameCommonOptions):
     license_fire_flower:                 LicenseFireFlower
     license_touchscreen_pocket:          LicenseTouchscreenPocket
 
-    # Filler Item Categories
-    filler_powerups:                      FillerPowerups
-    filler_starman:                       FillerStarman
-    filler_extra_lives:                   FillerExtraLives
-    filler_coins:                         FillerCoins
-    filler_time_capsule:                  FillerTimeCapsule
-    filler_starman_lite:                  FillerStarmanLite
-    filler_trap_shield:                   FillerTrapShield
-    filler_care_package:                  FillerCarePackage
-    filler_life_insurance:                FillerLifeInsurance
+    # Filler & Trap Pools
+    filler_items:                         FillerItems
+    traps:                                Traps
 
     # Traps & Death Link
     trap_percentage:                      TrapPercentage
@@ -681,36 +560,6 @@ class NSMBDSOptions(PerGameCommonOptions):
     death_link_effect:                    DeathLinkEffect
     death_link_random_effects:            DeathLinkRandomEffects
     death_link_triggers_on_insured_death: DeathLinkTriggersOnInsuredDeath
-
-    # Individual Trap Toggles
-    trap_hyper_speed:                     TrapHyperSpeed
-    trap_slow_speed:                      TrapSlowSpeed
-    trap_walljump_lock:                   TrapWalljumpLock
-    trap_no_jump:                         TrapNoJump
-    trap_reverse_controls:                TrapReverseControls
-    trap_no_sprint:                       TrapNoSprint
-    trap_button_roulette:                 TrapButtonRoulette
-    trap_ice_shoes:                       TrapIceShoes
-    trap_heavy_mario:                     TrapHeavyMario
-    trap_auto_run:                        TrapAutoRun
-    trap_sticky_buttons:                  TrapStickyButtons
-    trap_coin_tax:                        TrapCoinTax
-    trap_camera_drift:                    TrapCameraDrift
-    trap_screen_flip:                     TrapScreenFlip
-    trap_camera_sway:                     TrapCameraSway
-    trap_boo_curse:                       TrapBooCurse
-    trap_im_stuck:                        TrapImStuck
-    trap_screen_tint:                     TrapScreenTint
-    trap_retro_filter:                    TrapRetroFilter
-    trap_spotlight:                       TrapSpotlight
-    trap_ground_clap:                     TrapGroundClap
-    trap_head_bonk:                       TrapHeadBonk
-    trap_crazy_pixels:                    TrapCrazyPixels
-    trap_bonk:                            TrapBonk
-    trap_timer_drain:                     TrapTimerDrain
-    trap_coin_thief:                      TrapCoinThief
-    trap_no_turnaround:                   TrapNoTurnaround
-    trap_powerup_pickpocket:              TrapPowerupPickpocket
 
     # Character Palettes
     mario_palette:                        MarioPalette

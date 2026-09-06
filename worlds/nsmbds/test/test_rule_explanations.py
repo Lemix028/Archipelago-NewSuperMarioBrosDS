@@ -18,6 +18,11 @@ class TestRuleExplanations(NSMBDSTestBase):
         "goal": "world_tour",
         "star_coin_gate_mode": "progressive",
         "tower_castle_keys": True,
+        "license_mushroom": True,
+        "secret_exit_checks": True,
+        "secret_exit_shortcut_logic": True,
+        "secret_exit_world_unlock_logic": True,
+        "cannon_route_logic": True,
     }
 
     def assert_resolved_rule(self, rule: object) -> Rule.Resolved:
