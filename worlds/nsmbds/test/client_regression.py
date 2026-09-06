@@ -513,7 +513,7 @@ def test_spoiler_free_tracker() -> None:
     key_names = {
         entry.name
         for category, entries in disconnected_snapshot.inventory
-        if category == "Tower & Castle Keys"
+        if category in ("Tower Keys", "Castle Keys", "Tower & Castle Keys")
         for entry in entries
     }
     check(

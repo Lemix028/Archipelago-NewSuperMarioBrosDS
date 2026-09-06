@@ -8,7 +8,14 @@ from typing import Any
 
 from ....data.powerup_licenses import license_items_for_mode
 from ....data.star_coin_gates import STAR_COIN_GATES
-from ....items import INVENTORY_RAM_VALUES, ITEM_TABLE, KEY_ITEM_NAMES, item_id_to_name
+from ....items import (
+    CASTLE_KEY_NAMES,
+    INVENTORY_RAM_VALUES,
+    ITEM_TABLE,
+    KEY_ITEM_NAMES,
+    TOWER_KEY_NAMES,
+    item_id_to_name,
+)
 from ....locations import (
     BLOCKSANITY_LOCATION_IDS,
     BOSS_LOCATION_IDS,
@@ -156,7 +163,8 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
     ]
 
     if slot_data.get("tower_castle_keys", True):
-        inventory.append(("Tower & Castle Keys", _inventory_entries(KEY_ITEM_NAMES, received)))
+        inventory.append(("Tower Keys", _inventory_entries(TOWER_KEY_NAMES, received)))
+        inventory.append(("Castle Keys", _inventory_entries(CASTLE_KEY_NAMES, received)))
 
     license_names = license_items_for_mode(slot_data)
     if license_names:

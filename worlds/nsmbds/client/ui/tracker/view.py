@@ -1,4 +1,4 @@
-"""Simple Kivy overview for the spoiler-free NSMBDS client status."""
+"""Compact two-column overview for the spoiler-free NSMBDS client status."""
 
 from __future__ import annotations
 
@@ -89,51 +89,6 @@ def _label(text: str, *, halign: str = "left") -> MDLabel:
     return label
 
 
-class ProgressRow(MDBoxLayout):
-    """One compact progress label and bar."""
-
-    def __init__(self, title: str, progress: ProgressCount, **kwargs):
-        super().__init__(
-            orientation="vertical",
-            adaptive_height=True,
-            spacing=dp(3),
-            **kwargs,
-        )
-        heading = MDBoxLayout(
-            orientation="horizontal",
-            adaptive_height=True,
-            spacing=dp(8),
-        )
-        heading.add_widget(_label(title))
-        count = _label(
-            f"[color={CYAN}]{progress.checked} / {progress.total}[/color]",
-            halign="right",
-        )
-        count.size_hint_x = None
-        count.width = dp(90)
-        heading.add_widget(count)
-        self.add_widget(heading)
-        self.add_widget(ProgressBar(
-            max=max(1, progress.total),
-            value=min(progress.checked, max(1, progress.total)),
-            size_hint_y=None,
-            height=dp(5),
-        ))
-
-
-def _inventory_text(entry: InventoryEntry) -> str:
-    if entry.required > 1:
-        value = f"{min(entry.received, entry.required)} / {entry.required}"
-        color = GREEN if entry.received >= entry.required else GREY
-    elif entry.received:
-        value = "Received"
-        color = GREEN
-    else:
-        value = "Missing"
-        color = GREY
-    return f"[color={color}]{entry.name}: {value}[/color]"
-
-
 class NSMBDSTrackerPanel(MDScrollView):
     """Compact client overview without map-tracker or location-list overload."""
 
@@ -144,8 +99,8 @@ class NSMBDSTrackerPanel(MDScrollView):
         self.content = MDBoxLayout(
             orientation="vertical",
             adaptive_height=True,
-            padding=dp(18),
-            spacing=dp(3),
+            padding=dp(10),
+            spacing=dp(5),
         )
         self.add_widget(self.content)
         self.refresh(force=True)
@@ -158,123 +113,168 @@ class NSMBDSTrackerPanel(MDScrollView):
 
     def _render(self, snapshot: TrackerSnapshot) -> None:
         self.content.clear_widgets()
-        self.content.add_widget(_label("[size=26sp][b]NSMBDS Overview[/b][/size]"))
-        self.content.add_widget(_label(
-            "[b]Server:[/b] "
-            f"{snapshot.server_status}    |    "
-            "[b]BizHawk:[/b] "
-            f"{snapshot.bizhawk_status}    |    "
-            "[b]ROM:[/b] "
-            f"{snapshot.rom_status}"
-        ))
-
-        if not snapshot.seed_loaded:
-            self.content.add_widget(_label(
-                f"[size=19sp][color={GREY}]Connect to a seed to load locations.[/color][/size]",
-                halign="center",
+        self.content.padding = dp(10)
+        self.content.spacing = dp(5)
+        connections = MDGridLayout(cols=2, adaptive_height=True, spacing=dp(12))
+        for title, status in (
+            ("Server", snapshot.server_status),
+            ("BizHawk", snapshot.bizhawk_status),
+        ):
+            connections.add_widget(_compact_label(
+                f"[color={GREY}]{title}[/color]  {escape_markup(status)}"
             ))
+        self.content.add_widget(connections)
+        if not snapshot.seed_loaded:
+            self.content.add_widget(_compact_label("Connect to a seed to load progress."))
             return
 
-        death_link_warning = (
-            "    [color=FF5252][b]DEATHLINK ACTIVE[/b][/color]"
-            if snapshot.death_link_enabled
-            else ""
+        death_link = (
+            f"    [color={ORANGE}][b]DeathLink ON[/b][/color]"
+            if snapshot.death_link_enabled else ""
         )
-        self.content.add_widget(_label(
-            f"[size=20sp][b]Goal[/b]{death_link_warning}[/size]"
+        self.content.add_widget(_compact_label(
+            f"[b]{escape_markup(snapshot.goal_name)}[/b]  "
+            f"{escape_markup(snapshot.goal_progress)}{death_link}"
         ))
-        self.content.add_widget(_label(
-            f"[color={ORANGE}][b]{snapshot.goal_name}[/b][/color]: {snapshot.goal_progress}"
-        ))
+        summary = MDGridLayout(cols=2, adaptive_height=True, spacing=dp(16))
+        summary.add_widget(_compact_progress("Goal", snapshot.goal_count))
+        summary.add_widget(_compact_progress("All checks", snapshot.total_progress))
+        self.content.add_widget(summary)
         if snapshot.star_coin_lifetime or (getattr(self.ctx, "slot_data", None) or {}).get("star_coin_items", False):
-            self.content.add_widget(_label(
-                f"[size=18sp][color={CYAN}][b]Star Coins:[/b] "
-                f"{snapshot.star_coin_available} available | "
-                f"{snapshot.star_coin_lifetime} received total | "
-                f"{snapshot.star_coin_spent} spent[/color][/size]"
+            self.content.add_widget(_compact_label(
+                f"[b]Star Coins[/b]  [color={ORANGE}]{snapshot.star_coin_available} available[/color]"
+                f"    {snapshot.star_coin_spent} spent    "
+                f"[color={GREY}]{snapshot.star_coin_lifetime} received total[/color]"
             ))
-        if snapshot.trap_shields or snapshot.life_insurance:
-            protections = []
-            if snapshot.trap_shields:
-                protections.append(
-                    f"[color={CYAN}][b]SHIELD x{snapshot.trap_shields}[/b][/color]"
-                )
-            if snapshot.life_insurance:
-                protections.append(
-                    f"[color={GREEN}][b]LIFE INSURANCE x{snapshot.life_insurance}[/b][/color]"
-                )
-            self.content.add_widget(_label(
-                "[size=18sp]Active Protection: " + "    ".join(protections) + "[/size]"
-            ))
-        self.content.add_widget(ProgressRow("Goal Progress", snapshot.goal_count))
-        self.content.add_widget(ProgressRow("All Checks", snapshot.total_progress))
 
-        progress_columns = MDBoxLayout(
-            orientation="horizontal",
-            adaptive_height=True,
-            spacing=dp(18),
+        # Keep the long inventory alongside progress instead of below it.
+        body = MDBoxLayout(orientation="horizontal", adaptive_height=True, spacing=dp(18))
+        progress_column = MDBoxLayout(
+            orientation="vertical", adaptive_height=True, spacing=dp(3),
+            size_hint_x=0.38, pos_hint={"top": 1},
         )
-        world_column = MDBoxLayout(
-            orientation="vertical",
-            adaptive_height=True,
-            spacing=dp(3),
-            pos_hint={"top": 1},
+        inventory_column = MDBoxLayout(
+            orientation="vertical", adaptive_height=True, spacing=dp(3),
+            size_hint_x=0.62, pos_hint={"top": 1},
         )
-        category_column = MDBoxLayout(
-            orientation="vertical",
-            adaptive_height=True,
-            spacing=dp(3),
-            pos_hint={"top": 1},
-        )
+        def update_columns(_instance, width):
+            narrow = width < dp(620)
+            body.orientation = "vertical" if narrow else "horizontal"
+            progress_column.size_hint_x = 1 if narrow else 0.38
+            inventory_column.size_hint_x = 1 if narrow else 0.62
+        body.bind(width=update_columns)
 
-        world_column.add_widget(_label("[size=20sp][b]World Progress[/b][/size]"))
-        if snapshot.world_progress:
-            for world, progress in snapshot.world_progress:
-                world_column.add_widget(ProgressRow(world, progress))
-        else:
-            world_column.add_widget(_label(
-                f"[color={GREY}]Connect to a seed to load active locations.[/color]"
-            ))
+        progress_column.add_widget(_compact_heading("Worlds"))
+        for index, (world, progress) in enumerate(snapshot.world_progress):
+            progress_column.add_widget(_compact_progress(escape_markup(world), progress, shaded=index % 2 == 0))
+        progress_column.add_widget(_compact_heading("Check categories"))
+        for index, (category, progress) in enumerate(snapshot.category_progress):
+            progress_column.add_widget(_compact_progress(escape_markup(category), progress, shaded=index % 2 == 0))
+        if not snapshot.category_progress:
+            progress_column.add_widget(_compact_label(f"[color={GREY}]No active categories[/color]"))
 
-        category_column.add_widget(_label("[size=20sp][b]Check Categories[/b][/size]"))
-        if snapshot.category_progress:
-            for category, progress in snapshot.category_progress:
-                category_column.add_widget(ProgressRow(category, progress))
-        else:
-            category_column.add_widget(_label(
-                f"[color={GREY}]No active check categories loaded yet.[/color]"
-            ))
-        progress_columns.add_widget(world_column)
-        progress_columns.add_widget(category_column)
-        self.content.add_widget(progress_columns)
-
-        self.content.add_widget(_label("[size=20sp][b]Received Progression[/b][/size]"))
         for group, entries in snapshot.inventory:
-            self.content.add_widget(_label(f"[size=17sp][b]{group}[/b][/size]"))
-            inventory_grid = MDGridLayout(
-                cols=3,
-                adaptive_height=True,
-                spacing=(dp(12), dp(3)),
-            )
+            received = sum(min(entry.received, entry.required) for entry in entries)
+            required = sum(entry.required for entry in entries)
+            inventory_column.add_widget(_compact_heading(escape_markup(group), f"{received}/{required}"))
+            grid = MDGridLayout(cols=2, adaptive_height=True, spacing=(dp(10), dp(1)))
+            def resize_inventory(instance, width):
+                instance.cols = max(1, min(3, int((width + dp(10)) / dp(175))))
+            grid.bind(width=resize_inventory)
             for entry in entries:
-                inventory_label = _label(_inventory_text(entry), halign="left")
-                inventory_label.pos_hint = {"top": 1, "x": 0}
-                inventory_grid.add_widget(inventory_label)
-            self.content.add_widget(inventory_grid)
+                grid.add_widget(_compact_inventory(entry))
+            inventory_column.add_widget(grid)
+        body.add_widget(progress_column)
+        body.add_widget(inventory_column)
+        self.content.add_widget(body)
 
         pending_total = sum(entry.received for entry in snapshot.pending_powerups)
-        self.content.add_widget(_label(
-            f"[size=20sp][b]Waiting Power-Ups ({pending_total})[/b][/size]"
+        reserve = "  /  ".join(
+            f"{escape_markup(entry.name)} x{entry.received}" for entry in snapshot.pending_powerups
+        ) or "None"
+        progress_column.add_widget(_compact_heading("Reserve & protection"))
+        progress_column.add_widget(_compact_label(
+            f"[b]Waiting ({pending_total})[/b]  {reserve}"
         ))
-        if snapshot.pending_powerups:
-            waiting_text = "    ".join(
-                f"[color={ORANGE}]{entry.name} x{entry.received}[/color]"
-                for entry in snapshot.pending_powerups
-            )
-        else:
-            waiting_text = f"[color={GREY}]None[/color]"
-        self.content.add_widget(_label(waiting_text))
+        progress_column.add_widget(_compact_label(
+            f"Shields: {snapshot.trap_shields}    "
+            f"Life Insurance: {snapshot.life_insurance}"
+        ))
 
+
+def _compact_label(text: str, *, halign: str = "left") -> MDLabel:
+    label = _label(text, halign=halign)
+    label.font_size = "13sp"
+    return label
+
+
+def _compact_heading(text: str, detail: str = "") -> MDBoxLayout:
+    heading = MDBoxLayout(
+        orientation="vertical", adaptive_height=True,
+        padding=(0, dp(4), 0, dp(2)), spacing=dp(3),
+    )
+    line = MDBoxLayout(orientation="horizontal", adaptive_height=True, spacing=dp(6))
+    line.add_widget(_compact_label(f"[b]{text}[/b]"))
+    if detail:
+        count = _compact_label(f"[color={GREY}]{detail}[/color]", halign="right")
+        count.size_hint_x = None
+        count.width = dp(60)
+        line.add_widget(count)
+    heading.add_widget(line)
+    heading.add_widget(MDBoxLayout(
+        size_hint_y=None, height=dp(1), md_bg_color=(0.5, 0.5, 0.5, 0.25),
+    ))
+    return heading
+
+
+def _compact_inventory(entry: InventoryEntry) -> MDBoxLayout:
+    row = MDBoxLayout(orientation="horizontal", adaptive_height=True, spacing=dp(3))
+    complete = entry.received >= entry.required
+    color = GREEN if complete else (ORANGE if entry.received else GREY)
+    # A fixed status column keeps item names aligned; color is not the only cue.
+    marker = _compact_label(f"[color={color}][b]{'+' if complete else ('~' if entry.received else '-')}[/b][/color]")
+    marker.size_hint_x = None
+    marker.width = dp(14)
+    marker.pos_hint = {"top": 1}
+    row.add_widget(marker)
+    name = escape_markup(entry.name)
+    name_label = _compact_label(name if entry.received else f"[color={GREY}]{name}[/color]")
+    name_label.pos_hint = {"top": 1}
+    row.add_widget(name_label)
+    if entry.required > 1:
+        count = _compact_label(
+            f"[color={color}]{min(entry.received, entry.required)}/{entry.required}[/color]",
+            halign="right",
+        )
+        count.size_hint_x = None
+        count.pos_hint = {"top": 1}
+        count.width = dp(44)
+        row.add_widget(count)
+    return row
+
+def _compact_progress(title: str, progress: ProgressCount, *, shaded: bool = False) -> MDBoxLayout:
+    """Name, slim bar and right-aligned count on one line."""
+    row = MDBoxLayout(
+        orientation="horizontal", adaptive_height=True, spacing=dp(6),
+        padding=(dp(3), dp(1)), md_bg_color=(0.5, 0.5, 0.5, 0.07 if shaded else 0),
+    )
+    name = _compact_label(title)
+    name.size_hint_x = 0.55
+    row.add_widget(name)
+    row.add_widget(ProgressBar(
+        max=max(1, progress.total), value=min(progress.checked, max(1, progress.total)),
+        size_hint_x=0.45, size_hint_y=None, height=dp(4), pos_hint={"center_y": 0.5},
+    ))
+    complete = progress.total > 0 and progress.checked >= progress.total
+    count = _compact_label(
+        f"[color={GREEN if complete else GREY}]{progress.checked}/{progress.total}[/color]",
+        halign="right",
+    )
+    count.size_hint_x = None
+    count.pos_hint = {"center_y": 0.5}
+    count.width = dp(max(66, len(f"{progress.checked}/{progress.total}") * 8))
+    row.add_widget(count)
+    return row
 
 def _button(text: str, callback) -> Button:
     button = Button(
@@ -821,11 +821,28 @@ class NSMBDSSettingsPanel(MDScrollView):
             self.fade_spinner,
         ))
 
-        self.hint_label = _label(
-            f"[color={GREY}]BizHawk controls: mouse wheel for history  -  "
-            "Ctrl+Shift+H to toggle temporarily[/color]"
+        controls_card = MDBoxLayout(
+            orientation="vertical",
+            adaptive_height=True,
+            padding=(dp(16), dp(12)),
+            spacing=dp(8),
+            md_bg_color=self._theme_color("surfaceContainerLowColor", (0.5, 0.5, 0.5, 0.08)),
         )
-        self.content.add_widget(self.hint_label)
+        controls_card.add_widget(_label(
+            "[size=16sp][b]BizHawk Controls & Shortcuts[/b][/size]\n"
+            f"[color={GREY}]In-game hotkeys and actions while running:[/color]"
+        ))
+        controls_card.add_widget(self._shortcut_row(
+            "Ctrl + Shift + H",
+            "Toggle Emulator Feed",
+            "Temporarily show or hide the in-game message overlay",
+        ))
+        controls_card.add_widget(self._shortcut_row(
+            "Mouse Wheel",
+            "Scroll Message History",
+            "Browse older item, check, and trap messages",
+        ))
+        self.content.add_widget(controls_card)
         self.refresh()
 
     @staticmethod
@@ -859,6 +876,32 @@ class NSMBDSSettingsPanel(MDScrollView):
         )
         control_box.add_widget(control)
         row.add_widget(control_box)
+        return row
+
+    @staticmethod
+    def _shortcut_row(shortcut: str, action: str, note: str) -> MDBoxLayout:
+        row = MDBoxLayout(
+            orientation="horizontal",
+            adaptive_height=True,
+            spacing=dp(12),
+            padding=(0, dp(2)),
+        )
+        key_box = MDBoxLayout(
+            orientation="horizontal",
+            adaptive_height=True,
+            size_hint_x=None,
+            width=dp(150),
+            pos_hint={"center_y": 0.5},
+        )
+        key_label = _compact_label(f"[color={CYAN}][b]{shortcut}[/b][/color]")
+        key_box.add_widget(key_label)
+        row.add_widget(key_box)
+
+        desc = _label(
+            f"[b]{action}[/b]  —  [color={GREY}]{note}[/color]"
+        )
+        desc.pos_hint = {"center_y": 0.5}
+        row.add_widget(desc)
         return row
 
     def refresh(self) -> None:

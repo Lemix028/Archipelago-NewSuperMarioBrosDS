@@ -187,6 +187,31 @@ KEY_ITEM_NAMES: tuple[str, ...] = (
     FINAL_CASTLE_KEY_NAME,
 )
 
+TOWER_KEY_NAMES: tuple[str, ...] = (
+    "Grassland Tower Key",
+    "Desert Tower Key",
+    "Tropical Tower Key",
+    "Jungle Tower Key",
+    "Glacier Tower Key",
+    "Mountain Tower 1 Key",
+    "Mountain Tower 2 Key",
+    "Sky Tower Key",
+    "Volcano Tower 1 Key",
+    "Volcano Tower 2 Key",
+)
+
+CASTLE_KEY_NAMES: tuple[str, ...] = (
+    "Grassland Castle Key",
+    "Desert Castle Key",
+    "Tropical Castle Key",
+    "Jungle Castle Key",
+    "Glacier Castle Key",
+    "Mountain Castle Key",
+    "Sky Castle Key",
+    "Volcano Castle Key",
+    FINAL_CASTLE_KEY_NAME,
+)
+
 
 def calculate_nonprogression_pool_counts(
     remaining: int,
