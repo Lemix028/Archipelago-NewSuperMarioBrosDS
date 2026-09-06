@@ -10,6 +10,16 @@ from ..rom import BASE_ROM_MD5, BASE_ROM_SHA256, BASE_ROM_SIZE
 
 
 class TestNativeHookSources(unittest.TestCase):
+    def test_death_link_notifications_use_one_unified_dl_popup(self) -> None:
+        runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime" / "nsmbds"
+        state_source = (runtime_root / "state.lua").read_text(encoding="utf-8")
+        hud_source = (runtime_root / "hud.lua").read_text(encoding="utf-8")
+        self.assertIn("death_link = 0x0A", state_source)
+        for label in ("DEATH", "DAMAGE", "TIMER", "COINS", "GRACE"):
+            self.assertIn(f'"{label}"', hud_source)
+        self.assertIn('return "DEATH LINK", name', hud_source)
+        self.assertIn('context.active_mode == "death_link_damage" then return', hud_source)
+
     def test_emulator_feed_supports_runtime_presentation_settings(self) -> None:
         runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime"
         feed_source = (runtime_root / "nsmbds" / "emulator_feed.lua").read_text(encoding="utf-8")

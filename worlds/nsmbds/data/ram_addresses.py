@@ -58,8 +58,8 @@ ADDR_LEFT_WALL_TIMER = 0x001B7597  # 1 byte, uint8
 ADDR_RIGHT_WALL_TIMER = 0x001B7598 # 1 byte, uint8
 
 # 1-byte AP trap trigger address read by the bundled BizHawk Lua runtime.
-# 0x00 = Idle; 0x01..0x16 are the verified Lua-side Trap commands.
-# 0x12 is retired; Camera Drift/Screen Flip/Sway use 0x13..0x15; Boo Curse uses 0x16.
+# 0x00 = Idle; nonzero values are verified Lua-side Trap and notification commands.
+# 0x12 is retired; 0x22/0x23 are reserved for Death Link damage/notification effects.
 ADDR_AP_TRAP_TRIGGER = 0x003FFF00  # 1 byte, uint8
 
 # Persistent positive-filler state lives in verified permanent ARM9 padding
@@ -90,6 +90,7 @@ AP_NOTIFICATION_TRAP_BLOCKED = 0x06
 AP_NOTIFICATION_STARMAN_BUFF = 0x07
 AP_NOTIFICATION_GOAL_COMPLETE = 0x08
 AP_NOTIFICATION_ITEM_RECEIVED = 0x09
+AP_NOTIFICATION_DEATH_LINK = 0x0A
 
 # Power-Up License state read by the native main-ARM9 pickup/reserve hooks. These
 # bytes are reserved directly after the hook binary in verified linker padding.

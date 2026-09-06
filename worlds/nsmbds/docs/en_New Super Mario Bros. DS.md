@@ -195,6 +195,25 @@ Life Insurance prevents the next local death from consuming a life.
 The option Death Link: Trigger on Insured Deaths determines whether that insured death is still sent through Death Link. 
 It is disabled by default.
 
+Incoming Death Links can be customized with four additional options:
+
+- **Grace Percentage** is the chance to ignore an incoming Death Link completely.
+  It is rolled exactly once when the Death Link arrives. Eligible local deaths
+  are still always sent. The range is 0% to 75%, so even maximum grace lets one
+  quarter of incoming Death Links through on average. Use Death Link: Off to opt out entirely.
+- **Cooldown Seconds** ignores further incoming Death Links for the configured
+  time after an accepted effect is successfully applied. Death Links received
+  while an effect is already queued are also ignored rather than accumulated.
+- **Effect** can defeat Mario, apply normal damage, remove 100 seconds from the
+  level timer, remove all normal Coins, or randomly choose one of those four
+  effects. Damage removes a Power-Up and defeats Small Mario. Timer Drain can
+  reduce the timer to zero and therefore can also be lethal.
+- **Random Effects** selects which of the four concrete effects may be chosen
+  when Effect is set to Random. At least one effect must remain enabled in that mode.
+
+Incoming effects wait until Mario is in an active level. Any death caused by an
+incoming effect is suppressed locally and is never sent back as another Death Link.
+
 ## Cosmetic options
 
 Mario and Luigi can each use their own color palette. The selected colors are
@@ -246,7 +265,7 @@ you will find there:
 - **Filler:** choose which Power-Ups, lives, Coins, bonuses, and protection
   items may appear.
 - **Traps:** set the overall percentage and toggle individual effects.
-- **Multiplayer:** enable Death Link and its Life Insurance behavior.
+- **Multiplayer:** configure Death Link effects, grace, cooldown, and Life Insurance behavior.
 - **Cosmetics:** select separate Mario and Luigi palettes and optionally
   shuffle the in-level secondary-screen backgrounds.
 

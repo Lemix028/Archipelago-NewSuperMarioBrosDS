@@ -223,6 +223,17 @@ function state.notification_state.text(notification)
             item_name = "STAR COIN GATE PASS"
         end
         return "ITEM RECEIVED", item_name or "PROGRESSION ITEM", "green"
+    elseif notification.kind == state.notification_state.kind.death_link then
+        local death_link_names = {
+            [0] = "DEATH",
+            [1] = "DAMAGE",
+            [2] = "TIMER",
+            [3] = "COINS",
+            [4] = "GRACE",
+        }
+        local name = death_link_names[notification.detail] or "DEATH"
+        local color = notification.detail == 4 and "green" or "red"
+        return "DEATH LINK", name, color
     end
     return "BONUS RECEIVED", "", "green"
 end
@@ -320,6 +331,8 @@ end
 function M.draw_trap_status_hud()
     if not gui or not gui.drawBox or not gui.drawText then return end
     if context.trap_remaining_frames <= 0 then return end
+    -- Death Link uses the common notification mailbox for one consistent popup.
+    if context.active_mode == "death_link_damage" then return end
 
     -- Trap Blocked notification replaces the normal trap status temporarily.
     if state.notification_state.active ~= nil
@@ -384,6 +397,10 @@ function M.draw_trap_status_hud()
         title, color = "TIME DRAIN", "red"
     elseif context.active_mode == "coin_thief_notice" then
         title, color = "COIN THIEF", "red"
+    elseif context.active_mode == "death_link_notice" then
+        title, color = "DL: DEATH", "red"
+    elseif context.active_mode == "death_link_damage" then
+        title, color = "DL: DAMAGE", "red"
     elseif context.active_mode == "bonk_hit"
         or context.active_mode == "bonk_fatal"
         or context.active_mode == "bonk_protected" then

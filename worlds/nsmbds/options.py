@@ -5,7 +5,7 @@ Player-facing settings exposed in the Archipelago YAML configuration file.
 
 from dataclasses import dataclass
 
-from Options import Choice, DeathLink, PerGameCommonOptions, Range, Toggle
+from Options import Choice, DeathLink, OptionSet, PerGameCommonOptions, Range, Toggle
 
 from .locations import ACTIVE_STAR_COIN_COUNT
 
@@ -334,6 +334,60 @@ class DeathLinkTriggersOnInsuredDeath(Toggle):
     default = 0
 
 
+class DeathLinkGracePercentage(Range):
+    """
+    Percentage chance that an incoming Death Link is ignored completely.
+    A value of 0 applies every incoming Death Link. The maximum of 75 still
+    allows one quarter of incoming Death Links through on average.
+    Local eligible deaths are always sent while Death Link is enabled.
+    """
+    display_name = "Death Link: Grace Percentage"
+    range_start = 0
+    range_end = 75
+    default = 0
+
+
+class DeathLinkCooldownSeconds(Range):
+    """
+    Number of seconds after an incoming Death Link effect is applied during which
+    further incoming Death Links are ignored. The cooldown starts only after the
+    queued effect is successfully applied in a level.
+    """
+    display_name = "Death Link: Cooldown Seconds"
+    range_start = 0
+    range_end = 300
+    default = 0
+
+
+class DeathLinkEffect(Choice):
+    """
+    Effect used for incoming Death Links.
+
+    death:          Defeat Mario by expiring the level timer.
+    damage:         Apply a normal hit; powered-up Mario loses a power-up and Small Mario dies.
+    timer_drain:    Remove 100 seconds from the level timer, possibly reducing it to zero.
+    lose_all_coins: Set the current normal Coin counter to zero.
+    random_effect:  Choose one of the four effects independently for every accepted Death Link.
+    """
+    display_name = "Death Link: Effect"
+    option_death = 0
+    option_damage = 1
+    option_timer_drain = 2
+    option_lose_all_coins = 3
+    option_random_effect = 4
+    default = 0
+
+
+class DeathLinkRandomEffects(OptionSet):
+    """
+    Effects that may be selected when Death Link: Effect is set to random_effect.
+    At least one effect must remain enabled.
+    """
+    display_name = "Death Link: Random Effects"
+    valid_keys = frozenset({"death", "damage", "timer_drain", "lose_all_coins"})
+    default = valid_keys
+
+
 # Individual Trap Toggles
 class TrapHyperSpeed(Toggle):
     """Enable Super Speed traps (speeds up Mario's movement by +60% for 15s)."""
@@ -622,6 +676,10 @@ class NSMBDSOptions(PerGameCommonOptions):
     trap_percentage:                      TrapPercentage
     bonk_trap_can_kill:                   BonkTrapCanKill
     death_link:                           DeathLink
+    death_link_grace_percentage:          DeathLinkGracePercentage
+    death_link_cooldown_seconds:           DeathLinkCooldownSeconds
+    death_link_effect:                    DeathLinkEffect
+    death_link_random_effects:            DeathLinkRandomEffects
     death_link_triggers_on_insured_death: DeathLinkTriggersOnInsuredDeath
 
     # Individual Trap Toggles

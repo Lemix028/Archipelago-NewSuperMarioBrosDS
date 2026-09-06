@@ -6,6 +6,8 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
+from ....data.powerup_licenses import license_items_for_mode
+from ....data.star_coin_gates import STAR_COIN_GATES
 from ....items import INVENTORY_RAM_VALUES, ITEM_TABLE, KEY_ITEM_NAMES, item_id_to_name
 from ....locations import (
     BLOCKSANITY_LOCATION_IDS,
@@ -15,15 +17,25 @@ from ....locations import (
     ONE_UP_BLOCK_LOCATION_IDS,
     RED_COIN_LOCATION_IDS,
 )
-from ....data.powerup_licenses import license_items_for_mode
-from ....data.star_coin_gates import STAR_COIN_GATES
-
 
 GOAL_NAMES = {
     0: "Defeat Bowser",
     1: "Star Coin Hunt",
     2: "World Tour",
     3: "Completionist",
+}
+DEATH_LINK_EFFECT_NAMES = {
+    0: "Death",
+    1: "Damage",
+    2: "100-Second Timer Drain",
+    3: "Lose All Coins",
+    4: "Random",
+}
+DEATH_LINK_RANDOM_EFFECT_NAMES = {
+    "death": "Death",
+    "damage": "Damage",
+    "timer_drain": "100-Second Timer Drain",
+    "lose_all_coins": "Lose All Coins",
 }
 WORLD_ACCESS_ITEMS = (
     "Desert Pass",
@@ -61,6 +73,10 @@ class TrackerSnapshot:
     goal_progress: str
     goal_count: ProgressCount
     death_link_enabled: bool
+    death_link_effect: str
+    death_link_random_effects: tuple[str, ...]
+    death_link_grace_percentage: int
+    death_link_cooldown_seconds: int
     trap_shields: int
     life_insurance: int
     star_coin_lifetime: int
@@ -159,7 +175,6 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
 
     goal = int(slot_data.get("goal", 0))
     checked_names = {id_to_name[location_id] for location_id in checked}
-    checked_star_coins = sum(" Star Coin " in name for name in checked_names)
     checked_bosses = sum(name in checked_names for name in BOSS_LOCATION_NAMES)
     bowser_defeated = BOSS_LOCATION_NAMES[-1] in checked_names
     required_star_coins = int(slot_data.get("required_star_coins", 80))
@@ -193,7 +208,11 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
         for name in INVENTORY_RAM_VALUES
         if pending_powerup_counts[name]
     )
-    rom_status = "NSMBDS Active" if getattr(rom_handler, "server_game", None) == "New Super Mario Bros. DS" else "Waiting for NSMBDS ROM"
+    rom_status = (
+        "NSMBDS Active"
+        if getattr(rom_handler, "server_game", None) == "New Super Mario Bros. DS"
+        else "Waiting for NSMBDS ROM"
+    )
 
     category_order = (
         "Bosses",
@@ -227,6 +246,14 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
         goal_progress=goal_progress,
         goal_count=goal_count,
         death_link_enabled=bool(slot_data.get("death_link", False)),
+        death_link_effect=DEATH_LINK_EFFECT_NAMES.get(int(slot_data.get("death_link_effect", 0)), "Death"),
+        death_link_random_effects=tuple(
+            name
+            for key, name in DEATH_LINK_RANDOM_EFFECT_NAMES.items()
+            if key in slot_data.get("death_link_random_effects", DEATH_LINK_RANDOM_EFFECT_NAMES)
+        ),
+        death_link_grace_percentage=int(slot_data.get("death_link_grace_percentage", 0)),
+        death_link_cooldown_seconds=int(slot_data.get("death_link_cooldown_seconds", 0)),
         trap_shields=int(getattr(rom_handler, "_pending_trap_shields", 0)),
         life_insurance=int(getattr(rom_handler, "_pending_life_insurance", 0)),
         star_coin_lifetime=received_star_coins,
@@ -290,6 +317,15 @@ def render_tracker_markup(snapshot: TrackerSnapshot) -> str:
         "",
         "[size=19sp][b]Session Info[/b][/size]",
         f"Death Link: {'On' if snapshot.death_link_enabled else 'Off'}",
+        (
+            f"Death Link Rules: {snapshot.death_link_effect} | "
+            f"{snapshot.death_link_grace_percentage}% grace | "
+            f"{snapshot.death_link_cooldown_seconds}s cooldown"
+        ),
+    ))
+    if snapshot.death_link_effect == "Random":
+        lines.append(f"Death Link Random Pool: {', '.join(snapshot.death_link_random_effects)}")
+    lines.extend((
         f"Trap Shields: {snapshot.trap_shields}",
         f"Life Insurance: {snapshot.life_insurance}",
     ))

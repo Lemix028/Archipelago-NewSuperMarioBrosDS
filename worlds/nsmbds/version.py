@@ -1,7 +1,7 @@
 """Central version metadata for the NSMBDS APWorld release."""
 
-APWORLD_VERSION = "0.4.6"
-RELEASE_CHANNEL = "alpha"
+APWORLD_VERSION = "0.5.0"
+RELEASE_CHANNEL = "unstable"
 
 
 def format_display_version(apworld_version: str, release_channel: str) -> str:

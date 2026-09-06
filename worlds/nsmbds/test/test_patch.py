@@ -171,6 +171,14 @@ class TestProcedurePatch(NSMBDSTestBase):
                 "nsmbds_patch_config.json",
             } <= names)
             self.assertEqual(patch_config["options"]["secondary_screen_background"], 0)
+            self.assertEqual(patch_config["options"]["death_link_grace_percentage"], 0)
+            self.assertEqual(patch_config["options"]["death_link_cooldown_seconds"], 0)
+            self.assertEqual(patch_config["options"]["death_link_effect"], 0)
+            self.assertEqual(
+                set(patch_config["options"]["death_link_random_effects"]),
+                {"death", "damage", "timer_drain", "lose_all_coins"},
+            )
+            self.assertFalse(patch_config["options"]["death_link_triggers_on_insured_death"])
 
 
 class TestRandomizedSecondaryScreenProcedurePatch(NSMBDSTestBase):

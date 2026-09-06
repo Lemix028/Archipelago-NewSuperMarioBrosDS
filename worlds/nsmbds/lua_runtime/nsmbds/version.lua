@@ -5,7 +5,7 @@
 
 local M = {}
 
-M.VERSION = "0.4.6"
-M.VERSION_LABEL = "v0.4.6-alpha"
+M.VERSION = "0.5.0"
+M.VERSION_LABEL = "v0.5.0-unstable"
 
 return M

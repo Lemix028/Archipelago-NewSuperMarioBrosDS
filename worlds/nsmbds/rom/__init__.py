@@ -213,6 +213,13 @@ def write_patch_payload(world: "NSMBDSWorld", patch: NSMBDSProcedurePatch) -> No
         "license_touchscreen_pocket": bool(world.options.license_touchscreen_pocket.value),
         "star_coin_gate_mode": world.options.star_coin_gate_mode.value,
         "death_link": bool(world.options.death_link.value),
+        "death_link_grace_percentage": world.options.death_link_grace_percentage.value,
+        "death_link_cooldown_seconds": world.options.death_link_cooldown_seconds.value,
+        "death_link_effect": world.options.death_link_effect.value,
+        "death_link_random_effects": sorted(world.options.death_link_random_effects.value),
+        "death_link_triggers_on_insured_death": bool(
+            world.options.death_link_triggers_on_insured_death.value
+        ),
     }
     payload = {
         "protocol_version": PATCH_PROTOCOL_VERSION,

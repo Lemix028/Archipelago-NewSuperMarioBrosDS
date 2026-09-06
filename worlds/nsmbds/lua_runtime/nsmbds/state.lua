@@ -27,6 +27,7 @@ M.notification_state = {
         starman_buff = 0x07,
         goal_complete = 0x08,
         item_received = 0x09,
+        death_link = 0x0A,
     },
     queue = {},
     active = nil,

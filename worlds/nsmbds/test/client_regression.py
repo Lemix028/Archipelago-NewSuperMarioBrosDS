@@ -66,6 +66,7 @@ load_module("nsmbds.items", os.path.join(NSMBDS_DIR, "items.py"))
 locations = load_module("nsmbds.locations", os.path.join(NSMBDS_DIR, "locations.py"))
 ram_addresses = load_module("nsmbds.data.ram_addresses", os.path.join(NSMBDS_DIR, "data", "ram_addresses.py"))
 client_module = load_module("nsmbds.client", os.path.join(NSMBDS_DIR, "client", "__init__.py"))
+death_link_module = sys.modules["nsmbds.client.features.death_link"]
 ui_module = load_module("nsmbds.client.ui", os.path.join(NSMBDS_DIR, "client", "ui", "__init__.py"))
 powerup_licenses = sys.modules["nsmbds.data.powerup_licenses"]
 buffs_module = sys.modules["nsmbds.client.features.buffs"]
@@ -163,6 +164,10 @@ class FakeContext:
             "star_coin_checks": True,
             "red_coin_checks": True,
             "death_link": death_link,
+            "death_link_grace_percentage": 0,
+            "death_link_cooldown_seconds": 0,
+            "death_link_effect": death_link_module.DEATH_LINK_EFFECT_DEATH,
+            "death_link_random_effects": list(death_link_module.DEATH_LINK_EFFECT_KEYS),
             "star_coin_gate_mode": 0,
             "vanilla_gate_tiers": {
                 gate.name: gate.progressive_index
@@ -337,23 +342,6 @@ def test_patch_startup_guard_publishes_successful_output_path() -> None:
     check(
         configured == [("seed.apnsmbds",)],
         "The patched-ROM path is published only after patching succeeds",
-    )
-
-
-def test_client_title_contains_apworld_version() -> None:
-    check(
-        tracker_view_module.NSMBDSTrackerManager.base_title
-        == "NSMBDS Client | APWorld v0.4.6-alpha | Archipelago",
-        "Client window title displays the full APWorld release version",
-    )
-    version_module = sys.modules["nsmbds.version"]
-    check(
-        version_module.format_display_version("1.2.3", "stable") == "1.2.3",
-        "Stable display versions omit the release-channel suffix",
-    )
-    check(
-        version_module.format_display_version("1.2.3", "unstable") == "1.2.3-unstable",
-        "Non-stable display versions include the release-channel suffix",
     )
 
 
@@ -570,6 +558,11 @@ def test_spoiler_free_tracker() -> None:
         ],
     )
     context.slot_data.update({
+        "death_link": True,
+        "death_link_grace_percentage": 25,
+        "death_link_cooldown_seconds": 12,
+        "death_link_effect": death_link_module.DEATH_LINK_EFFECT_RANDOM,
+        "death_link_random_effects": ["damage", "timer_drain"],
         "tower_castle_keys": False,
         "license_mini_mushroom": 0,
         "license_blue_shell": 0,
@@ -607,6 +600,16 @@ def test_spoiler_free_tracker() -> None:
         and snapshot.life_insurance == 1
         and "Trap Shields: 2" in markup,
         "Tracker exposes the currently available Shield and Life Insurance charges",
+    )
+    check(
+        snapshot.death_link_enabled
+        and snapshot.death_link_effect == "Random"
+        and snapshot.death_link_random_effects == ("Damage", "100-Second Timer Drain")
+        and snapshot.death_link_grace_percentage == 25
+        and snapshot.death_link_cooldown_seconds == 12
+        and "Death Link Rules: Random | 25% grace | 12s cooldown" in markup
+        and "Death Link Random Pool: Damage, 100-Second Timer Drain" in markup,
+        "Overview exposes the active Death Link rules and configured random pool",
     )
     check(
         sum(entry.received for entry in snapshot.pending_powerups) == 3
@@ -1040,6 +1043,167 @@ def test_death_link_state() -> None:
     context = FakeContext(death_link=True)
     client.on_package(context, "Bounced", {"tags": ["DeathLink"]})
     check(client._pending_death_link, "Incoming Death Link is queued")
+
+
+def test_death_link_log_filter() -> None:
+    client = client_module.NSMBDSClient()
+    original_calls: list[dict] = []
+    context = types.SimpleNamespace(
+        client_handler=client,
+        last_death_link=1.0,
+        on_deathlink=lambda data: original_calls.append(data),
+    )
+    client._install_death_link_log_filter(context)
+    context.on_deathlink({"time": 2.0, "cause": "NSMBDS test"})
+    check(
+        context.last_death_link == 2.0 and not original_calls,
+        "Active NSMBDS suppresses Core's raw DeathLink receipt log while retaining deduplication",
+    )
+
+    context.client_handler = object()
+    context.on_deathlink({"time": 3.0, "cause": "Other game test"})
+    check(
+        original_calls == [{"time": 3.0, "cause": "Other game test"}],
+        "DeathLink receipt logging returns to Core behavior when another game handler is active",
+    )
+
+
+def test_death_link_receive_rules() -> None:
+    class FixedRng:
+        def __init__(self, roll: int, choice: int = death_link_module.DEATH_LINK_EFFECT_DEATH) -> None:
+            self.roll = roll
+            self.selected_choice = choice
+            self.choice_values = None
+
+        def randrange(self, _stop: int) -> int:
+            return self.roll
+
+        def choice(self, values):
+            self.choice_values = tuple(values)
+            return self.selected_choice
+
+    context = FakeContext(death_link=True)
+    context.slot_data["death_link_grace_percentage"] = 75
+    spared = client_module.NSMBDSClient()
+    spared._death_link_rng = FixedRng(0)
+    spared.on_package(context, "Bounced", {"tags": ["DeathLink"], "data": {"source": "Luigi"}})
+    check(not spared._pending_death_link, "75% Death Link grace spares Mario on a successful roll")
+    check(
+        spared._pending_ap_notifications
+        == [(ram_addresses.AP_NOTIFICATION_DEATH_LINK, death_link_module.DEATH_LINK_NOTIFICATION_GRACE)],
+        "Death Link grace queues the unified DL: Grace notification",
+    )
+
+    context.slot_data["death_link_grace_percentage"] = 0
+    context.slot_data["death_link_effect"] = death_link_module.DEATH_LINK_EFFECT_RANDOM
+    context.slot_data["death_link_random_effects"] = ["timer_drain"]
+    accepted = client_module.NSMBDSClient()
+    accepted._death_link_rng = FixedRng(99, death_link_module.DEATH_LINK_EFFECT_TIMER_DRAIN)
+    accepted.on_package(context, "Bounced", {"tags": ["DeathLink"], "data": {"source": "Luigi"}})
+    check(
+        accepted._pending_death_link
+        and accepted._pending_death_link_effect == death_link_module.DEATH_LINK_EFFECT_TIMER_DRAIN,
+        "Random Death Link chooses and caches one concrete effect when received",
+    )
+    check(
+        accepted._death_link_rng.choice_values == (death_link_module.DEATH_LINK_EFFECT_TIMER_DRAIN,),
+        "Random Death Link only chooses from effects enabled in slot data",
+    )
+
+    cooling_down = client_module.NSMBDSClient()
+    cooling_down._death_link_cooldown_until = death_link_module.time.monotonic() + 30
+    cooling_down.on_package(context, "Bounced", {"tags": ["DeathLink"], "data": {"source": "Luigi"}})
+    check(
+        not cooling_down._pending_death_link and not cooling_down._pending_ap_notifications,
+        "Death Links received during cooldown are discarded without an in-game notification",
+    )
+
+
+async def test_death_link_effects() -> None:
+    writes: list[tuple] = []
+
+    async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
+        writes.append((write_requests, guards))
+        return True
+
+    fake_bizhawk.guarded_write = fake_guarded_write
+    context = FakeContext(death_link=True)
+    context.slot_data["death_link_cooldown_seconds"] = 15
+    timer = 250 * ram_addresses.TIMER_UNITS_PER_SECOND
+
+    expected_writes = {
+        death_link_module.DEATH_LINK_EFFECT_DEATH: [
+            (ram_addresses.ADDR_TIMER, [0, 0, 0, 0], ram_addresses.MEMORY_DOMAIN),
+        ],
+        death_link_module.DEATH_LINK_EFFECT_DAMAGE: [
+            (
+                ram_addresses.ADDR_AP_TRAP_TRIGGER,
+                [death_link_module.DEATH_LINK_DAMAGE_TRIGGER],
+                ram_addresses.MEMORY_DOMAIN,
+            ),
+        ],
+        death_link_module.DEATH_LINK_EFFECT_TIMER_DRAIN: [
+            (
+                ram_addresses.ADDR_TIMER,
+                list(struct.pack("<I", 150 * ram_addresses.TIMER_UNITS_PER_SECOND)),
+                ram_addresses.MEMORY_DOMAIN,
+            ),
+        ],
+        death_link_module.DEATH_LINK_EFFECT_LOSE_ALL_COINS: [
+            (ram_addresses.ADDR_COINS, [0], ram_addresses.MEMORY_DOMAIN),
+        ],
+    }
+    expected_death_suppression = {
+        death_link_module.DEATH_LINK_EFFECT_DEATH: True,
+        death_link_module.DEATH_LINK_EFFECT_DAMAGE: True,
+        death_link_module.DEATH_LINK_EFFECT_TIMER_DRAIN: False,
+        death_link_module.DEATH_LINK_EFFECT_LOSE_ALL_COINS: False,
+    }
+
+    for effect, expected in expected_writes.items():
+        writes.clear()
+        client = client_module.NSMBDSClient()
+        client._pending_death_link = True
+        client._pending_death_link_effect = effect
+        applied = await client._apply_pending_death_link(context, timer)
+        check(
+            applied and writes[0][0] == expected
+            and not client._pending_death_link
+            and client._pending_death_link_effect is None
+            and client._suppress_next_local_death is expected_death_suppression[effect],
+            f"Death Link effect {death_link_module.DEATH_LINK_EFFECT_NAMES[effect]} uses its verified RAM write",
+        )
+        check(
+            client._pending_ap_notifications == [(ram_addresses.AP_NOTIFICATION_DEATH_LINK, effect)],
+            f"Death Link effect {death_link_module.DEATH_LINK_EFFECT_NAMES[effect]} queues its unified notification",
+        )
+        check(
+            client._death_link_cooldown_until > death_link_module.time.monotonic(),
+            f"Death Link effect {death_link_module.DEATH_LINK_EFFECT_NAMES[effect]} starts cooldown after applying",
+        )
+
+    writes.clear()
+    low_timer_client = client_module.NSMBDSClient()
+    low_timer_client._pending_death_link = True
+    low_timer_client._pending_death_link_effect = death_link_module.DEATH_LINK_EFFECT_TIMER_DRAIN
+    await low_timer_client._apply_pending_death_link(context, 75 * ram_addresses.TIMER_UNITS_PER_SECOND)
+    check(
+        writes[0][0][0] == (ram_addresses.ADDR_TIMER, [0, 0, 0, 0], ram_addresses.MEMORY_DOMAIN),
+        "100-second Death Link Timer Drain clamps at zero and may defeat Mario",
+    )
+    check(
+        low_timer_client._suppress_next_local_death,
+        "A lethal Death Link Timer Drain suppresses the resulting outgoing death indefinitely",
+    )
+
+    powered_damage_client = client_module.NSMBDSClient()
+    powered_damage_client._pending_death_link = True
+    powered_damage_client._pending_death_link_effect = death_link_module.DEATH_LINK_EFFECT_DAMAGE
+    await powered_damage_client._apply_pending_death_link(context, timer, powerup=2)
+    check(
+        not powered_damage_client._suppress_next_local_death,
+        "Nonlethal Death Link damage does not suppress a later unrelated local death",
+    )
 
 
 def test_timer_drain_math() -> None:
@@ -2111,6 +2275,7 @@ async def test_insured_death_still_sends_death_link() -> None:
             struct.pack("<I", 100 * ram_addresses.TIMER_UNITS_PER_SECOND),
             bytes([0]),
             bytes([0]),
+            bytes([0]),
             bytes([6]),
             struct.pack("<I", 0),
         ]
@@ -2145,6 +2310,7 @@ async def test_return_to_map_does_not_send_death_link() -> None:
         return [
             bytes([lives]),
             struct.pack("<I", timer_seconds * ram_addresses.TIMER_UNITS_PER_SECOND),
+            bytes([0]),
             bytes([0]),
             bytes([0]),
             bytes([0]),

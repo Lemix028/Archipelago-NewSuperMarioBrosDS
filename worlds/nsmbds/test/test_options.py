@@ -14,7 +14,15 @@ from ..locations import (
     ONE_UP_BLOCK_DEFINITIONS,
     WORLD_6_2_BONUS_AREA_LOCATION_NAMES,
 )
-from ..options import RequiredStarCoins, SecondaryScreenBackground, TrapPercentage
+from ..options import (
+    DeathLinkCooldownSeconds,
+    DeathLinkEffect,
+    DeathLinkGracePercentage,
+    DeathLinkRandomEffects,
+    RequiredStarCoins,
+    SecondaryScreenBackground,
+    TrapPercentage,
+)
 
 
 def advancement_star_coins_behind_gates(test: NSMBDSTestBase) -> list:
@@ -88,10 +96,54 @@ class TestBalancingDefaults(NSMBDSTestBase):
         self.assertEqual(SecondaryScreenBackground.default, 0)
         self.assertEqual(SecondaryScreenBackground.options["classic_overworld"], 6)
 
+    def test_death_link_defaults_and_ranges(self) -> None:
+        self.assertEqual(DeathLinkGracePercentage.range_start, 0)
+        self.assertEqual(DeathLinkGracePercentage.range_end, 75)
+        self.assertEqual(DeathLinkGracePercentage.default, 0)
+        self.assertEqual(DeathLinkCooldownSeconds.range_start, 0)
+        self.assertEqual(DeathLinkCooldownSeconds.range_end, 300)
+        self.assertEqual(DeathLinkCooldownSeconds.default, 0)
+        self.assertEqual(DeathLinkEffect.default, DeathLinkEffect.option_death)
+        self.assertEqual(
+            DeathLinkRandomEffects.default,
+            frozenset({"death", "damage", "timer_drain", "lose_all_coins"}),
+        )
+        self.assertEqual(DeathLinkRandomEffects.valid_keys, DeathLinkRandomEffects.default)
+        self.assertEqual(
+            {
+                DeathLinkEffect.option_death,
+                DeathLinkEffect.option_damage,
+                DeathLinkEffect.option_timer_drain,
+                DeathLinkEffect.option_lose_all_coins,
+                DeathLinkEffect.option_random_effect,
+            },
+            set(DeathLinkEffect.name_lookup),
+        )
+
     def test_strong_filler_items_are_weighted_below_common_items(self) -> None:
         self.assertLess(FILLER_ITEM_WEIGHTS["3-Up Moon"], FILLER_ITEM_WEIGHTS["1-Up Mushroom"])
         self.assertLess(FILLER_ITEM_WEIGHTS["Trap Shield"], FILLER_ITEM_WEIGHTS["Mushroom"])
         self.assertLess(FILLER_ITEM_WEIGHTS["Life Insurance"], FILLER_ITEM_WEIGHTS["Coin Bundle"])
+
+
+class TestDeathLinkConfiguration(NSMBDSTestBase):
+    options = {
+        "death_link": True,
+        "death_link_grace_percentage": 35,
+        "death_link_cooldown_seconds": 20,
+        "death_link_effect": "random_effect",
+        "death_link_random_effects": {"damage", "timer_drain"},
+        "death_link_triggers_on_insured_death": True,
+    }
+
+    def test_complete_death_link_configuration_reaches_slot_data(self) -> None:
+        slot_data = self.world.fill_slot_data()
+        self.assertTrue(slot_data["death_link"])
+        self.assertEqual(slot_data["death_link_grace_percentage"], 35)
+        self.assertEqual(slot_data["death_link_cooldown_seconds"], 20)
+        self.assertEqual(slot_data["death_link_effect"], DeathLinkEffect.option_random_effect)
+        self.assertEqual(slot_data["death_link_random_effects"], ["damage", "timer_drain"])
+        self.assertTrue(slot_data["death_link_triggers_on_insured_death"])
 
 
 class TestRedCoinChecksDisabled(NSMBDSTestBase):
@@ -282,6 +334,27 @@ class TestNormalBlockPlacementNonProgression(NSMBDSTestBase):
 
 
 class TestUnsafeHostOptions(NSMBDSTestBase):
+    def test_random_death_link_requires_at_least_one_effect(self) -> None:
+        world = self.multiworld.worlds[self.player]
+        world.options.death_link_effect.value = DeathLinkEffect.option_random_effect
+        world.options.death_link_random_effects.value = set()
+        host = SimpleNamespace(nsmbds_options=SimpleNamespace(
+            allow_unsafe_nsmbds_options=False,
+        ))
+        with patch("worlds.nsmbds.get_settings", return_value=host):
+            with self.assertRaisesRegex(Exception, "at least one enabled effect"):
+                world.generate_early()
+
+    def test_fixed_death_link_allows_an_empty_random_pool(self) -> None:
+        world = self.multiworld.worlds[self.player]
+        world.options.death_link_effect.value = DeathLinkEffect.option_damage
+        world.options.death_link_random_effects.value = set()
+        host = SimpleNamespace(nsmbds_options=SimpleNamespace(
+            allow_unsafe_nsmbds_options=False,
+        ))
+        with patch("worlds.nsmbds.get_settings", return_value=host):
+            world.generate_early()
+
     def test_host_rejects_unsafe_percentages_by_default(self) -> None:
         world = self.multiworld.worlds[self.player]
         world.options.blocksanity_global_check_percentage.value = 31

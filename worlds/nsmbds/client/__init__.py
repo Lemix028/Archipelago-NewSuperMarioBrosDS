@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import random
 from collections import deque
 from typing import TYPE_CHECKING, Sequence
 
@@ -138,11 +139,14 @@ class NSMBDSClient(
         self._game_data_header_values: tuple[int, ...] | None = None
         self._death_link_enabled: bool | None = None
         self._pending_death_link = False
+        self._pending_death_link_effect: int | None = None
+        self._death_link_rng = random.Random()
+        self._death_link_cooldown_until = 0.0
+        self._suppress_next_local_death = False
         self._last_lives: int | None = None
         self._last_timer: int | None = None
         self._in_level_grace_polls = 0
         self._return_to_map_pending = False
-        self._suppress_local_death_polls = 0
         self._pending_timer_drains = 0
         self._pending_starman_buffs = 0
         self._pending_time_capsules = 0
@@ -234,6 +238,7 @@ class NSMBDSClient(
         ctx.server_game = getattr(self, "server_game", self.game)
         ctx.items_handling = 0b111
         ctx.want_slot_data = True
+        self._install_death_link_log_filter(ctx)
         if matched_location is not None:
             address, domain = matched_location
             logger.info(
@@ -411,9 +416,7 @@ class NSMBDSClient(
             my_name = ctx.player_names.get(ctx.slot) if hasattr(ctx, "player_names") and ctx.slot in getattr(ctx, "player_names", {}) else getattr(ctx, "auth", None)
             if source and my_name and source == my_name: #Ignore own bounced Death Link
                 return
-            if ctx.slot_data and ctx.slot_data.get("death_link", False):
-                self._pending_death_link = True
-                logger.info("Queued incoming Death Link from %s until the level timer is active.", source)
+            self._queue_incoming_death_link(ctx, source)
             return
         if cmd == "ReceivedItems":
             if self._item_cursor_needs_initial_sync:
@@ -536,11 +539,13 @@ class NSMBDSClient(
         self._goal_sent = False
         self._death_link_enabled = None
         self._pending_death_link = False
+        self._pending_death_link_effect = None
+        self._death_link_cooldown_until = 0.0
+        self._suppress_next_local_death = False
         self._last_lives = None
         self._last_timer = None
         self._in_level_grace_polls = 0
         self._return_to_map_pending = False
-        self._suppress_local_death_polls = 0
         self._pending_timer_drains = 0
         self._pending_starman_buffs = 0
         self._pending_time_capsules = 0

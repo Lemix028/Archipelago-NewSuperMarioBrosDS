@@ -649,7 +649,9 @@ function M.poll_and_update_traps(has_active_player, trap_player)
             M.begin_timed_trap("no_turnaround", LONG_TRAP_FRAMES)
         elseif trigger_code == 33 then
             M.begin_timed_trap("powerup_pickpocket_notice", BONK_FEEDBACK_FRAMES)
-        elseif trigger_code == 7 or trigger_code == 8 then
+        elseif trigger_code == 35 then
+            M.begin_timed_trap("death_link_notice", BONK_FEEDBACK_FRAMES)
+        elseif trigger_code == 7 or trigger_code == 8 or trigger_code == 34 then
             _G.memory.writebyte(addresses.ADDR_AP_TRAP_TRIGGER, 0)
             if trap_player then
                 local current_powerup = _G.memory.readbyte(memory.to_domain_addr(trap_player + constants.PLAYER_POWERUP_OFFSET))
@@ -663,13 +665,13 @@ function M.poll_and_update_traps(has_active_player, trap_player)
                     _G.memory.writebyte(memory.to_domain_addr(trap_player + constants.PLAYER_IFRAME_TIMER_OFFSET), BONK_FEEDBACK_FRAMES)
                     context.trap_remaining_frames = BONK_FEEDBACK_FRAMES
                     context.trap_total_frames = BONK_FEEDBACK_FRAMES
-                    context.active_mode = "bonk_hit"
+                    context.active_mode = trigger_code == 34 and "death_link_damage" or "bonk_hit"
                 else
-                    if trigger_code == 7 then
+                    if trigger_code == 7 or trigger_code == 34 then
                         _G.memory.write_u32_le(addresses.ADDR_TIMER, 0)
                         context.trap_remaining_frames = BONK_FEEDBACK_FRAMES
                         context.trap_total_frames = BONK_FEEDBACK_FRAMES
-                        context.active_mode = "bonk_fatal"
+                        context.active_mode = trigger_code == 34 and "death_link_damage" or "bonk_fatal"
                     else
                         _G.memory.writebyte(memory.to_domain_addr(trap_player + constants.PLAYER_IFRAME_TIMER_OFFSET), BONK_FEEDBACK_FRAMES)
                         context.trap_remaining_frames = BONK_FEEDBACK_FRAMES

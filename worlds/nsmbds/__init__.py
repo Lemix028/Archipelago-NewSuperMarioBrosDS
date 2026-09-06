@@ -39,6 +39,7 @@ from .locations import (
 )
 
 from .options import (
+    DeathLinkEffect,
     ITEM_PLACEMENT_EXCLUDED,
     ITEM_PLACEMENT_NON_PROGRESSION,
     ITEM_PLACEMENT_PROGRESSION,
@@ -209,6 +210,12 @@ class NSMBDSWorld(World):
 
         blocksanity_pct = _val(self.options.blocksanity_global_check_percentage)
         trap_pct = _val(self.options.trap_percentage)
+
+        if (
+            _val(self.options.death_link_effect) == DeathLinkEffect.option_random_effect
+            and not self.options.death_link_random_effects.value
+        ):
+            raise Exception("Death Link Random Effects must contain at least one enabled effect.")
 
         if not allow_unsafe:
             if blocksanity_pct > 30:
@@ -750,6 +757,10 @@ class NSMBDSWorld(World):
             "filler_care_package": bool(self.options.filler_care_package.value),
             "filler_life_insurance": bool(self.options.filler_life_insurance.value),
             "death_link": bool(self.options.death_link.value),
+            "death_link_grace_percentage": self.options.death_link_grace_percentage.value,
+            "death_link_cooldown_seconds": self.options.death_link_cooldown_seconds.value,
+            "death_link_effect": self.options.death_link_effect.value,
+            "death_link_random_effects": sorted(self.options.death_link_random_effects.value),
             "death_link_triggers_on_insured_death": bool(self.options.death_link_triggers_on_insured_death.value),
         }
         if self.individual_gate_tiers:
