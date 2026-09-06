@@ -89,6 +89,14 @@ def build_patched_rom(base_bytes: bytes) -> bytes:
     ):
         offset = address - rom.arm9RamAddress
         checked_write(arm9, offset, bytes(len(payload)), payload, label)
+    currency_mailbox_offset = star["CURRENCY_MAILBOX"] - rom.arm9RamAddress
+    checked_write(
+        arm9,
+        currency_mailbox_offset,
+        bytes(star["CURRENCY_MAILBOX_SIZE"]),
+        star["DEFAULT_CURRENCY_MAILBOX"],
+        "Star-Coin persistent currency mailbox",
+    )
     currency_site_offset = star["CURRENCY_GETTER_SITE"] - rom.arm9RamAddress
     checked_write(
         arm9,

@@ -104,17 +104,25 @@ class TestNativeHookSources(unittest.TestCase):
             module.TIER_MAILBOX + module.TIER_MAILBOX_SIZE,
             module.DATA_CAVE_END,
         )
-        mailbox_ranges = (
+        overlay_mailbox_ranges = (
             (module.PERMIT_MAILBOX, module.PERMIT_MAILBOX + module.PERMIT_MAILBOX_SIZE),
-            (module.CURRENCY_MAILBOX, module.CURRENCY_MAILBOX + module.CURRENCY_MAILBOX_SIZE),
             (module.SELECTOR_TRACE, module.SELECTOR_TRACE + 3),
             (module.TIER_MAILBOX, module.TIER_MAILBOX + module.TIER_MAILBOX_SIZE),
         )
         self.assertTrue(all(
             end <= next_start
             for (_start, end), (next_start, _next_end)
-            in zip(mailbox_ranges, mailbox_ranges[1:])
+            in zip(overlay_mailbox_ranges, overlay_mailbox_ranges[1:])
         ))
+        self.assertEqual(module.CURRENCY_MAILBOX, 0x02002EF0)
+        self.assertLessEqual(
+            module.CURRENCY_GETTER_CAVE + len(module.STAR_COIN_CURRENCY_HOOK_BYTES),
+            module.CURRENCY_MAILBOX,
+        )
+        self.assertLessEqual(
+            module.CURRENCY_MAILBOX + module.CURRENCY_MAILBOX_SIZE,
+            0x02002F00,
+        )
         self.assertEqual(module.VANILLA_TIER_MESSAGE_BASE, 16)
         self.assertEqual(module.PROGRESSIVE_TIER_MESSAGE_BASE, 48)
         self.assertEqual(module.INDIVIDUAL_TIER_MESSAGE_BASE, 80)
