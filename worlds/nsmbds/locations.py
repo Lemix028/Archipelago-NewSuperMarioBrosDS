@@ -24,6 +24,7 @@ from .data.moving_blocksanity_data import (
     SPRITE_290_ONE_UP_ITEM,
     SPRITE_290_PLACEMENTS,
 )
+from .data.ram_addresses import MINI_CASTLE_FLAGS_GAME_DATA_OFFSET
 
 
 class NSMBDSLocation(Location):
@@ -732,7 +733,7 @@ LOCATION_RAM_MAP["World 1-Tower Secret Exit"] = (0xD4, 0xC0)
 LOCATION_RAM_MAP["World 2-3 Secret Exit"] = (0x0F1, 0xC0)
 LOCATION_RAM_MAP["World 2-A Secret Exit"] = (0xF2, 0xC0)
 LOCATION_RAM_MAP["World 2-4 Secret Exit"] = (0xF5, 0xC0)
-LOCATION_RAM_MAP["World 2-Castle Secret Exit"] = (0x2F4, 0x01)
+LOCATION_RAM_MAP["World 2-Castle Secret Exit"] = (MINI_CASTLE_FLAGS_GAME_DATA_OFFSET, 0x01)
 LOCATION_RAM_MAP["World 3-2 Secret Exit"] = (0x111, 0xC0)
 LOCATION_RAM_MAP["World 3-Ghost House Secret Exit"] = (0x117, 0xC0)
 LOCATION_RAM_MAP["World 4-1 Secret Exit"] = (0x12E, 0xC0)
@@ -740,7 +741,7 @@ LOCATION_RAM_MAP["World 4-Ghost House Secret Exit"] = (0x133, 0xC0)
 LOCATION_RAM_MAP["World 5-2 Secret Exit"] = (0x14B, 0xC0)
 LOCATION_RAM_MAP["World 5-Ghost House Secret Exit"] = (0x155, 0xC0)
 LOCATION_RAM_MAP["World 5-B Secret Exit"] = (0x154, 0xC0)
-LOCATION_RAM_MAP["World 5-Castle Secret Exit"] = (0x2F4, 0x02)
+LOCATION_RAM_MAP["World 5-Castle Secret Exit"] = (MINI_CASTLE_FLAGS_GAME_DATA_OFFSET, 0x02)
 LOCATION_RAM_MAP["World 7-Ghost House Secret Exit"] = (0x189, 0xC0)
 LOCATION_RAM_MAP["World 7-4 Secret Exit"] = (0x18B, 0xC0)
 LOCATION_RAM_MAP["World 7-5 Secret Exit"] = (0x183, 0xC0)
@@ -752,7 +753,7 @@ SECRET_EXIT_RAM_REQUIREMENTS: dict[str, tuple[tuple[int, int], ...]] = {
     "World 2-3 Secret Exit": ((0x0F1, 0xC0),),
     "World 2-A Secret Exit": ((0xF2, 0xC0),),
     "World 2-4 Secret Exit": ((0xF5, 0xC0), (0xF6, 0xC0)),
-    "World 2-Castle Secret Exit": ((35, 0x10), (0x2F4, 0x01)),
+    "World 2-Castle Secret Exit": ((35, 0x10), (MINI_CASTLE_FLAGS_GAME_DATA_OFFSET, 0x01)),
     "World 3-2 Secret Exit": ((0x111, 0xC0),),
     "World 3-Ghost House Secret Exit": ((0x117, 0xC0),),
     # 0x12F is the separate path from the Toad House to the Tower and may be
@@ -762,7 +763,7 @@ SECRET_EXIT_RAM_REQUIREMENTS: dict[str, tuple[tuple[int, int], ...]] = {
     "World 5-2 Secret Exit": ((0x14B, 0xC0),),
     "World 5-Ghost House Secret Exit": ((0x155, 0xC0),),
     "World 5-B Secret Exit": ((0x154, 0xC0),),
-    "World 5-Castle Secret Exit": ((111, 0x10), (0x2F4, 0x02)),
+    "World 5-Castle Secret Exit": ((111, 0x10), (MINI_CASTLE_FLAGS_GAME_DATA_OFFSET, 0x02)),
     "World 7-Ghost House Secret Exit": ((0x189, 0xC0),),
     "World 7-4 Secret Exit": ((0x18B, 0xC0), (0x18C, 0xC0)),
     "World 7-5 Secret Exit": ((0x183, 0xC0), (0x184, 0xC0)),

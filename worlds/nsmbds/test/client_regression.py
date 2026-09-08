@@ -886,6 +886,46 @@ def test_launcher_accepts_empty_optional_rom_setting() -> None:
     )
 
 
+async def test_location_snapshot_includes_native_mini_castle_flags() -> None:
+    client = client_module.NSMBDSClient()
+    context = FakeContext()
+    level_data = bytes([0x5A]) * ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE
+    requests = []
+    original_read = fake_bizhawk.read
+
+    async def fake_read(_bizhawk_ctx, read_requests):
+        requests.extend(read_requests)
+        return [level_data, bytes([0x03, 2, 4, 6])]
+
+    fake_bizhawk.read = fake_read
+    try:
+        snapshot = await client._read_level_data(context)
+    finally:
+        fake_bizhawk.read = original_read
+
+    check(
+        requests == [
+            (
+                ram_addresses.ADDR_LEVEL_DATA_BASE,
+                ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE,
+                ram_addresses.MEMORY_DOMAIN,
+            ),
+            (
+                ram_addresses.ADDR_AP_MINI_CASTLE_FLAGS_PERM,
+                4,
+                ram_addresses.MEMORY_DOMAIN,
+            ),
+        ],
+        "Location snapshots read the native Mini-Castle flags directly from permanent ARM9 RAM",
+    )
+    check(
+        snapshot is not None
+        and len(snapshot) == ram_addresses.LOCATION_DATA_SNAPSHOT_SIZE
+        and snapshot[ram_addresses.MINI_CASTLE_FLAGS_GAME_DATA_OFFSET] == 0x03,
+        "The native Mini-Castle byte is appended at its stable synthetic location-data offset",
+    )
+
+
 def test_secret_exit_detection() -> None:
     game_data = bytearray(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
     for offset, bit_mask in locations.SECRET_EXIT_RAM_REQUIREMENTS["World 1-2 Secret Exit"]:
@@ -924,43 +964,43 @@ def test_secret_exit_detection() -> None:
         "World 2-4 Secret Exit requires both alpha persistent path flags",
     )
 
-    # Test World 2-Castle Secret Exit validation using stage complete (35, 0x10) + Mini Mario flag (0x2F4, 0x01)
-    game_data_w2c = bytearray(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
+    # A sticky hook flag remains valid when the normal-completion bit was set by
+    # an earlier clear. This covers normal-clear -> Mini-Mario replay.
+    game_data_w2c = bytearray(ram_addresses.LOCATION_DATA_SNAPSHOT_SIZE)
     game_data_w2c[35] = 0xD0     # W2-Castle completed
-    game_data_w2c[0x2F4] = 0x01  # Mini Mario Castle flag bit 0x01 set by Lua
+    game_data_w2c[ram_addresses.MINI_CASTLE_FLAGS_GAME_DATA_OFFSET] = 0x01
     check(
         client_module.NSMBDSClient._is_location_completed("World 2-Castle Secret Exit", bytes(game_data_w2c)),
-        "World 2-Castle Secret Exit detects Mini Mario clear via (35, 0x10) and (0x2F4, 0x01)",
+        "World 2-Castle Secret Exit accepts a native sticky flag after an earlier normal clear",
     )
-    game_data_w2c_norm = bytearray(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
-    game_data_w2c_norm[35] = 0xD0  # W2-Castle Normal exit clear (0x2F4 is 0)
+    game_data_w2c_norm = bytearray(ram_addresses.LOCATION_DATA_SNAPSHOT_SIZE)
+    game_data_w2c_norm[35] = 0xD0
     check(
         not client_module.NSMBDSClient._is_location_completed("World 2-Castle Secret Exit", bytes(game_data_w2c_norm)),
         "World 2-Castle Secret Exit rejects normal exit clear without Mini Mario flag",
     )
-    game_data_w41_only = bytearray(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
-    game_data_w41_only[0x1C4] = 0x03  # W4-1 map active, but W2-Castle stage complete byte 35 is 0 and 0x2F4 is 0
+    game_data_w41_only = bytearray(ram_addresses.LOCATION_DATA_SNAPSHOT_SIZE)
+    game_data_w41_only[0x1C4] = 0x03
     check(
         not client_module.NSMBDSClient._is_location_completed("World 2-Castle Secret Exit", bytes(game_data_w41_only)),
         "World 4-1 clear does not trigger World 2-Castle Secret Exit when W2-Castle is incomplete",
     )
 
-    # Test World 5-Castle Secret Exit validation using stage complete (111, 0x10) + Mini Mario flag (0x2F4, 0x02)
-    game_data_w5c = bytearray(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
+    game_data_w5c = bytearray(ram_addresses.LOCATION_DATA_SNAPSHOT_SIZE)
     game_data_w5c[111] = 0xD0    # W5-Castle completed
-    game_data_w5c[0x2F4] = 0x02  # Mini Mario Castle flag bit 0x02 set by Lua
+    game_data_w5c[ram_addresses.MINI_CASTLE_FLAGS_GAME_DATA_OFFSET] = 0x02
     check(
         client_module.NSMBDSClient._is_location_completed("World 5-Castle Secret Exit", bytes(game_data_w5c)),
-        "World 5-Castle Secret Exit detects Mini Mario clear via (111, 0x10) and (0x2F4, 0x02)",
+        "World 5-Castle Secret Exit accepts a native sticky flag after an earlier normal clear",
     )
-    game_data_w5c_norm = bytearray(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
-    game_data_w5c_norm[111] = 0xD0  # W5-Castle Normal exit clear (0x2F4 is 0)
+    game_data_w5c_norm = bytearray(ram_addresses.LOCATION_DATA_SNAPSHOT_SIZE)
+    game_data_w5c_norm[111] = 0xD0
     check(
         not client_module.NSMBDSClient._is_location_completed("World 5-Castle Secret Exit", bytes(game_data_w5c_norm)),
         "World 5-Castle Secret Exit rejects normal exit clear without Mini Mario flag",
     )
-    game_data_w71_only = bytearray(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
-    game_data_w71_only[0x1D0] = 0x03  # W7-1 map active, but W5-Castle stage complete byte 111 is 0 and 0x2F4 is 0
+    game_data_w71_only = bytearray(ram_addresses.LOCATION_DATA_SNAPSHOT_SIZE)
+    game_data_w71_only[0x1D0] = 0x03
     check(
         not client_module.NSMBDSClient._is_location_completed("World 5-Castle Secret Exit", bytes(game_data_w71_only)),
         "World 7-1 clear does not trigger World 5-Castle Secret Exit when W5-Castle is incomplete",
@@ -996,9 +1036,9 @@ def test_bowser_goal_detection() -> None:
         "Final victory also completes the separate Bowser boss check",
     )
 
-    world_two_data = bytearray(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
+    world_two_data = bytearray(ram_addresses.LOCATION_DATA_SNAPSHOT_SIZE)
     world_two_data[35] = 0xD0
-    world_two_data[0x2F4] = 0x01
+    world_two_data[ram_addresses.MINI_CASTLE_FLAGS_GAME_DATA_OFFSET] = 0x01
     check(
         client_module.NSMBDSClient._is_location_completed(
             "World 2-Castle Mummipokey Defeated", bytes(world_two_data)

@@ -40,10 +40,12 @@ from ..data.powerup_licenses import (
     native_license_mode,
 )
 from ..data.ram_addresses import (
+    ADDR_AP_MINI_CASTLE_FLAGS_PERM,
     ADDR_AP_POWERUP_LICENSE_MASK,
     ADDR_AP_POWERUP_LICENSE_MODE,
     ADDR_LEVEL_DATA_BASE,
     LEVEL_AND_SECRET_FLAG_READ_SIZE,
+    LOCATION_DATA_SNAPSHOT_SIZE,
     LEVEL_DATA_WORLD_HEADER_MASK,
     LEVEL_DATA_WORLD_HEADER_MAX_STATE,
     LEVEL_DATA_WORLD_HEADER_OFFSETS,
@@ -329,22 +331,43 @@ class NSMBDSClient(
                 logger.exception("NSMBDS %s failed; the watcher will retry next tick.", operation_name)
 
     async def _read_level_data(self, ctx: "BizHawkClientContext") -> bytes | None:
-        """Read the full location block and report connector failures."""
+        """Read the world-map block plus the native Mini-Castle flags."""
         from worlds._bizhawk import read
 
         try:
             result = await read(
                 ctx.bizhawk_ctx,
-                [(ADDR_LEVEL_DATA_BASE, LEVEL_AND_SECRET_FLAG_READ_SIZE, MEMORY_DOMAIN)],
+                [
+                    (ADDR_LEVEL_DATA_BASE, LEVEL_AND_SECRET_FLAG_READ_SIZE, MEMORY_DOMAIN),
+                    (ADDR_AP_MINI_CASTLE_FLAGS_PERM, 4, MEMORY_DOMAIN),
+                ],
             )
         except Exception:
             logger.exception("Failed to read the NSMBDS level-data block.")
             return None
 
-        if not result or len(result[0]) != LEVEL_AND_SECRET_FLAG_READ_SIZE:
-            logger.warning("Received an invalid NSMBDS level-data block from BizHawk.")
+        if (
+            not result
+            or len(result) != 2
+            or len(result[0]) != LEVEL_AND_SECRET_FLAG_READ_SIZE
+            or len(result[1]) != 4
+        ):
+            logger.warning("Received an invalid NSMBDS location-data snapshot from BizHawk.")
             return None
-        return result[0]
+        flags, sequence, source, destination = result[1]
+        trace = bytes(result[1])
+        if trace != getattr(self, "_mini_castle_trace", None):
+            self._mini_castle_trace = trace
+            if sequence or flags:
+                logger.info(
+                    "Native castle route: W%d -> W%d; secret flags=0x%02X; event=%d",
+                    source + 1, destination + 1, flags, sequence,
+                )
+        location_data = result[0] + result[1][:1]
+        if len(location_data) != LOCATION_DATA_SNAPSHOT_SIZE:
+            logger.warning("Received an incomplete NSMBDS location-data snapshot from BizHawk.")
+            return None
+        return location_data
 
     @staticmethod
     def _is_game_data_ready(level_data: bytes) -> bool:

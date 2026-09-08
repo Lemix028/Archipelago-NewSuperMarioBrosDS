@@ -19,7 +19,6 @@ local actors = require("nsmbds.actors")
 local hooks = require("nsmbds.hooks")
 local blocksanity = require("nsmbds.blocksanity")
 local protection = require("nsmbds.protection")
-local mini_castles = require("nsmbds.mini_castles")
 local red_coins = require("nsmbds.red_coins")
 require("nsmbds.notifications")
 local hud = require("nsmbds.hud")
@@ -217,11 +216,6 @@ local function sideloading_tick()
         blocksanity.reset_block_observer_state()
         if gui and gui.clearGraphics then gui.clearGraphics() end
     end
-
-    -- Castle completion flags can change after the player actor disappears
-    -- during the exit transition. Keep the cached Mini state alive through
-    -- that transition instead of observing only active gameplay frames.
-    pcall(mini_castles.observe_mini_castle_completion, player)
 
     -- Publish one queued Blocksanity event to the mailbox.
     pcall(blocksanity.publish_next_block_event)

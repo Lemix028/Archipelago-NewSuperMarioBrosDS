@@ -14,7 +14,7 @@ nsmbds_ap_patch_marker_hook:
 .type nsmbds_ap_patch_marker, %object
 nsmbds_ap_patch_marker:
     .ascii "APNS"
-    .word 2
+    .word 3
     .word 0
     .word 0
 

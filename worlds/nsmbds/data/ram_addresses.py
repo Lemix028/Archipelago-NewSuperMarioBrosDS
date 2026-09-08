@@ -142,9 +142,11 @@ NATIVE_BLOCK_HEADER = NATIVE_BLOCK_MAGIC + NATIVE_BLOCK_VERSION.to_bytes(4, "lit
 NATIVE_BLOCK_CAPACITY = 256
 NATIVE_BLOCK_RECORD_SIZE = 16
 
-# Live Mini Mario Castle Secret Exit completion flags (written by Lua, read by Python client in level_data offset 0x2F4)
-ADDR_AP_MINI_CASTLE_FLAGS = 0x00088F40  # system 0x02088F40, 1 byte, uint8
+# Sticky Mini Mario Castle Secret Exit completion flags written by the native
+# world-map hook. This permanently loaded ARM9 byte survives overlay changes;
+# the AP server becomes authoritative once the client submits the location.
 ADDR_AP_MINI_CASTLE_FLAGS_PERM = 0x00002FF3  # system 0x02002FF3, 1 byte, uint8
+# Next three bytes: route sequence, source world, destination world (zero based).
 AP_MINI_CASTLE_W2_BIT = 0x01
 AP_MINI_CASTLE_W5_BIT = 0x02
 
@@ -228,6 +230,11 @@ ADDR_LEVEL_DATA_BASE = 0x00088C4C
 # The client also reads adjacent persistent world-map flags used by active
 # Secret Exit checks (e.g. 0x02088F39 at offset 0x2ED).
 LEVEL_AND_SECRET_FLAG_READ_SIZE = 0x300
+
+# _read_level_data appends the separately read native Mini-Castle byte to the
+# contiguous world-map block so all location conditions share one snapshot.
+MINI_CASTLE_FLAGS_GAME_DATA_OFFSET = LEVEL_AND_SECRET_FLAG_READ_SIZE
+LOCATION_DATA_SNAPSHOT_SIZE = LEVEL_AND_SECRET_FLAG_READ_SIZE + 1
 
 FLAG_STAR_COIN_1    = 0x01  # Bit 0: Star Coin 1 collected
 FLAG_STAR_COIN_2    = 0x02  # Bit 1: Star Coin 2 collected

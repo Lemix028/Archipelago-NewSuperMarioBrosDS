@@ -70,6 +70,7 @@ def build_patched_rom(base_bytes: bytes) -> bytes:
         )
 
     star = runpy.run_path(METADATA_ROOT / "star_coin_gate_hook.py")
+    mini_castle = runpy.run_path(METADATA_ROOT / "mini_castle_hook.py")
     powerup = runpy.run_path(METADATA_ROOT / "powerup_license_hook.py")
     block = runpy.run_path(METADATA_ROOT / "block_hit_hook.py")
     save_menu = runpy.run_path(METADATA_ROOT / "native_save_menu.py")
@@ -89,6 +90,16 @@ def build_patched_rom(base_bytes: bytes) -> bytes:
     ):
         offset = address - rom.arm9RamAddress
         checked_write(arm9, offset, bytes(len(payload)), payload, label)
+    if powerup["POWERUP_LICENSE_STATE"] + powerup["POWERUP_STATE_SIZE"] > mini_castle["MINI_CASTLE_FLAGS"]:
+        raise ValueError("Power-Up License state overlaps the Mini-Castle flags.")
+    mini_castle_flags_offset = mini_castle["MINI_CASTLE_FLAGS"] - rom.arm9RamAddress
+    checked_write(
+        arm9,
+        mini_castle_flags_offset,
+        bytes(4),
+        bytes(4),
+        "Mini-Castle persistent flags and route trace",
+    )
     currency_mailbox_offset = star["CURRENCY_MAILBOX"] - rom.arm9RamAddress
     checked_write(
         arm9,
@@ -126,6 +137,28 @@ def build_patched_rom(base_bytes: bytes) -> bytes:
     )
 
     overlay_8 = overlays[star["OVERLAY_ID"]]
+    if mini_castle["OVERLAY_ID"] != star["OVERLAY_ID"]:
+        raise ValueError("Mini-Castle hook must share the world-map overlay.")
+    mini_castle_payload = mini_castle["MINI_CASTLE_HOOK_BYTES"]
+    mini_castle_end = mini_castle["HOOK_CAVE"] + len(mini_castle_payload)
+    tier_mailbox_end = star["TIER_MAILBOX"] + star["TIER_MAILBOX_SIZE"]
+    if not tier_mailbox_end <= mini_castle["HOOK_CAVE"] < mini_castle_end <= star["DATA_CAVE_END"]:
+        raise ValueError("Mini-Castle hook overlaps an Overlay 8 mailbox or leaves the data cave.")
+    mini_castle_offset = mini_castle["HOOK_CAVE"] - overlay_8.ramAddress
+    checked_write(
+        overlay_8.data,
+        mini_castle_offset,
+        bytes(len(mini_castle_payload)),
+        mini_castle_payload,
+        "Mini-Castle completion cave",
+    )
+    patch_overlay_word(
+        overlay_8,
+        mini_castle["HOOK_SITE"],
+        mini_castle["ORIGINAL_HOOK_WORD"],
+        arm_branch(mini_castle["HOOK_SITE"], mini_castle["HOOK_CAVE"]),
+        "Mini-Castle completion hook",
+    )
     gate_payload = star["STAR_COIN_GATE_HOOK_BYTES"]
     gate_offset = star["HOOK_CAVE"] - overlay_8.ramAddress
     checked_write(overlay_8.data, gate_offset, bytes(len(gate_payload)), gate_payload, "Star-Coin gate cave")
