@@ -16,6 +16,7 @@ from rule_builder.rules import (
 )
 from worlds.generic.Rules import add_item_rule
 
+from .data.level_randomization import mapped_event_name
 from .data.logic_data import (
     INTRA_SECRET_DEPENDENT_WORLD_ROUTE_EVENTS,
     INTRA_WORLD_SECRET_EXITS,
@@ -35,7 +36,7 @@ from .data.star_coin_gates import (
     gate_required_lifetime_coins,
 )
 from .items import KEY_ITEM_NAMES
-from .locations import BOSS_LOCATION_COMPLETION_SOURCES
+from .locations import build_boss_location_completion_sources
 
 if TYPE_CHECKING:
     from . import NSMBDSWorld
@@ -71,6 +72,14 @@ def _alternative_rule(alternative: tuple[str, ...]) -> Rule:
 def _requirement_rule(requirement: Requirement) -> Rule:
     """Translate an OR-of-AND requirement without changing its semantics."""
     return Or(*(_alternative_rule(alternative) for alternative in requirement))
+
+
+def _mapped_requirement(world: NSMBDSWorld, requirement: Requirement) -> Requirement:
+    """Translate slot-owned route atoms to the checks of loaded course content."""
+    return tuple(
+        tuple(mapped_event_name(world.level_mapping, atom) for atom in alternative)
+        for alternative in requirement
+    )
 
 
 def _active_stage_requirement(
@@ -164,7 +173,10 @@ def set_rules(world: NSMBDSWorld) -> None:
             multiworld.get_entrance(entrance_name, player),
             Or(
                 Has(requirement.pass_item),
-                *(_alternative_rule(alternative) for alternative in routes),
+                *(
+                    _alternative_rule(alternative)
+                    for alternative in _mapped_requirement(world, routes)
+                ),
             ),
         )
 
@@ -178,7 +190,10 @@ def set_rules(world: NSMBDSWorld) -> None:
         gate = gate_by_target.get(region_name)
         source_name = gate.region_name if gate else f"World {region_name.split(' ', 2)[1].split('-', 1)[0]}"
         entrance = multiworld.get_entrance(f"{source_name} -> {region_name}", player)
-        active_requirement = _active_stage_requirement(world, requirement)
+        active_requirement = _mapped_requirement(
+            world,
+            _active_stage_requirement(world, requirement),
+        )
         rule = _requirement_rule(active_requirement)
 
         if world.options.tower_castle_keys and region_name in STAGE_ENTRY_REQUIREMENTS:
@@ -197,7 +212,8 @@ def set_rules(world: NSMBDSWorld) -> None:
             f"{gate.source_region} -> {gate.region_name}", player
         )
         world.set_rule(gate_entrance, _star_coin_gate_rule(world, gate))
-        for location in multiworld.get_region(gate.target_stage_name, player).locations:
+        target_content = world.level_mapping.get(gate.target_stage_name, gate.target_stage_name)
+        for location in multiworld.get_region(target_content, player).locations:
             add_item_rule(
                 location,
                 lambda item, item_id=star_coin_item_id, keys=key_item_names: not (
@@ -237,7 +253,9 @@ def set_rules(world: NSMBDSWorld) -> None:
 
     # Boss checks inherit the real completion route of their matching Goal.
     # The Mini-Mario castle exits in Worlds 2 and 5 are valid alternatives.
-    for boss_name, source_names in BOSS_LOCATION_COMPLETION_SOURCES.items():
+    for boss_name, source_names in build_boss_location_completion_sources(
+        world.level_mapping
+    ).items():
         _append_location_rule(
             location_rules,
             boss_name,

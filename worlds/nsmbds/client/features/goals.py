@@ -5,9 +5,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from ...locations import BOSS_LOCATION_NAMES, LOCATION_TABLE
-from ...items import FINAL_CASTLE_KEY_NAME, ITEM_TABLE
+from ...data.level_randomization import mapping_from_slot_data
 from ...data.ram_addresses import AP_NOTIFICATION_GOAL_COMPLETE
+from ...items import FINAL_CASTLE_KEY_NAME, ITEM_TABLE
+from ...locations import BOSS_LOCATION_NAMES, LOCATION_TABLE
 
 if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
@@ -34,7 +35,11 @@ class GoalHandlingMixin:
         slot_data = ctx.slot_data or {}
         goal = slot_data.get("goal", 0)
         if goal in (0, 1, 2, 3):
-            tower_two_complete = W8_TOWER2_GOAL_LOCATION_ID in self._observed_locations
+            level_mapping = mapping_from_slot_data(slot_data)
+            tower_two_goal_id = LOCATION_TABLE[
+                f"{level_mapping['World 8-Tower 2']} Goal"
+            ]
+            tower_two_complete = tower_two_goal_id in self._observed_locations
             keys_enabled = bool(slot_data.get("tower_castle_keys", True))
             if keys_enabled:
                 received_ids = {item.item for item in ctx.items_received}

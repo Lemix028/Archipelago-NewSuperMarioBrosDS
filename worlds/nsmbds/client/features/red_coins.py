@@ -6,7 +6,7 @@ import logging
 import struct
 from typing import TYPE_CHECKING
 
-from ...locations import LOCATION_TABLE, resolve_red_coin_location_name
+from ...data.level_randomization import mapping_from_slot_data
 from ...data.ram_addresses import (
     ADDR_AP_RED_COIN_EVENT_ACK_SEQUENCE,
     ADDR_AP_RED_COIN_EVENT_AREA,
@@ -18,6 +18,11 @@ from ...data.ram_addresses import (
     ADDR_AP_RED_COIN_EVENT_WORLD,
     AP_EVENT_TYPE_RED_COIN_COMPLETE,
     MEMORY_DOMAIN,
+)
+from ...locations import (
+    LOCATION_TABLE,
+    resolve_red_coin_location_name,
+    runtime_content_course_candidates,
 )
 
 if TYPE_CHECKING:
@@ -80,8 +85,13 @@ class RedCoinTrackingMixin:
             await self._acknowledge_red_coin_event(ctx, sequence_value, guarded_write)
             return
 
-        location_name = resolve_red_coin_location_name(
-            world, level, area, player_x, counter_index
+        location_name = self._resolve_seed_red_coin_location(
+            ctx.slot_data,
+            world,
+            level,
+            area,
+            player_x,
+            counter_index,
         )
         if location_name is None:
             logger.warning(
@@ -120,6 +130,37 @@ class RedCoinTrackingMixin:
         self._sent_locations.add(location_id)
         logger.debug("Submitted Red Coin Challenge: %s.", location_name)
         await self._acknowledge_red_coin_event(ctx, sequence_value, guarded_write)
+
+    @staticmethod
+    def _resolve_seed_red_coin_location(
+        slot_data: dict | None,
+        world: int,
+        level: int,
+        area: int,
+        player_x: int,
+        counter_index: int,
+    ) -> str | None:
+        """Translate randomized runtime IDs before resolving a ring check."""
+        level_mapping = mapping_from_slot_data(slot_data)
+        matches = {
+            location_name
+            for content_world, content_level in runtime_content_course_candidates(
+                level_mapping,
+                world,
+                level,
+            )
+            for location_name in (
+                resolve_red_coin_location_name(
+                    content_world,
+                    content_level,
+                    area,
+                    player_x,
+                    counter_index,
+                ),
+            )
+            if location_name is not None
+        }
+        return next(iter(matches)) if len(matches) == 1 else None
 
     async def _acknowledge_red_coin_event(self, ctx: "BizHawkClientContext", sequence: int, guarded_write) -> None:
         """Acknowledge a mailbox event only if it is still the same sequence."""

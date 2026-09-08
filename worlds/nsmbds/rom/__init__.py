@@ -11,8 +11,10 @@ from typing import TYPE_CHECKING
 
 from worlds.Files import APPatchExtension, APProcedurePatch, APTokenMixin, APTokenTypes
 
+from ..data.level_randomization import LEVEL_RANDOMIZATION_VERSION, level_mapping_digest
 from ..data.patch_protocol import PATCH_MARKER, PATCH_MARKER_ROM_OFFSET, PATCH_PROTOCOL_VERSION
 from ..version import APWORLD_VERSION, DISPLAY_VERSION, RELEASE_CHANNEL
+from .level_randomization import patch_level_randomization_from_json
 from .palette import patch_player_palettes_from_json
 from .secondary_screen import patch_secondary_screen_backgrounds_from_json
 
@@ -134,6 +136,15 @@ class NSMBDSPatchExtension(APPatchExtension):
     result_file_ending = ".nds"
 
     @staticmethod
+    def apply_level_randomization(
+        caller: APProcedurePatch,
+        rom: bytes,
+        config_file: str,
+    ) -> bytes:
+        """Replace world-map node course IDs using the serialized seed mapping."""
+        return patch_level_randomization_from_json(rom, caller.get_file(config_file))
+
+    @staticmethod
     def apply_player_palettes(caller: APProcedurePatch, rom: bytes, config_file: str) -> bytes:
         """Apply deterministic in-level Mario and Luigi palette selections."""
         return patch_player_palettes_from_json(rom, caller.get_file(config_file))
@@ -173,6 +184,7 @@ class NSMBDSProcedurePatch(APProcedurePatch, APTokenMixin):
     procedure = [
         ("apply_bsdiff4", ["native_hooks.bsdiff4"]),
         ("apply_tokens", ["token_data.bin"]),
+        ("apply_level_randomization", ["nsmbds_patch_config.json"]),
         ("apply_secondary_screen_backgrounds", ["nsmbds_patch_config.json"]),
         ("apply_player_palettes", ["nsmbds_patch_config.json"]),
         ("verify_native_patch_marker", []),
@@ -188,6 +200,7 @@ def write_patch_payload(world: "NSMBDSWorld", patch: NSMBDSProcedurePatch) -> No
     """Store seed metadata, native markers, and configuration payload."""
     options = {
         "goal": world.options.goal.value,
+        "level_randomization": world.options.level_randomization.value,
         "star_coin_checks": True,
         "red_coin_checks": bool(world.options.red_coin_checks.value),
         "one_up_block_checks": bool(world.options.one_up_block_checks.value),
@@ -232,6 +245,10 @@ def write_patch_payload(world: "NSMBDSWorld", patch: NSMBDSProcedurePatch) -> No
         "player": world.player,
         "player_name": world.multiworld.player_name[world.player],
         "seed_name": world.multiworld.seed_name,
+        "level_randomization": world.options.level_randomization.value,
+        "level_randomization_version": LEVEL_RANDOMIZATION_VERSION,
+        "level_mapping": dict(world.level_mapping),
+        "level_mapping_digest": level_mapping_digest(world.level_mapping),
         "options": options,
     }
     patch.write_token(APTokenTypes.WRITE, PATCH_MARKER_ROM_OFFSET, PATCH_MARKER)

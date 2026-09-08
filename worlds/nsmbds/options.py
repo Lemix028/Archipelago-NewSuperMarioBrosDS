@@ -174,6 +174,24 @@ class AdvancedLocationItemPlacement(Choice):
 # 2. OVERWORLD & PROGRESSION LOGIC OPTIONS
 # =============================================================================
 
+class LevelRandomization(Choice):
+    """
+    [Alpha] Randomize which compatible course is loaded by each overworld level slot.
+
+    off:           Keep every course in its vanilla slot. (Default)
+    global:        Shuffle courses across all eight worlds.
+    within_world:  Shuffle courses only among compatible slots in the same world.
+
+    Secret-exit courses, Towers, Castles, and normal courses are separate pools.
+    World 8-Bowser's Castle always remains fixed.
+    """
+    display_name = "[Alpha] Level Randomization"
+    option_off = 0
+    option_global = 1
+    option_within_world = 2
+    default = 0
+
+
 class StarCoinGateMode(Choice):
     """
     Controls Star-Coin signs on the overworld map.
@@ -538,6 +556,7 @@ class NSMBDSOptions(PerGameCommonOptions):
     advanced_location_item_placement:     AdvancedLocationItemPlacement
 
     # Overworld & Progression Logic
+    level_randomization:                  LevelRandomization
     star_coin_gate_mode:                  StarCoinGateMode
     tower_castle_keys:                    TowerCastleKeys
     license_mini_mushroom:               LicenseMiniMushroom

@@ -588,12 +588,46 @@ ALL_ACTIVE_DEFINITIONS = tuple(stage for world in ALL_WORLDS for stage in world)
 ACTIVE_STAGE_DEFINITIONS = tuple(
     stage for stage in ALL_ACTIVE_DEFINITIONS if stage.kind is LocationKind.STAGE
 )
+ACTIVE_STAGE_BY_NAME = {stage.name: stage for stage in ACTIVE_STAGE_DEFINITIONS}
 RUNTIME_COURSE_TO_STAGE_NAME = {
     (stage.world_index, _runtime_level_for_stage_name(stage.name)): stage.name
     for stage in ACTIVE_STAGE_DEFINITIONS
 }
+STAGE_NAME_TO_RUNTIME_COURSE = {
+    stage_name: runtime_course
+    for runtime_course, stage_name in RUNTIME_COURSE_TO_STAGE_NAME.items()
+}
 if len(RUNTIME_COURSE_TO_STAGE_NAME) != len(ACTIVE_STAGE_DEFINITIONS):
     raise ValueError("Active NSMBDS stages contain duplicate runtime course identities.")
+
+
+def runtime_content_course_candidates(
+    level_mapping: dict[str, str],
+    reported_world: int,
+    reported_level: int,
+) -> tuple[tuple[int, int], ...]:
+    """Resolve every plausible content identity from the game's mixed runtime IDs.
+
+    Randomized courses can retain the overworld slot's world byte while using
+    the loaded content's level byte. Some transitions briefly expose both
+    bytes from the slot or both from the content, so all three forms are
+    represented and later disambiguated with area/coordinates.
+    """
+    reported = (reported_world, reported_level)
+    candidates: list[tuple[int, int]] = []
+
+    destination_slot = RUNTIME_COURSE_TO_STAGE_NAME.get(reported)
+    if destination_slot is not None:
+        candidates.append(STAGE_NAME_TO_RUNTIME_COURSE[level_mapping[destination_slot]])
+
+    for slot_name, content_name in level_mapping.items():
+        slot_world, _slot_level = STAGE_NAME_TO_RUNTIME_COURSE[slot_name]
+        content_course = STAGE_NAME_TO_RUNTIME_COURSE[content_name]
+        if slot_world == reported_world and content_course[1] == reported_level:
+            candidates.append(content_course)
+
+    candidates.append(reported)
+    return tuple(dict.fromkeys(candidates))
 
 BOSS_LOCATION_DEFINITIONS: tuple[BossLocationDefinition, ...] = (
     BossLocationDefinition("World 1-Castle", "Bowser", ("World 1-Castle Goal",)),
@@ -864,6 +898,51 @@ COURSE_KEY_TO_RED_COIN_LOCATION_NAME = {
     for stage in ACTIVE_STAGE_DEFINITIONS
     if stage.name in RED_COIN_COURSE_LEVELS
 }
+
+
+def build_secret_exit_ram_requirements(
+    level_mapping: dict[str, str],
+) -> dict[str, tuple[tuple[int, int], ...]]:
+    """Bind classic exits to destination paths and Mini exits to castle slots."""
+    from .data.level_randomization import (
+        CLASSIC_SECRET_EXIT_STAGES,
+        MINI_CASTLE_SECRET_EXIT_SLOTS,
+    )
+
+    requirements: dict[str, tuple[tuple[int, int], ...]] = {}
+    for slot_name in CLASSIC_SECRET_EXIT_STAGES:
+        content_name = level_mapping[slot_name]
+        requirements[f"{content_name} Secret Exit"] = SECRET_EXIT_RAM_REQUIREMENTS[
+            f"{slot_name} Secret Exit"
+        ]
+
+    mini_path_masks = {"World 2-Castle": 0x01, "World 5-Castle": 0x02}
+    for slot_name in MINI_CASTLE_SECRET_EXIT_SLOTS:
+        content_name = level_mapping[slot_name]
+        stage = ACTIVE_STAGE_BY_NAME[content_name]
+        goal_offset = stage.goal_ram_offset if stage.goal_ram_offset is not None else stage.ram_offset
+        requirements[f"{slot_name} Secret Exit"] = (
+            (goal_offset, 0x10),
+            (MINI_CASTLE_FLAGS_GAME_DATA_OFFSET, mini_path_masks[slot_name]),
+        )
+    return requirements
+
+
+def build_boss_location_completion_sources(
+    level_mapping: dict[str, str],
+) -> dict[str, tuple[str, ...]]:
+    """Make boss checks follow castle content and accept slot-owned Mini exits."""
+    content_to_slot = {content: slot for slot, content in level_mapping.items()}
+    sources: dict[str, tuple[str, ...]] = {}
+    for definition in BOSS_LOCATION_DEFINITIONS:
+        completion = [f"{definition.stage_name} Goal"]
+        slot_name = content_to_slot[definition.stage_name]
+        if slot_name in {"World 2-Castle", "World 5-Castle"}:
+            completion.append(f"{slot_name} Secret Exit")
+        sources[definition.name] = tuple(completion)
+    return sources
+
+
 if len(COURSE_KEY_TO_RED_COIN_LOCATION_NAME) != len(RED_COIN_COURSE_LEVELS):
     raise ValueError("Red Coin catalog contains duplicate runtime course keys.")
 

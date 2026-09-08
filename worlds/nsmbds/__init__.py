@@ -4,7 +4,7 @@ Main entry point for Archipelago multiworld generation.
 """
 
 import os
-from typing import Any, ClassVar
+from typing import Any, ClassVar, TextIO
 
 from BaseClasses import Item, ItemClassification, Location, LocationProgressType, Region
 from settings import get_settings
@@ -20,6 +20,16 @@ from .data.logic_data import (
     INTER_WORLD_SECRET_EXITS,
     INTRA_SECRET_DEPENDENT_REGIONS,
     INTRA_WORLD_SECRET_EXITS,
+)
+from .data.level_randomization import (
+    IDENTITY_LEVEL_MAPPING,
+    LEVEL_RANDOMIZATION_OFF,
+    LEVEL_RANDOMIZATION_VERSION,
+    generate_level_mapping,
+    invert_level_mapping,
+    level_mapping_digest,
+    mapped_event_name,
+    validate_level_mapping,
 )
 from .data.powerup_licenses import license_items_for_mode
 from .data.star_coin_gates import STAR_COIN_GATES, TOTAL_STAR_COIN_GATE_COST
@@ -58,7 +68,7 @@ from .options import (
     DeathLinkEffect,
     NSMBDSOptions,
 )
-from .regions import REGION_CONNECTIONS, REGION_LIST, REGION_LOCATIONS
+from .regions import REGION_LIST, build_region_connections, build_region_locations
 from .rom import NSMBDSPatchExtension, NSMBDSProcedurePatch, write_patch_payload
 from .rules import set_completion_rules, set_rules
 from .settings import NSMBDSSettings
@@ -125,6 +135,8 @@ class NSMBDSWorld(World):
     _boss_location_names: tuple[str, ...] = BOSS_LOCATION_NAMES
     individual_gate_tiers: dict[str, int]
     vanilla_gate_tiers: dict[str, int]
+    level_mapping: dict[str, str]
+    content_to_slot: dict[str, str]
 
     @staticmethod
     def interpret_slot_data(slot_data: dict[str, Any]) -> dict[str, Any]:
@@ -147,6 +159,35 @@ class NSMBDSWorld(World):
                 option = getattr(self.options, name, None)
                 if option is not None:
                     setattr(self.options, name, option.from_any(value))
+
+        level_randomization = int(self.options.level_randomization.value)
+        if slot_data and level_randomization != LEVEL_RANDOMIZATION_OFF:
+            if int(slot_data.get("level_randomization_version", -1)) != LEVEL_RANDOMIZATION_VERSION:
+                raise ValueError(
+                    "Incompatible NSMBDS level-randomization slot-data version."
+                )
+            stored_mapping = slot_data.get("level_mapping")
+            if not isinstance(stored_mapping, dict):
+                raise ValueError(
+                    "Incompatible NSMBDS slot data: missing required level_mapping."
+                )
+            self.level_mapping = {
+                str(slot_name): str(content_name)
+                for slot_name, content_name in stored_mapping.items()
+            }
+            validate_level_mapping(self.level_mapping, level_randomization)
+            stored_digest = slot_data.get("level_mapping_digest")
+            if stored_digest and stored_digest != level_mapping_digest(self.level_mapping):
+                raise ValueError("NSMBDS level mapping digest does not match its contents.")
+        elif level_randomization == LEVEL_RANDOMIZATION_OFF:
+            self.level_mapping = dict(IDENTITY_LEVEL_MAPPING)
+        else:
+            self.level_mapping = generate_level_mapping(
+                self.multiworld.seed_name,
+                self.player,
+                level_randomization,
+            )
+        self.content_to_slot = invert_level_mapping(self.level_mapping)
 
         def gate_tiers(
             identifiers: tuple[str, ...],
@@ -252,7 +293,33 @@ class NSMBDSWorld(World):
         active_block_locations: list[NSMBDSLocation] = []
 
         # Add locations to each region
-        for region_name, location_names in REGION_LOCATIONS.items():
+        region_locations = build_region_locations(self.level_mapping)
+        route_event_names = frozenset(
+            mapped_event_name(self.level_mapping, event_name)
+            for event_name in VANILLA_ROUTE_EVENT_NAMES
+        )
+        intra_world_secret_exits = frozenset(
+            mapped_event_name(self.level_mapping, event_name)
+            for event_name in INTRA_WORLD_SECRET_EXITS
+        )
+        inter_world_secret_exits = frozenset(
+            mapped_event_name(self.level_mapping, event_name)
+            for event_name in INTER_WORLD_SECRET_EXITS
+        )
+        cannon_route_exits = frozenset(
+            mapped_event_name(self.level_mapping, event_name)
+            for event_name in CANNON_ROUTE_EXITS
+        )
+        intra_secret_dependent_regions = frozenset(
+            self.level_mapping.get(region_name, region_name)
+            for region_name in INTRA_SECRET_DEPENDENT_REGIONS
+        )
+        inter_secret_dependent_regions = frozenset(
+            self.level_mapping.get(region_name, region_name)
+            for region_name in INTER_SECRET_DEPENDENT_REGIONS
+        )
+
+        for region_name, location_names in region_locations.items():
             region = created_regions[region_name]
             for loc_name in location_names:
                 # Skip optional check categories when disabled in YAML options.
@@ -263,7 +330,7 @@ class NSMBDSWorld(World):
                     "Secret Exit" in loc_name
                     and not self.options.secret_exit_checks
                 )
-                if is_disabled_secret_exit and loc_name not in VANILLA_ROUTE_EVENT_NAMES:
+                if is_disabled_secret_exit and loc_name not in route_event_names:
                     continue
                 loc_id = None if is_disabled_secret_exit else LOCATION_TABLE[loc_name]
                 if loc_id in RED_COIN_LOCATION_IDS and not self.options.red_coin_checks:
@@ -303,20 +370,20 @@ class NSMBDSWorld(World):
                     (
                         not self.options.secret_exit_shortcut_logic
                         and (
-                            loc_name in INTRA_WORLD_SECRET_EXITS
-                            or region_name in INTRA_SECRET_DEPENDENT_REGIONS
+                            loc_name in intra_world_secret_exits
+                            or region_name in intra_secret_dependent_regions
                         )
                     )
                     or (
                         not self.options.secret_exit_world_unlock_logic
                         and (
-                            loc_name in INTER_WORLD_SECRET_EXITS
-                            or region_name in INTER_SECRET_DEPENDENT_REGIONS
+                            loc_name in inter_world_secret_exits
+                            or region_name in inter_secret_dependent_regions
                         )
                     )
                     or (
                         not self.options.cannon_route_logic
-                        and loc_name in CANNON_ROUTE_EXITS
+                        and loc_name in cannon_route_exits
                     )
                 )
                 advanced_non_progression = (
@@ -375,10 +442,11 @@ class NSMBDSWorld(World):
                         setattr(loc, "is_local_filler_only", True)
 
         # Connect regions via entrances
-        for source_name, targets in REGION_CONNECTIONS.items():
-            source = created_regions[source_name]
-            for target_name in targets:
-                source.connect(created_regions[target_name])
+        for source_name, target_name, entrance_name in build_region_connections(self.level_mapping):
+            created_regions[source_name].connect(
+                created_regions[target_name],
+                entrance_name,
+            )
 
     def create_items(self) -> None:
         """Fill the item pool based on the number of active locations and user options."""
@@ -597,6 +665,10 @@ class NSMBDSWorld(World):
                 for name in NSMBDSOptions.__annotations__
             },
             "goal": self.options.goal.value,
+            "level_randomization": self.options.level_randomization.value,
+            "level_randomization_version": LEVEL_RANDOMIZATION_VERSION,
+            "level_mapping": dict(self.level_mapping),
+            "level_mapping_digest": level_mapping_digest(self.level_mapping),
             # Keep these explicit compatibility flags for clients and trackers.
             # New seeds always use randomized Star Coin checks and items.
             "star_coin_checks": True,
@@ -641,3 +713,11 @@ class NSMBDSWorld(World):
         if self.vanilla_gate_tiers:
             slot_data["vanilla_gate_tiers"] = dict(self.vanilla_gate_tiers)
         return slot_data
+
+    def write_spoiler_header(self, spoiler_handle: TextIO) -> None:
+        """Record the authoritative slot-to-course mapping for alpha seeds."""
+        if self.options.level_randomization.value == LEVEL_RANDOMIZATION_OFF:
+            return
+        spoiler_handle.write("\nLevel Randomization:\n")
+        for slot_name, content_name in self.level_mapping.items():
+            spoiler_handle.write(f"  {slot_name}: {content_name}\n")

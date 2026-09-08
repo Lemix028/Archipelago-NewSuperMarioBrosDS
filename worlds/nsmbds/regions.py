@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .data.level_randomization import MINI_CASTLE_SECRET_EXIT_SLOTS
+from .data.star_coin_gates import STAR_COIN_GATES
 from .locations import (
     ALL_ACTIVE_DEFINITIONS,
     BLOCKSANITY_DEFINITIONS,
@@ -13,7 +15,6 @@ from .locations import (
     StageDefinition,
     WORLD_6_2_BONUS_AREA_LOCATION_NAMES,
 )
-from .data.star_coin_gates import STAR_COIN_GATES
 
 
 WORLD_REGION_NAMES = tuple(f"World {world}" for world in range(1, 9))
@@ -77,6 +78,54 @@ for definition in ALL_ACTIVE_DEFINITIONS:
         REGION_CONNECTIONS[world_region].append(definition.name)
 
 REGION_CONNECTIONS["World 6-2"].append("World 6-2 Bonus Area")
+
+
+def build_region_locations(level_mapping: dict[str, str]) -> dict[str, list[str]]:
+    """Move slot-owned castle branches while keeping course checks with content."""
+    locations = {name: list(names) for name, names in REGION_LOCATIONS.items()}
+    for slot_name in MINI_CASTLE_SECRET_EXIT_SLOTS:
+        location_name = f"{slot_name} Secret Exit"
+        for names in locations.values():
+            if location_name in names:
+                names.remove(location_name)
+        locations[level_mapping[slot_name]].append(location_name)
+    return locations
+
+
+def build_region_connections(
+    level_mapping: dict[str, str],
+) -> tuple[tuple[str, str, str], ...]:
+    """Build named entrances whose map topology is slot-owned and content target is shuffled."""
+    connections: list[tuple[str, str, str]] = []
+    connections.extend(
+        ("Menu", world_name, f"Menu -> {world_name}")
+        for world_name in WORLD_REGION_NAMES
+    )
+
+    for definition in ALL_ACTIVE_DEFINITIONS:
+        target_name = (
+            level_mapping[definition.name]
+            if definition.kind is LocationKind.STAGE
+            else definition.name
+        )
+        gate = _gate_by_target.get(definition.name)
+        source_name = gate.region_name if gate else f"World {definition.world_index + 1}"
+        if gate:
+            connections.append((
+                gate.source_region,
+                gate.region_name,
+                f"{gate.source_region} -> {gate.region_name}",
+            ))
+        connections.append((source_name, target_name, f"{source_name} -> {definition.name}"))
+
+    # This room is part of the World 6-2 course and therefore follows that content.
+    content_region = "World 6-2"
+    connections.append((
+        content_region,
+        "World 6-2 Bonus Area",
+        f"{content_region} -> World 6-2 Bonus Area",
+    ))
+    return tuple(connections)
 
 
 STAGE_REGION_NAMES = frozenset(

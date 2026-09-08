@@ -6,14 +6,7 @@ import logging
 import struct
 from typing import TYPE_CHECKING
 
-from ...locations import (
-    BLOCKSANITY_LOCATION_IDS,
-    LOCATION_TABLE,
-    RUNTIME_BLOCK_TO_BLOCKSANITY_LOCATION_NAME,
-    RUNTIME_BLOCK_TO_ONE_UP_LOCATION_NAME,
-    RUNTIME_MOVING_BLOCK_TO_BLOCKSANITY_LOCATION_NAME,
-    RUNTIME_MOVING_BLOCK_TO_ONE_UP_LOCATION_NAME,
-)
+from ...data.level_randomization import mapping_from_slot_data
 from ...data.ram_addresses import (
     ADDR_AP_BLOCK_EVENT_ACK_SEQUENCE,
     ADDR_AP_BLOCK_EVENT_AREA,
@@ -23,13 +16,22 @@ from ...data.ram_addresses import (
     ADDR_AP_BLOCK_EVENT_TILE_Y,
     ADDR_AP_BLOCK_EVENT_TYPE,
     ADDR_AP_BLOCK_EVENT_WORLD,
+    ADDR_NATIVE_BLOCK_ENABLED,
+    ADDR_NATIVE_BLOCK_PRODUCER,
     AP_EVENT_TYPE_BLOCK_BUMP,
     AP_EVENT_TYPE_BLOCK_GROUND_POUND,
     AP_EVENT_TYPE_MOVING_BLOCK_OPEN,
     MEMORY_DOMAIN,
-    ADDR_NATIVE_BLOCK_PRODUCER,
-    ADDR_NATIVE_BLOCK_ENABLED,
     NATIVE_BLOCK_HEADER,
+)
+from ...locations import (
+    BLOCKSANITY_LOCATION_IDS,
+    LOCATION_TABLE,
+    RUNTIME_BLOCK_TO_BLOCKSANITY_LOCATION_NAME,
+    RUNTIME_BLOCK_TO_ONE_UP_LOCATION_NAME,
+    RUNTIME_MOVING_BLOCK_TO_BLOCKSANITY_LOCATION_NAME,
+    RUNTIME_MOVING_BLOCK_TO_ONE_UP_LOCATION_NAME,
+    runtime_content_course_candidates,
 )
 
 if TYPE_CHECKING:
@@ -114,7 +116,11 @@ class BlockCheckTrackingMixin:
         tile_x = struct.unpack("<i", x_raw)[0]
         tile_y = struct.unpack("<i", y_raw)[0]
         runtime_key = (world, level, area, tile_x, tile_y)
-        location_name = self._resolve_block_location(runtime_key, event_type[0])
+        location_name = self._resolve_seed_block_location(
+            ctx.slot_data,
+            runtime_key,
+            event_type[0],
+        )
         if location_name is None:
             unmatched_key = (event_type[0], *runtime_key)
             logged_unmatched = getattr(self, "_logged_unmatched_block_events", set())
@@ -210,6 +216,33 @@ class BlockCheckTrackingMixin:
         if location_name is None:
             location_name = RUNTIME_BLOCK_TO_ONE_UP_LOCATION_NAME.get(above_key)
         return location_name
+
+    @classmethod
+    def _resolve_seed_block_location(
+        cls,
+        slot_data: dict | None,
+        runtime_key: tuple[int, int, int, int, int],
+        event_type: int,
+    ) -> str | None:
+        """Translate randomized slot IDs and use coordinates to select content."""
+        world, level, area, tile_x, tile_y = runtime_key
+        level_mapping = mapping_from_slot_data(slot_data)
+        matches = {
+            location_name
+            for content_world, content_level in runtime_content_course_candidates(
+                level_mapping,
+                world,
+                level,
+            )
+            for location_name in (
+                cls._resolve_block_location(
+                    (content_world, content_level, area, tile_x, tile_y),
+                    event_type,
+                ),
+            )
+            if location_name is not None
+        }
+        return next(iter(matches)) if len(matches) == 1 else None
 
     async def _acknowledge_block_event(self, ctx: "BizHawkClientContext", sequence: int, guarded_write) -> None:
         """Acknowledge a block event only if the sequence remains unchanged."""

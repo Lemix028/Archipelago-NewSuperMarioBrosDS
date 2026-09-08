@@ -71,7 +71,6 @@ POWERUP_ABILITY_REQUIREMENTS: tuple[PowerUpAbilityRequirement, ...] = (
             "World 7-A Star Coin 3",
             "World 8-4 Star Coin 3",
             "World 8-8 Star Coin 2",
-            "World 2 Red Toad House 2 Goal",
             "World 2-Castle Blocksanity Block 13",
             "World 2-Castle Blocksanity Block 14",
             "World 3-A Blocksanity Block 12",

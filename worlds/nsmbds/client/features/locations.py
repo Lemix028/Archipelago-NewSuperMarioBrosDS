@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-import logging
 import hashlib
+import logging
 from typing import TYPE_CHECKING
 
+from ...data.level_randomization import level_mapping_digest, mapping_from_slot_data
+from ...data.ram_addresses import ADDR_LEVEL_DATA_BASE
+from ...data.star_coin_gates import STAR_COIN_GATES
+from ...items import ITEM_TABLE
 from ...locations import (
     BLOCKSANITY_LOCATION_IDS,
     BOSS_LOCATION_COMPLETION_SOURCES,
@@ -15,12 +19,9 @@ from ...locations import (
     RED_COIN_LOCATION_IDS,
     SECRET_EXIT_RAM_REQUIREMENTS,
     WORLD_6_2_BONUS_AREA_LOCATION_NAMES,
+    build_boss_location_completion_sources,
+    build_secret_exit_ram_requirements,
 )
-from ...items import ITEM_TABLE
-from ...data.ram_addresses import (
-    ADDR_LEVEL_DATA_BASE,
-)
-from ...data.star_coin_gates import STAR_COIN_GATES
 
 if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
@@ -63,19 +64,31 @@ class LocationTrackingMixin:
         return True
 
     @staticmethod
-    def _is_location_completed(location_name: str, game_data: bytes) -> bool:
+    def _is_location_completed(
+        location_name: str,
+        game_data: bytes,
+        boss_completion_sources: dict[str, tuple[str, ...]] | None = None,
+        secret_exit_requirements: dict[str, tuple[tuple[int, int], ...]] | None = None,
+    ) -> bool:
         """Return whether a location's RAM condition is currently met."""
-        completion_sources = BOSS_LOCATION_COMPLETION_SOURCES.get(location_name)
+        boss_completion_sources = boss_completion_sources or BOSS_LOCATION_COMPLETION_SOURCES
+        secret_exit_requirements = secret_exit_requirements or SECRET_EXIT_RAM_REQUIREMENTS
+        completion_sources = boss_completion_sources.get(location_name)
         if completion_sources is not None:
             return any(
-                LocationTrackingMixin._is_location_completed(source_name, game_data)
+                LocationTrackingMixin._is_location_completed(
+                    source_name,
+                    game_data,
+                    boss_completion_sources,
+                    secret_exit_requirements,
+                )
                 for source_name in completion_sources
             )
 
-        secret_requirements = SECRET_EXIT_RAM_REQUIREMENTS.get(location_name)
+        secret_requirements = secret_exit_requirements.get(location_name)
         if secret_requirements is not None:
             return all(
-                (game_data[offset] & bit_mask) == bit_mask
+                offset < len(game_data) and (game_data[offset] & bit_mask) == bit_mask
                 for offset, bit_mask in secret_requirements
             )
 
@@ -87,6 +100,17 @@ class LocationTrackingMixin:
         self, ctx: "BizHawkClientContext", level_data: bytes
     ) -> None:
         """Observe completed local checks and submit only active, unsent locations."""
+        level_mapping = mapping_from_slot_data(ctx.slot_data)
+        mapping_digest = level_mapping_digest(level_mapping)
+        if getattr(self, "_level_mapping_digest", None) != mapping_digest:
+            self._dynamic_boss_completion_sources = build_boss_location_completion_sources(
+                level_mapping
+            )
+            self._dynamic_secret_exit_requirements = build_secret_exit_ram_requirements(
+                level_mapping
+            )
+            self._level_mapping_digest = mapping_digest
+
         new_checks: list[int] = []
         for location_name, location_id in LOCATION_TABLE.items():
             # Red Coin Challenges are transient events supplied by the Lua hook.
@@ -95,7 +119,12 @@ class LocationTrackingMixin:
                 and location_name not in BOSS_LOCATION_COMPLETION_SOURCES
             ):
                 continue
-            if not self._is_location_completed(location_name, level_data):
+            if not self._is_location_completed(
+                location_name,
+                level_data,
+                self._dynamic_boss_completion_sources,
+                self._dynamic_secret_exit_requirements,
+            ):
                 continue
 
             self._observed_locations.add(location_id)

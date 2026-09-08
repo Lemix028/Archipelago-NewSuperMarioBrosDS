@@ -160,6 +160,7 @@ class TestProcedurePatch(NSMBDSTestBase):
                 [
                     ["apply_bsdiff4", ["native_hooks.bsdiff4"]],
                     ["apply_tokens", ["token_data.bin"]],
+                    ["apply_level_randomization", ["nsmbds_patch_config.json"]],
                     ["apply_secondary_screen_backgrounds", ["nsmbds_patch_config.json"]],
                     ["apply_player_palettes", ["nsmbds_patch_config.json"]],
                     ["verify_native_patch_marker", []],
@@ -171,6 +172,8 @@ class TestProcedurePatch(NSMBDSTestBase):
                 "nsmbds_patch_config.json",
             } <= names)
             self.assertEqual(patch_config["options"]["secondary_screen_background"], 0)
+            self.assertEqual(patch_config["level_randomization"], 0)
+            self.assertEqual(len(patch_config["level_mapping"]), 80)
             self.assertEqual(patch_config["options"]["death_link_grace_percentage"], 0)
             self.assertEqual(patch_config["options"]["death_link_cooldown_seconds"], 0)
             self.assertEqual(patch_config["options"]["death_link_effect"], 0)
