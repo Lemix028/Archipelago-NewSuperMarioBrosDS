@@ -201,6 +201,23 @@ AP_STAR_COIN_GATE_HOOK_MARKER = bytes.fromhex("10002de9")  # STAR_COIN_GATE_HOOK
 ADDR_WORLD_FLAGS_BASE = 0x00088C3C  # 16 bytes total
 WORLD_ENABLED_VALUE = 0x0043         # Value to write to enable a world
 
+# Persistent world-map moving-actor records in MainSave. Each world owns two
+# packed (node, type) pairs, where type 0 is a Hammer Bro and type 1 is a red
+# Flying ? Block. Vanilla copies the corresponding four-byte spawn record when
+# a world is first unlocked through the normal castle transition.
+ADDR_WORLDMAP_ACTORS_BASE = 0x00088E04  # 4 bytes per world, 32 bytes total
+WORLDMAP_ACTOR_BYTES_PER_WORLD = 4
+VANILLA_WORLDMAP_ACTOR_SPAWNS = (
+    bytes((0x03, 0x01, 0x06, 0x01)),  # World 1: two Flying ? Blocks
+    bytes((0x04, 0x01, 0x09, 0x01)),  # World 2: two Flying ? Blocks
+    bytes((0x04, 0x01, 0x08, 0x01)),  # World 3: two Flying ? Blocks
+    bytes((0x03, 0x01, 0x09, 0x01)),  # World 4: two Flying ? Blocks
+    bytes((0x05, 0x01, 0x0A, 0x00)),  # World 5: Flying ? Block + Hammer Bro
+    bytes((0x08, 0x01, 0x0A, 0x00)),  # World 6: Flying ? Block + Hammer Bro
+    bytes((0x03, 0x01, 0x07, 0x00)),  # World 7: Flying ? Block + Hammer Bro
+    bytes((0x02, 0x01, 0x05, 0x00)),  # World 8: Flying ? Block + Hammer Bro
+)
+
 # World 8-Tower 2 -> World 8-Bowser's Castle overworld connection. Clearing
 # both bits blocks the route; setting them opens it. In the current key layout,
 # this path requires both Tower 2 completion and Bowser's Castle Key.

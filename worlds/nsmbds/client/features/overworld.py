@@ -15,6 +15,7 @@ from ...data.ram_addresses import (
     ADDR_LEVEL_DATA_BASE,
     ADDR_W8_CASTLE_APPROACH_PATH,
     ADDR_WORLD_FLAGS_BASE,
+    ADDR_WORLDMAP_ACTORS_BASE,
     AP_STAR_COIN_GATE_HOOK_MARKER,
     AP_STAR_COIN_GATE_PERMIT_MASK_SIZE,
     AP_STAR_COIN_GATE_TIER_COUNT,
@@ -25,8 +26,10 @@ from ...data.ram_addresses import (
     AP_STAR_COIN_CURRENCY_MAGIC,
     KEY_PATH_GATE_ADDRESSES,
     MEMORY_DOMAIN,
+    VANILLA_WORLDMAP_ACTOR_SPAWNS,
     W8_CASTLE_APPROACH_PATH_MASK,
     WORLD_ENABLED_VALUE,
+    WORLDMAP_ACTOR_BYTES_PER_WORLD,
 )
 from ...data.star_coin_gates import STAR_COIN_GATES, gate_required_lifetime_coins
 
@@ -170,6 +173,12 @@ class OverworldStateReconcilerMixin:
         overlay8_guard = [
             (ADDR_AP_STAR_COIN_GATE_HOOK_MARKER, list(AP_STAR_COIN_GATE_HOOK_MARKER), MEMORY_DOMAIN),
         ]
+        received_ids = {item.item for item in ctx.items_received}
+        received_world_access = tuple(
+            world_number
+            for world_number, item_name in enumerate(WORLD_ACCESS_ITEMS, start=2)
+            if ITEM_TABLE[item_name][0] in received_ids
+        )
         star_coin_items_enabled = bool(ctx.slot_data.get("star_coin_items", False))
         external_reads = [
             (ADDR_WORLD_FLAGS_BASE, WORLD_FLAG_BYTES, MEMORY_DOMAIN),
@@ -185,6 +194,14 @@ class OverworldStateReconcilerMixin:
                 MEMORY_DOMAIN,
             ),
         ]
+        if received_world_access:
+            external_reads.append(
+                (
+                    ADDR_WORLDMAP_ACTORS_BASE,
+                    WORLDMAP_ACTOR_BYTES_PER_WORLD * len(VANILLA_WORLDMAP_ACTOR_SPAWNS),
+                    MEMORY_DOMAIN,
+                )
+            )
         current_external = await guarded_read(
             ctx.bizhawk_ctx,
             external_reads,
@@ -197,6 +214,14 @@ class OverworldStateReconcilerMixin:
             or len(current_external[1]) != AP_STAR_COIN_GATE_PERMIT_MASK_SIZE
             or len(current_external[2]) != 8
             or len(current_external[3]) != AP_STAR_COIN_GATE_TIER_MAILBOX_SIZE
+            or (
+                received_world_access
+                and (
+                    len(current_external) != 5
+                    or len(current_external[4])
+                    != WORLDMAP_ACTOR_BYTES_PER_WORLD * len(VANILLA_WORLDMAP_ACTOR_SPAWNS)
+                )
+            )
         ):
             return
 
@@ -204,7 +229,7 @@ class OverworldStateReconcilerMixin:
         current_permit_masks = current_external[1]
         current_currency_mailbox = current_external[2]
         current_tier_mailbox = current_external[3]
-        received_ids = {item.item for item in ctx.items_received}
+        worldmap_actors = current_external[4] if received_world_access else b""
         writes: list[tuple[int, list[int], str]] = []
         target_guards: list[tuple[int, Sequence[int], str]] = []
         desired_by_address: dict[int, bytes] = {}
@@ -224,16 +249,40 @@ class OverworldStateReconcilerMixin:
 
         # World Access items only enable worlds; vanilla/save progress may also
         # legitimately enable them, so missing items never force a relock.
-        for world_number, item_name in enumerate(WORLD_ACCESS_ITEMS, start=2):
-            if ITEM_TABLE[item_name][0] not in received_ids:
-                continue
+        for world_number in received_world_access:
             offset = (world_number - 1) * 2
             current = bytes(world_flags[offset:offset + 2])
+            current_value = struct.unpack("<H", current)[0]
+            target_value = current_value | WORLD_ENABLED_VALUE
             request_write(
                 ADDR_WORLD_FLAGS_BASE + offset,
                 current,
-                struct.pack("<H", WORLD_ENABLED_VALUE),
+                struct.pack("<H", target_value),
             )
+            actor_offset = (world_number - 1) * WORLDMAP_ACTOR_BYTES_PER_WORLD
+            current_actors = bytes(
+                worldmap_actors[
+                    actor_offset:actor_offset + WORLDMAP_ACTOR_BYTES_PER_WORLD
+                ]
+            )
+            vanilla_actors = VANILLA_WORLDMAP_ACTOR_SPAWNS[world_number - 1]
+            actors_uninitialized = (
+                current_actors[0] == 0
+                or current_actors[2] == 0
+                or current_actors[1::2] != vanilla_actors[1::2]
+            )
+            # A direct AP unlock bypasses the castle transition which normally
+            # seeds both moving actors. Initialize them with that first unlock;
+            # also repair saves already affected by the old flag-only client.
+            # Node 0 is the map's start node and never a valid moving-actor
+            # destination. Vanilla uses node 0xFF when an actor is defeated, so
+            # defeated actors are deliberately not respawned here.
+            if not current_value & 0x0040 or actors_uninitialized:
+                request_write(
+                    ADDR_WORLDMAP_ACTORS_BASE + actor_offset,
+                    current_actors,
+                    vanilla_actors,
+                )
 
         # Physical Tower/Castle keys fully own their verified path bytes.
         if bool(ctx.slot_data.get("tower_castle_keys", True)):

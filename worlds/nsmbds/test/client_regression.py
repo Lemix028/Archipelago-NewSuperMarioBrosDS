@@ -2979,7 +2979,7 @@ async def test_overworld_reconciler_restores_savestate_rollback() -> None:
 
     async def fake_guarded_read(_bizhawk_ctx, _read_requests, _guards):
         # Simulate the same old RAM state after loading a savestate twice.
-        return [bytes(16), bytes(8), bytes(8), empty_gate_tier_mailbox()]
+        return [bytes(16), bytes(8), bytes(8), empty_gate_tier_mailbox(), bytes(32)]
 
     async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
         writes.append((write_requests, guards))
@@ -3016,10 +3016,20 @@ async def test_overworld_reconciler_restores_savestate_rollback() -> None:
         [0xC0],
         ram_addresses.MEMORY_DOMAIN,
     )
+    world_two_actors_write = (
+        ram_addresses.ADDR_WORLDMAP_ACTORS_BASE + 4,
+        list(ram_addresses.VANILLA_WORLDMAP_ACTOR_SPAWNS[1]),
+        ram_addresses.MEMORY_DOMAIN,
+    )
     check(
         len(writes) == 2
-        and all(world_two_write in batch[0] and tower_gate_write in batch[0] for batch in writes),
-        "The reconciler restores World Access and key paths again after a savestate rollback",
+        and all(
+            world_two_write in batch[0]
+            and world_two_actors_write in batch[0]
+            and tower_gate_write in batch[0]
+            for batch in writes
+        ),
+        "The reconciler restores World Access, moving actors, and key paths after a savestate rollback",
     )
 
 
@@ -3027,6 +3037,8 @@ async def test_overworld_reconciler_skips_matching_state() -> None:
     writes: list[tuple] = []
     world_flags = bytearray(16)
     world_flags[2:4] = struct.pack("<H", ram_addresses.WORLD_ENABLED_VALUE)
+    moved_worldmap_actors = bytearray(32)
+    moved_worldmap_actors[4:8] = bytes((0x0B, 0x01, 0x06, 0x01))
 
     async def fake_guarded_read(_bizhawk_ctx, _read_requests, _guards):
         ctx = FakeContext()
@@ -3042,6 +3054,7 @@ async def test_overworld_reconciler_skips_matching_state() -> None:
             bytes(8),
             bytes(8),
             client_module.NSMBDSClient._star_coin_gate_tier_mailbox(ctx),
+            bytes(moved_worldmap_actors),
         ]
 
     async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
@@ -3069,7 +3082,118 @@ async def test_overworld_reconciler_skips_matching_state() -> None:
     level_data[tower_gate - ram_addresses.ADDR_LEVEL_DATA_BASE] = 0xC0
 
     await client._reconcile_overworld_state(ctx, bytes(level_data))
-    check(not writes, "The reconciler performs no RAM write when every owned value already matches")
+    check(
+        not writes,
+        "An already-unlocked world keeps its current moving-actor positions",
+    )
+
+
+async def test_world_access_initializes_flying_block_and_hammer_bro() -> None:
+    writes: list[tuple] = []
+
+    async def fake_guarded_read(_bizhawk_ctx, read_requests, _guards):
+        check(
+            (
+                ram_addresses.ADDR_WORLDMAP_ACTORS_BASE,
+                32,
+                ram_addresses.MEMORY_DOMAIN,
+            ) in read_requests,
+            "World Access reconciliation reads all persistent moving actors",
+        )
+        return [bytes(16), bytes(8), bytes(8), empty_gate_tier_mailbox(), bytes(32)]
+
+    async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
+        writes.append((write_requests, guards))
+        return True
+
+    fake_bizhawk.guarded_read = fake_guarded_read
+    fake_bizhawk.guarded_write = fake_guarded_write
+
+    client = client_module.NSMBDSClient()
+    ctx = FakeContext()
+    ctx.slot_data.update({
+        "tower_castle_keys": False,
+        "star_coin_gate_mode": 2,
+        "individual_gate_tiers": complete_gate_tiers(
+            lambda gate: gate.permit_item_name
+        ),
+    })
+    ctx.items_received = [
+        types.SimpleNamespace(item=client_module.ITEM_TABLE["Glacier Pass"][0]),
+    ]
+
+    await client._reconcile_overworld_state(
+        ctx,
+        bytes(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE),
+    )
+
+    actor_address = ram_addresses.ADDR_WORLDMAP_ACTORS_BASE + 4 * 4
+    actor_write = (
+        actor_address,
+        [0x05, 0x01, 0x0A, 0x00],
+        ram_addresses.MEMORY_DOMAIN,
+    )
+    actor_guard = (
+        actor_address,
+        [0x00, 0x00, 0x00, 0x00],
+        ram_addresses.MEMORY_DOMAIN,
+    )
+    check(
+        writes and actor_write in writes[0][0] and actor_guard in writes[0][1],
+        "Glacier Pass seeds World 5's Flying ? Block and Hammer Bro atomically with the unlock",
+    )
+
+
+async def test_world_access_repairs_legacy_start_node_actors() -> None:
+    writes: list[tuple] = []
+    world_flags = bytearray(16)
+    world_flags[8:10] = struct.pack("<H", ram_addresses.WORLD_ENABLED_VALUE)
+
+    client = client_module.NSMBDSClient()
+    ctx = FakeContext()
+    ctx.slot_data.update({
+        "tower_castle_keys": False,
+        "star_coin_gate_mode": 2,
+        "individual_gate_tiers": complete_gate_tiers(
+            lambda gate: gate.permit_item_name
+        ),
+    })
+    ctx.items_received = [
+        types.SimpleNamespace(item=client_module.ITEM_TABLE["Glacier Pass"][0]),
+    ]
+
+    async def fake_guarded_read(_bizhawk_ctx, _read_requests, _guards):
+        return [
+            bytes(world_flags),
+            bytes(8),
+            bytes(8),
+            client._star_coin_gate_tier_mailbox(ctx),
+            bytes(32),
+        ]
+
+    async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
+        writes.append((write_requests, guards))
+        return True
+
+    fake_bizhawk.guarded_read = fake_guarded_read
+    fake_bizhawk.guarded_write = fake_guarded_write
+    await client._reconcile_overworld_state(
+        ctx,
+        bytes(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE),
+    )
+
+    actor_address = ram_addresses.ADDR_WORLDMAP_ACTORS_BASE + 4 * 4
+    check(
+        writes
+        and writes[0][0] == [
+            (
+                actor_address,
+                list(ram_addresses.VANILLA_WORLDMAP_ACTOR_SPAWNS[4]),
+                ram_addresses.MEMORY_DOMAIN,
+            )
+        ],
+        "The new client repairs an already-unlocked World 5 left at node 0 by the old client",
+    )
 
 
 async def test_star_coin_item_currency_reconciliation() -> None:
