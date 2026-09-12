@@ -142,25 +142,21 @@ class RedCoinTrackingMixin:
     ) -> str | None:
         """Translate randomized runtime IDs before resolving a ring check."""
         level_mapping = mapping_from_slot_data(slot_data)
-        matches = {
-            location_name
-            for content_world, content_level in runtime_content_course_candidates(
-                level_mapping,
-                world,
-                level,
+        for content_world, content_level in runtime_content_course_candidates(
+            level_mapping,
+            world,
+            level,
+        ):
+            location_name = resolve_red_coin_location_name(
+                content_world,
+                content_level,
+                area,
+                player_x,
+                counter_index,
             )
-            for location_name in (
-                resolve_red_coin_location_name(
-                    content_world,
-                    content_level,
-                    area,
-                    player_x,
-                    counter_index,
-                ),
-            )
-            if location_name is not None
-        }
-        return next(iter(matches)) if len(matches) == 1 else None
+            if location_name is not None:
+                return location_name
+        return None
 
     async def _acknowledge_red_coin_event(self, ctx: "BizHawkClientContext", sequence: int, guarded_write) -> None:
         """Acknowledge a mailbox event only if it is still the same sequence."""

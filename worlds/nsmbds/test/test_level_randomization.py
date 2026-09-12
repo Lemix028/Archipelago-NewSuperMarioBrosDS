@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from ..client.features.block_checks import BlockCheckTrackingMixin
 from ..client.features.goals import GoalHandlingMixin
+from ..client.features.locations import LocationTrackingMixin
 from ..client.features.red_coins import RedCoinTrackingMixin
 from ..data.level_randomization import (
     ALL_STORY_LEVELS,
@@ -31,6 +32,7 @@ from ..locations import (
     LOCATION_TABLE,
     RUNTIME_BLOCK_TO_BLOCKSANITY_LOCATION_NAME,
     build_boss_location_completion_sources,
+    build_mapped_location_ram_map,
     build_secret_exit_ram_requirements,
 )
 from ..rom.level_randomization import (
@@ -93,7 +95,7 @@ class TestLevelMapping(TestCase):
         )
 
         castle_content = mapping["World 2-Castle"]
-        stage = ACTIVE_STAGE_BY_NAME[castle_content]
+        stage = ACTIVE_STAGE_BY_NAME["World 2-Castle"]
         goal_offset = stage.goal_ram_offset if stage.goal_ram_offset is not None else stage.ram_offset
         self.assertEqual(
             secret_requirements["World 2-Castle Secret Exit"],
@@ -107,6 +109,44 @@ class TestLevelMapping(TestCase):
             "World 2-Castle Secret Exit",
             build_boss_location_completion_sources(mapping)[boss_name],
         )
+
+    def test_course_checks_read_the_slot_that_hosts_the_content(self) -> None:
+        mapping = dict(IDENTITY_LEVEL_MAPPING)
+        mapping["World 1-1"], mapping["World 2-1"] = "World 2-1", "World 1-1"
+        ram_map = build_mapped_location_ram_map(mapping)
+        slot = ACTIVE_STAGE_BY_NAME["World 2-1"]
+        goal_offset = slot.goal_ram_offset if slot.goal_ram_offset is not None else slot.ram_offset
+
+        self.assertEqual(ram_map["World 1-1 Goal"], (goal_offset, 0x10))
+        self.assertEqual(ram_map["World 1-1 Star Coin 2"], (slot.ram_offset, 0x02))
+
+        goal_data = bytearray(goal_offset + 1)
+        goal_data[goal_offset] = 0x90
+        self.assertTrue(LocationTrackingMixin._is_location_completed(
+            "World 1-1 Goal", bytes(goal_data), location_ram_map=ram_map
+        ))
+        coin_data = bytearray(slot.ram_offset + 1)
+        coin_data[slot.ram_offset] = 0x82
+        self.assertTrue(LocationTrackingMixin._is_location_completed(
+            "World 1-1 Star Coin 2", bytes(coin_data), location_ram_map=ram_map
+        ))
+
+    def test_randomized_boss_uses_the_host_slot_goal(self) -> None:
+        mapping = dict(IDENTITY_LEVEL_MAPPING)
+        mapping["World 1-Castle"], mapping["World 3-Castle"] = (
+            "World 3-Castle", "World 1-Castle"
+        )
+        sources = build_boss_location_completion_sources(mapping)
+        ram_map = build_mapped_location_ram_map(mapping)
+        boss_name = next(name for name in sources if name.startswith("World 1-Castle "))
+        slot = ACTIVE_STAGE_BY_NAME["World 3-Castle"]
+        goal_offset = slot.goal_ram_offset if slot.goal_ram_offset is not None else slot.ram_offset
+        game_data = bytearray(goal_offset + 1)
+        game_data[goal_offset] = 0x90
+        self.assertTrue(LocationTrackingMixin._is_location_completed(
+            boss_name, bytes(game_data), boss_completion_sources=sources,
+            location_ram_map=ram_map,
+        ))
 
     def test_final_castle_gate_uses_the_course_in_tower_two_slot(self) -> None:
         mapping = generate_level_mapping("mapping-test", 1, LEVEL_RANDOMIZATION_GLOBAL)
@@ -127,7 +167,7 @@ class TestLevelMapping(TestCase):
 
     def test_block_runtime_slot_identity_resolves_loaded_content(self) -> None:
         mapping = dict(IDENTITY_LEVEL_MAPPING)
-        mapping["World 1-1"], mapping["World 2-1"] = "World 2-1", "World 1-1"
+        mapping["World 1-1"], mapping["World 8-3"] = "World 8-3", "World 1-1"
         slot_data = {
             "level_randomization": LEVEL_RANDOMIZATION_GLOBAL,
             "level_randomization_version": LEVEL_RANDOMIZATION_VERSION,
@@ -137,8 +177,7 @@ class TestLevelMapping(TestCase):
         source_key, expected_name = next(
             (key, name)
             for key, name in RUNTIME_BLOCK_TO_BLOCKSANITY_LOCATION_NAME.items()
-            if key[:2] == (1, 1)
-            and (0, 1, *key[2:]) not in RUNTIME_BLOCK_TO_BLOCKSANITY_LOCATION_NAME
+            if key[:2] == (7, 3)
         )
         reported_key = (0, 1, *source_key[2:])
         self.assertEqual(
@@ -149,10 +188,18 @@ class TestLevelMapping(TestCase):
             ),
             expected_name,
         )
+        self.assertEqual(
+            BlockCheckTrackingMixin._resolve_seed_block_location(
+                slot_data,
+                source_key,
+                AP_EVENT_TYPE_BLOCK_BUMP,
+            ),
+            expected_name,
+        )
 
     def test_red_coin_runtime_slot_identity_resolves_loaded_content(self) -> None:
         mapping = dict(IDENTITY_LEVEL_MAPPING)
-        mapping["World 1-3"], mapping["World 2-2"] = "World 2-2", "World 1-3"
+        mapping["World 1-1"], mapping["World 3-1"] = "World 3-1", "World 1-1"
         slot_data = {
             "level_randomization": LEVEL_RANDOMIZATION_GLOBAL,
             "level_randomization_version": LEVEL_RANDOMIZATION_VERSION,
@@ -162,13 +209,13 @@ class TestLevelMapping(TestCase):
         self.assertEqual(
             RedCoinTrackingMixin._resolve_seed_red_coin_location(
                 slot_data,
+                2,
                 1,
-                3,
                 0,
                 0,
                 1,
             ),
-            "World 1-3 Red Coin Challenge",
+            "World 1-1 Red Coin Challenge",
         )
 
 

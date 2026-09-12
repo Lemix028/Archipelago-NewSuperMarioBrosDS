@@ -227,22 +227,18 @@ class BlockCheckTrackingMixin:
         """Translate randomized slot IDs and use coordinates to select content."""
         world, level, area, tile_x, tile_y = runtime_key
         level_mapping = mapping_from_slot_data(slot_data)
-        matches = {
-            location_name
-            for content_world, content_level in runtime_content_course_candidates(
-                level_mapping,
-                world,
-                level,
+        for content_world, content_level in runtime_content_course_candidates(
+            level_mapping,
+            world,
+            level,
+        ):
+            location_name = cls._resolve_block_location(
+                (content_world, content_level, area, tile_x, tile_y),
+                event_type,
             )
-            for location_name in (
-                cls._resolve_block_location(
-                    (content_world, content_level, area, tile_x, tile_y),
-                    event_type,
-                ),
-            )
-            if location_name is not None
-        }
-        return next(iter(matches)) if len(matches) == 1 else None
+            if location_name is not None:
+                return location_name
+        return None
 
     async def _acknowledge_block_event(self, ctx: "BizHawkClientContext", sequence: int, guarded_write) -> None:
         """Acknowledge a block event only if the sequence remains unchanged."""

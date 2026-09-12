@@ -20,6 +20,7 @@ from ...locations import (
     SECRET_EXIT_RAM_REQUIREMENTS,
     WORLD_6_2_BONUS_AREA_LOCATION_NAMES,
     build_boss_location_completion_sources,
+    build_mapped_location_ram_map,
     build_secret_exit_ram_requirements,
 )
 
@@ -69,10 +70,12 @@ class LocationTrackingMixin:
         game_data: bytes,
         boss_completion_sources: dict[str, tuple[str, ...]] | None = None,
         secret_exit_requirements: dict[str, tuple[tuple[int, int], ...]] | None = None,
+        location_ram_map: dict[str, tuple[int, int]] | None = None,
     ) -> bool:
         """Return whether a location's RAM condition is currently met."""
         boss_completion_sources = boss_completion_sources or BOSS_LOCATION_COMPLETION_SOURCES
         secret_exit_requirements = secret_exit_requirements or SECRET_EXIT_RAM_REQUIREMENTS
+        location_ram_map = location_ram_map or LOCATION_RAM_MAP
         completion_sources = boss_completion_sources.get(location_name)
         if completion_sources is not None:
             return any(
@@ -81,6 +84,7 @@ class LocationTrackingMixin:
                     game_data,
                     boss_completion_sources,
                     secret_exit_requirements,
+                    location_ram_map,
                 )
                 for source_name in completion_sources
             )
@@ -92,7 +96,7 @@ class LocationTrackingMixin:
                 for offset, bit_mask in secret_requirements
             )
 
-        byte_offset, bit_mask = LOCATION_RAM_MAP[location_name]
+        byte_offset, bit_mask = location_ram_map[location_name]
         flag_byte = game_data[byte_offset]
         return bool(flag_byte & 0x80 and (flag_byte & bit_mask) == bit_mask)
 
@@ -109,13 +113,14 @@ class LocationTrackingMixin:
             self._dynamic_secret_exit_requirements = build_secret_exit_ram_requirements(
                 level_mapping
             )
+            self._dynamic_location_ram_map = build_mapped_location_ram_map(level_mapping)
             self._level_mapping_digest = mapping_digest
 
         new_checks: list[int] = []
         for location_name, location_id in LOCATION_TABLE.items():
             # Red Coin Challenges are transient events supplied by the Lua hook.
             if (
-                location_name not in LOCATION_RAM_MAP
+                location_name not in self._dynamic_location_ram_map
                 and location_name not in BOSS_LOCATION_COMPLETION_SOURCES
             ):
                 continue
@@ -124,6 +129,7 @@ class LocationTrackingMixin:
                 level_data,
                 self._dynamic_boss_completion_sources,
                 self._dynamic_secret_exit_requirements,
+                self._dynamic_location_ram_map,
             ):
                 continue
 

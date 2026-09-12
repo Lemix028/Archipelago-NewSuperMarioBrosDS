@@ -606,13 +606,7 @@ def runtime_content_course_candidates(
     reported_world: int,
     reported_level: int,
 ) -> tuple[tuple[int, int], ...]:
-    """Resolve every plausible content identity from the game's mixed runtime IDs.
-
-    Randomized courses can retain the overworld slot's world byte while using
-    the loaded content's level byte. Some transitions briefly expose both
-    bytes from the slot or both from the content, so all three forms are
-    represented and later disambiguated with area/coordinates.
-    """
+    """Return runtime identities in reliable slot-to-content priority order."""
     reported = (reported_world, reported_level)
     candidates: list[tuple[int, int]] = []
 
@@ -625,7 +619,6 @@ def runtime_content_course_candidates(
         content_course = STAGE_NAME_TO_RUNTIME_COURSE[content_name]
         if slot_world == reported_world and content_course[1] == reported_level:
             candidates.append(content_course)
-
     candidates.append(reported)
     return tuple(dict.fromkeys(candidates))
 
@@ -918,14 +911,40 @@ def build_secret_exit_ram_requirements(
 
     mini_path_masks = {"World 2-Castle": 0x01, "World 5-Castle": 0x02}
     for slot_name in MINI_CASTLE_SECRET_EXIT_SLOTS:
-        content_name = level_mapping[slot_name]
-        stage = ACTIVE_STAGE_BY_NAME[content_name]
-        goal_offset = stage.goal_ram_offset if stage.goal_ram_offset is not None else stage.ram_offset
+        slot_stage = ACTIVE_STAGE_BY_NAME[slot_name]
+        goal_offset = (
+            slot_stage.goal_ram_offset
+            if slot_stage.goal_ram_offset is not None
+            else slot_stage.ram_offset
+        )
         requirements[f"{slot_name} Secret Exit"] = (
             (goal_offset, 0x10),
             (MINI_CASTLE_FLAGS_GAME_DATA_OFFSET, mini_path_masks[slot_name]),
         )
     return requirements
+
+
+def build_mapped_location_ram_map(
+    level_mapping: dict[str, str],
+) -> dict[str, tuple[int, int]]:
+    """Read content-owned course checks from the slot that hosts the content."""
+    ram_map = dict(LOCATION_RAM_MAP)
+    for slot_name, content_name in level_mapping.items():
+        slot = ACTIVE_STAGE_BY_NAME[slot_name]
+        content = ACTIVE_STAGE_BY_NAME[content_name]
+        goal_offset = (
+            slot.goal_ram_offset
+            if slot.goal_ram_offset is not None
+            else slot.ram_offset
+        )
+        ram_map[f"{content_name} Goal"] = (goal_offset, 0x10)
+        if content.has_star_coins:
+            for coin_number, coin_bit in ((1, 0x01), (2, 0x02), (3, 0x04)):
+                ram_map[f"{content_name} Star Coin {coin_number}"] = (
+                    slot.ram_offset,
+                    coin_bit,
+                )
+    return ram_map
 
 
 def build_boss_location_completion_sources(

@@ -267,9 +267,10 @@ ACTION_REPLAY_FULL_BYTE = 0xD7
 # Game State
 # ---------------------------------------------------------------------------
 
-# Runtime course identity. The pair (world, level) identifies the active
-# course. The current area can change inside a course and must not be used as its AP key.
-# Values are uint32_le and world indices are zero-based (World 1 = 0).
+# Runtime course identity. During a randomized course, world and level normally
+# retain the overworld slot identity while area belongs to the loaded content.
+# The client resolves the slot through seed data before matching content areas
+# and coordinates. World indices are zero-based.
 # Stable selected-world byte retained while its course is running.
 ADDR_STAGE_EXIT_FLAGS = 0x00085A1C  # 4 bytes, uint32_le
 STAGE_EXIT_RETURN_TO_MAP_MASK = 0x08
