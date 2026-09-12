@@ -132,8 +132,10 @@ class NSMBDSClient(
         self._active_locations: set[int] = set()
         self._active_location_set_known = False
         self._items_received_index = 0
+        self._next_powerup_id: int | None = None
         self._item_cursor_loaded = False
         self._item_cursor_needs_initial_sync = False
+        self._awaiting_item_history = False
         self._deferred_item_ids: list[int] = []
         self._goal_sent = False
         self._session_identity: tuple[object, ...] | None = None
@@ -432,6 +434,21 @@ class NSMBDSClient(
             self._queue_core_item_send(ctx, args)
             return
         if cmd in ("Retrieved", "SetReply"):
+            if cmd == "Retrieved" and self._awaiting_item_history:
+                # Core requests this key on Connected. Its reply follows the
+                # connection's optional ReceivedItems packet on the same socket.
+                # No history before this reply means the room has ZERO items;
+                # the next index-0 delivery is new, not a history baseline.
+                hints_key = f"_read_hints_{getattr(ctx, 'team', 0)}_{ctx.slot}"
+                if hints_key in args.get("keys", {}):
+                    self._awaiting_item_history = False
+                    self._items_received_index = 0
+                    self._deferred_item_ids.clear()
+                    self._next_powerup_id = None
+                    self._item_cursor_loaded = True
+                    self._item_cursor_needs_initial_sync = False
+                    self._persist_item_cursor()
+                    logger.info("Synchronized empty server item history; waiting for new items.")
             self._handle_gate_storage_packet(cmd, args)
             return
         if cmd == "Bounced" and "DeathLink" in args.get("tags", ()):
@@ -442,6 +459,7 @@ class NSMBDSClient(
             self._queue_incoming_death_link(ctx, source)
             return
         if cmd == "ReceivedItems":
+            self._awaiting_item_history = False
             if self._item_cursor_needs_initial_sync:
                 # CommonClient has already appended this packet before calling
                 # the game handler. With no saved cursor, the first packet is
@@ -473,6 +491,7 @@ class NSMBDSClient(
                     # rolled back or replaced. Deferred consumables from the
                     # discarded tail no longer belong to this server state.
                     self._deferred_item_ids.clear()
+                    self._next_powerup_id = None
                     self._persist_item_cursor()
                     logger.info(
                         "Rebased the NSMBDS item cursor to %d and discarded %d "
@@ -526,6 +545,8 @@ class NSMBDSClient(
             else:
                 self._item_cursor_needs_initial_sync = True
 
+        self._awaiting_item_history = True
+
         checked_locations = set(args.get("checked_locations", ()))
         checked_locations.update(getattr(ctx, "checked_locations", ()))
         missing_locations = args.get("missing_locations")
@@ -559,6 +580,8 @@ class NSMBDSClient(
         self._item_cursor_loaded = False
         self._item_cursor_needs_initial_sync = False
         self._deferred_item_ids.clear()
+        self._next_powerup_id = None
+        self._awaiting_item_history = False
         self._goal_sent = False
         self._death_link_enabled = None
         self._pending_death_link = False

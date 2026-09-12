@@ -114,6 +114,13 @@ Item-based Power-Ups are queued up until you unlock the permit.
 If your reserve pocket is full, a received Power-Up waits until it can be
 delivered. It is not lost.
 
+The **Power-ups** list at the bottom of the client's Overview shows your
+waiting power-ups. Click **Next** to reserve one copy for the next
+empty pocket, or click the selected power-up again to cancel. After delivery,
+the oldest available power-up is next automatically. Power-ups awaiting a
+Permit stay queued and show their requirement. Your selection and backlog
+are saved for this seed and slot across client restarts.
+
 ## Item placement
 
 1-Up Blocks and Blocksanity checks have three placement choices:

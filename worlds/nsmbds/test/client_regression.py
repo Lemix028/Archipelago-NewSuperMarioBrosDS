@@ -1903,6 +1903,115 @@ def test_session_reconnect() -> None:
     )
 
 
+async def test_backlog_next_and_stable_order() -> None:
+    client = client_module.NSMBDSClient()
+    context = FakeContext()
+    mushroom = client_module.ITEM_TABLE["Mushroom"][0]
+    mini = client_module.ITEM_TABLE["Mini Mushroom"][0]
+    client._deferred_item_ids = [mushroom, mini, mini]
+    client._missing_powerup_license = lambda ctx, item_id: None
+    attempts = []
+    succeeds = False
+
+    async def apply(ctx, item_id):
+        attempts.append(item_id)
+        return succeeds
+
+    client._apply_item = apply
+    check(client.select_next_powerup(context, mini), "An existing power-up can be pinned")
+    await client._retry_one_deferred_item(context)
+    check(client._deferred_item_ids == [mushroom, mini, mini] and client._next_powerup_id == mini,
+          "An occupied reserve preserves order and the pinned item")
+    succeeds = True
+    await client._retry_one_deferred_item(context)
+    check(client._deferred_item_ids == [mushroom, mini] and client._next_powerup_id is None,
+          "Next consumes exactly one copy and returns to automatic order")
+    await client._retry_one_deferred_item(context)
+    check(attempts == [mini, mini, mushroom], "Automatic refill resumes with the oldest item")
+    client._missing_powerup_license = lambda ctx, item_id: "Mini Mushroom Permit" if item_id == mini else None
+    check(not client.select_next_powerup(context, mini), "Locked power-ups cannot be pinned")
+    client._deferred_item_ids.append(mushroom)
+    check(client.next_backlog_item(context) == mushroom, "Oldest available skips locked power-ups")
+    client._missing_powerup_license = lambda ctx, item_id: None
+    succeeds = False
+    context.items_received = [types.SimpleNamespace(item=mushroom)]
+    attempts.clear()
+    await client._apply_pending_items(context)
+    check(attempts == [mini] and client._deferred_item_ids == [mini, mushroom, mushroom],
+          "New arrivals cannot overtake a failed older reserve refill")
+    client.select_next_powerup(context, mushroom)
+    check(client.select_next_powerup(context, None) and client.next_backlog_item(context) == mini,
+          "Cancelling Next restores the original order")
+
+
+async def test_empty_room_first_powerup_and_overview_backlog() -> None:
+    for saved_cursor in (None, 30):
+        client = client_module.NSMBDSClient()
+        context = FakeContext()
+        context.team = 0
+        context.slot = 1
+        context.client_handler = client
+        client._load_item_cursor = lambda: saved_cursor
+        client._persist_item_cursor = lambda: None
+        client._missing_powerup_license = lambda ctx, item: None
+        mushroom = client_module.ITEM_TABLE["Mushroom"][0]
+        flower = client_module.ITEM_TABLE["Fire Flower"][0]
+        mini = client_module.ITEM_TABLE["Mini Mushroom"][0]
+        client.on_package(context, "Connected", {"team": 0, "slot": 1, "checked_locations": []})
+        client.on_package(context, "Retrieved", {"keys": {"_read_hints_0_1": []}})
+        check(client._items_received_index == 0 and not client._item_cursor_needs_initial_sync,
+              "An empty room is synchronized before its first live delivery, including a reused seed")
+        reserve = 0
+
+        async def read(_ctx, requests, guards):
+            return [bytes([reserve])]
+
+        async def write(_ctx, requests, guards):
+            nonlocal reserve
+            assert requests[0][0] == ram_addresses.ADDR_INVENTORY_ITEM
+            reserve = requests[0][1][0]
+            return True
+
+        fake_bizhawk.guarded_read = read
+        fake_bizhawk.guarded_write = write
+
+        def receive(item_id):
+            index = len(context.items_received)
+            item = types.SimpleNamespace(item=item_id)
+            context.items_received.append(item)
+            client.on_package(context, "ReceivedItems", {"index": index, "items": [item]})
+
+        receive(mushroom)
+        await client._apply_pending_items(context)
+        check(reserve == 1, "The first power-up in an empty room reaches the reserve instead of being skipped")
+        receive(flower)
+        receive(mini)
+        await client._apply_pending_items(context)
+        snapshot = tracker_module.build_tracker_snapshot(context)
+        check({entry.name: entry.received for entry in snapshot.pending_powerups if entry.received}
+              == {"Fire Flower": 1, "Mini Mushroom": 1}
+              and len(snapshot.pending_powerups) == len(tracker_module.INVENTORY_RAM_VALUES),
+              "Further deliveries into a full reserve appear in the actual Overview snapshot")
+        check(snapshot.next_powerup == "Fire Flower" and snapshot.selected_powerup is None,
+              "Overview marks the oldest usable power-up as Next by default")
+        client.select_next_powerup(context, mini)
+        snapshot = tracker_module.build_tracker_snapshot(context)
+        check(snapshot.next_powerup == "Mini Mushroom" and snapshot.selected_powerup == "Mini Mushroom",
+              "Overview distinguishes a manually selected Next power-up")
+        reserve = 0
+        await client._apply_pending_items(context)
+        check(reserve == 4 and client._deferred_item_ids == [flower] and client._next_powerup_id is None,
+              "Selected Next is delivered once and leaves the older queued item intact")
+        await client._apply_pending_items(context)
+        check(client._deferred_item_ids == [flower], "A full reserve does not consume the remaining backlog")
+        reserve = 0
+        await client._apply_pending_items(context)
+        check(reserve == 2 and not any(
+                  entry.received for entry in tracker_module.build_tracker_snapshot(context).pending_powerups
+              ),
+              "The oldest remaining power-up refills next and disappears from Overview only on delivery")
+
+
 def test_persistent_item_cursor() -> None:
     storage: dict[str, dict[str, object]] = {}
     fake_utils = types.ModuleType("Utils")
@@ -1922,6 +2031,7 @@ def test_persistent_item_cursor() -> None:
         first._session_identity = ("persistent-seed", 0, 2)
         first._items_received_index = 42
         first._deferred_item_ids = [powerup_id, trap_id]
+        first._next_powerup_id = powerup_id
         first._persist_item_cursor()
 
         restarted = client_module.NSMBDSClient()
@@ -1929,11 +2039,21 @@ def test_persistent_item_cursor() -> None:
         restored_cursor = restarted._load_item_cursor()
         check(
             restored_cursor == 42
+            and restarted._next_powerup_id == powerup_id
             and restarted._deferred_item_ids == [powerup_id],
             "Persistent item cursor restores waiting Power-Ups but never traps",
         )
         restarted._items_received_index = restored_cursor or 0
         restarted._item_cursor_loaded = True
+
+        restarted._awaiting_item_history = True
+        history_context = FakeContext()
+        history_context.team = 0
+        history_context.slot = 2
+        restarted.on_package(history_context, "ReceivedItems", {"index": 0, "items": [object()] * 42})
+        restarted.on_package(history_context, "Retrieved", {"keys": {"_read_hints_0_2": []}})
+        check(restarted._deferred_item_ids == [powerup_id] and restarted._next_powerup_id == powerup_id,
+              "The connection barrier preserves the backlog when actual history arrived first")
 
         rollback_context = FakeContext()
         rollback_context.server_seed_name = "persistent-seed"
@@ -1944,6 +2064,7 @@ def test_persistent_item_cursor() -> None:
         )
         check(
             restarted._items_received_index == 3
+            and restarted._next_powerup_id is None
             and not restarted._deferred_item_ids,
             "A server-history rollback discards stale waiting Power-Ups",
         )

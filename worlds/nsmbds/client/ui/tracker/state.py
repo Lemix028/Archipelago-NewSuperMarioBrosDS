@@ -90,6 +90,9 @@ class TrackerSnapshot:
     star_coin_spent: int
     star_coin_available: int
     pending_powerups: tuple[InventoryEntry, ...]
+    next_powerup: str | None = None
+    selected_powerup: str | None = None
+    powerup_locks: tuple[tuple[str, str], ...] = ()
 
 
 def _is_server_connected(ctx: Any) -> bool:
@@ -214,7 +217,13 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
     pending_powerups = tuple(
         InventoryEntry(name, pending_powerup_counts[name])
         for name in INVENTORY_RAM_VALUES
-        if pending_powerup_counts[name]
+    )
+    selected_powerup_id = getattr(rom_handler, "_next_powerup_id", None)
+    next_powerup_getter = getattr(rom_handler, "next_powerup_item", None)
+    next_powerup_id = (
+        next_powerup_getter(ctx)
+        if callable(next_powerup_getter)
+        else selected_powerup_id
     )
     rom_status = (
         "NSMBDS Active"
@@ -268,6 +277,14 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
         star_coin_spent=int(getattr(rom_handler, "_star_coin_spent", 0)),
         star_coin_available=int(getattr(rom_handler, "_star_coin_available", received_star_coins)),
         pending_powerups=pending_powerups,
+        next_powerup=item_id_to_name.get(next_powerup_id),
+        selected_powerup=item_id_to_name.get(selected_powerup_id),
+        powerup_locks=tuple(
+            (entry.name, reason)
+            for entry in pending_powerups
+            if callable(getattr(rom_handler, "_missing_powerup_license", None))
+            and (reason := rom_handler._missing_powerup_license(ctx, ITEM_TABLE[entry.name][0]))
+        ),
     )
 
 
@@ -314,13 +331,10 @@ def render_tracker_markup(snapshot: TrackerSnapshot) -> str:
         "[size=19sp][b]Waiting Power-Ups[/b][/size]",
         f"Queued: {sum(entry.received for entry in snapshot.pending_powerups)}",
     ))
-    if snapshot.pending_powerups:
-        lines.extend(
-            f"  {entry.name}: {entry.received}"
-            for entry in snapshot.pending_powerups
-        )
-    else:
-        lines.append("  None")
+    lines.extend(
+        f"  {entry.name}: {entry.received}"
+        for entry in snapshot.pending_powerups
+    )
     lines.extend((
         "",
         "[size=19sp][b]Session Info[/b][/size]",

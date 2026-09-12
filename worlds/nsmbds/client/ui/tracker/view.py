@@ -22,6 +22,7 @@ from kivymd.uix.scrollview import MDScrollView
 
 from .state import InventoryEntry, ProgressCount, TrackerSnapshot, build_tracker_snapshot
 from ....version import DISPLAY_VERSION
+from ....items import ITEM_TABLE
 from ...launcher import (
     EMULATOR_FEED_FADE_CHOICES,
     EMULATOR_FEED_POSITIONS,
@@ -188,18 +189,59 @@ class NSMBDSTrackerPanel(MDScrollView):
         body.add_widget(inventory_column)
         self.content.add_widget(body)
 
-        pending_total = sum(entry.received for entry in snapshot.pending_powerups)
-        reserve = "  /  ".join(
-            f"{escape_markup(entry.name)} x{entry.received}" for entry in snapshot.pending_powerups
-        ) or "None"
-        progress_column.add_widget(_compact_heading("Reserve & protection"))
-        progress_column.add_widget(_compact_label(
-            f"[b]Waiting ({pending_total})[/b]  {reserve}"
-        ))
+        self.content.add_widget(_compact_heading("Power-ups"))
+        locks = dict(snapshot.powerup_locks)
+        powerup_grid = MDGridLayout(cols=5, adaptive_height=True, spacing=dp(8))
+        def resize_powerup_grid(instance, width):
+            instance.cols = max(2, min(5, int((width + dp(8)) / dp(130))))
+        powerup_grid.bind(width=resize_powerup_grid)
+        for entry in snapshot.pending_powerups:
+            is_next = entry.name == snapshot.next_powerup
+            selected = entry.name == snapshot.selected_powerup
+            reason = locks.get(entry.name)
+            row = MDBoxLayout(
+                orientation="vertical", size_hint_y=None, height=dp(65), spacing=dp(4),
+            )
+            name = escape_markup(entry.name)
+            row.add_widget(_compact_label(f"[b]{name}[/b]  ×{entry.received}", halign="center"))
+            selectable = entry.received > 0 and not reason
+            if selected:
+                button_text = "SELECTED"
+                button_color = (0.10, 0.55, 0.72, 1)
+            elif is_next:
+                button_text = "NEXT"
+                button_color = (0.18, 0.42, 0.50, 1)
+            elif selectable:
+                button_text = "SET NEXT"
+                button_color = (0.25, 0.28, 0.31, 1)
+            elif reason:
+                button_text = "LOCKED"
+                button_color = (0.16, 0.17, 0.18, 1)
+            else:
+                button_text = "—"
+                button_color = (0.16, 0.17, 0.18, 1)
+            button = Button(
+                text=button_text,
+                size_hint_y=None, height=dp(28), font_size="12sp",
+                background_normal="", background_down="",
+                background_color=button_color,
+                color=(1, 1, 1, 1),
+            )
+            if selected or selectable:
+                button.bind(on_release=lambda _button, name=entry.name, cancel=selected:
+                            self._select_next_powerup(None if cancel else ITEM_TABLE[name][0]))
+            row.add_widget(button)
+            powerup_grid.add_widget(row)
+        self.content.add_widget(powerup_grid)
         progress_column.add_widget(_compact_label(
             f"Shields: {snapshot.trap_shields}    "
             f"Life Insurance: {snapshot.life_insurance}"
         ))
+
+    def _select_next_powerup(self, item_id: int | None) -> None:
+        handler = getattr(self.ctx, "client_handler", None)
+        if handler is not None and handler.select_next_powerup(self.ctx, item_id):
+            self.refresh(force=True)
 
 
 def _compact_label(text: str, *, halign: str = "left") -> MDLabel:

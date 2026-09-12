@@ -64,6 +64,8 @@ class ItemHandlingMixin:
 
     async def _apply_pending_items(self, ctx: "BizHawkClientContext") -> None:
         """Apply pending items without letting one failed RAM write block the queue."""
+        if self._awaiting_item_history or self._item_cursor_needs_initial_sync:
+            return
         await self._retry_one_deferred_item(ctx)
 
         start_index = self._items_received_index
@@ -77,6 +79,14 @@ class ItemHandlingMixin:
                     network_item.item - BASE_ID,
                 )
             missing_license = self._missing_powerup_license(ctx, network_item.item)
+            if item_id_to_name.get(network_item.item) in INVENTORY_RAM_VALUES and any(
+                item_id_to_name.get(queued) in INVENTORY_RAM_VALUES
+                and self._missing_powerup_license(ctx, queued) is None
+                for queued in self._deferred_item_ids
+            ):
+                self._deferred_item_ids.append(network_item.item)
+                self._items_received_index += 1
+                continue
             if missing_license is not None:
                 self._deferred_item_ids.append(network_item.item)
                 self._log_held_powerup(network_item.item, missing_license)
@@ -139,6 +149,8 @@ class ItemHandlingMixin:
                     )
                     restored_deferred.clear()
                 self._deferred_item_ids = restored_deferred
+                selected = value.get("next_powerup")
+                self._next_powerup_id = selected if selected in restored_deferred else None
                 return cursor
             return max(0, int(value)) if value is not None else None
         except (ImportError, OSError, TypeError, ValueError):
@@ -160,6 +172,7 @@ class ItemHandlingMixin:
                 key,
                 {
                     "cursor": int(self._items_received_index),
+                    "next_powerup": getattr(self, "_next_powerup_id", None),
                     # Only unapplied reserve power-ups survive a restart.
                     # Filler and traps are intentionally never replayed.
                     "deferred_powerups": [
@@ -176,20 +189,61 @@ class ItemHandlingMixin:
         if not self._deferred_item_ids:
             return
 
-        item_id = self._deferred_item_ids.pop(0)
-        if self._missing_powerup_license(ctx, item_id) is not None:
-            self._deferred_item_ids.append(item_id)
+        item_id = self.next_backlog_item(ctx)
+        if item_id is None:
             return
+        queue = self._deferred_item_ids
 
         try:
             applied = await self._apply_item(ctx, item_id)
         except Exception:
             logger.exception("Failed to apply deferred received item ID %s.", item_id)
             applied = False
-        if not applied:
-            # Rotate failures to the back so every deferred item gets a chance.
+        if self._deferred_item_ids is not queue or item_id not in queue:
+            return  # The session was reset while the RAM request was in flight.
+        self._retry_non_powerup = not applied and item_id_to_name.get(item_id) in INVENTORY_RAM_VALUES
+        if applied:
+            self._deferred_item_ids.remove(item_id)
+            if getattr(self, "_next_powerup_id", None) == item_id:
+                self._next_powerup_id = None
+        elif item_id_to_name.get(item_id) not in INVENTORY_RAM_VALUES:
+            self._deferred_item_ids.remove(item_id)
             self._deferred_item_ids.append(item_id)
         self._persist_item_cursor()
+
+    def next_backlog_item(self, ctx: "BizHawkClientContext") -> int | None:
+        # Temporary failures of life/filler/trap writes must not wait for a
+        # reserve slot to become empty.
+        retry = next((item_id for item_id in self._deferred_item_ids
+                      if item_id_to_name.get(item_id) not in INVENTORY_RAM_VALUES), None)
+        if retry is not None and getattr(self, "_retry_non_powerup", False):
+            return retry
+        selected = getattr(self, "_next_powerup_id", None)
+        if selected in self._deferred_item_ids and self._missing_powerup_license(ctx, selected) is None:
+            return selected
+        return next((item_id for item_id in self._deferred_item_ids
+                     if self._missing_powerup_license(ctx, item_id) is None), None)
+
+    def next_powerup_item(self, ctx: "BizHawkClientContext") -> int | None:
+        """Return the pinned power-up, or the oldest usable queued power-up."""
+        selected = getattr(self, "_next_powerup_id", None)
+        if selected in self._deferred_item_ids and self._missing_powerup_license(ctx, selected) is None:
+            return selected
+        return next((item_id for item_id in self._deferred_item_ids
+                     if item_id_to_name.get(item_id) in INVENTORY_RAM_VALUES
+                     and self._missing_powerup_license(ctx, item_id) is None), None)
+
+    def select_next_powerup(self, ctx: "BizHawkClientContext", item_id: int | None) -> bool:
+        """Pin one existing, licensed reserve power-up, or resume automatic order."""
+        if item_id is not None and (
+            item_id not in self._deferred_item_ids
+            or item_id_to_name.get(item_id) not in INVENTORY_RAM_VALUES
+            or self._missing_powerup_license(ctx, item_id) is not None
+        ):
+            return False
+        self._next_powerup_id = item_id
+        self._persist_item_cursor()
+        return True
 
     def _missing_powerup_license(self, ctx: "BizHawkClientContext", item_id: int) -> str | None:
         """Return the missing license that should defer an inventory power-up."""
