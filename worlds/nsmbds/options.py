@@ -176,13 +176,16 @@ class AdvancedLocationItemPlacement(Choice):
 
 class LevelRandomization(Choice):
     """
-    [Alpha] Randomize which compatible course is loaded by each overworld level slot.
+    [Alpha preview]
+    This feature is still in development and may cause unexpected behavior.
+    Logic not fully tested; use at your own risk. Hammer Bros and red flying ?
+    blocks can be broken by level randomization. Poptracker not supported yet.
 
     off:           Keep every course in its vanilla slot. (Default)
-    global:        Shuffle courses across all eight worlds.
-    within_world:  Shuffle courses only among compatible slots in the same world.
+    global:        Shuffle level across all eight worlds.
+    within_world:  Shuffle level only among compatible slots in the same world.
 
-    Secret-exit courses, Towers, Castles, and normal courses are separate pools.
+    Secret-exit level, Towers, Castles, and normal level are separate pools.
     World 8-Bowser's Castle always remains fixed.
     """
     display_name = "[Alpha] Level Randomization"
@@ -270,7 +273,7 @@ FILLER_ITEMS_BY_KEY: dict[str, tuple[str, ...]] = {
     "powerups": ("Mushroom", "Fire Flower", "Blue Shell", "Mini Mushroom", "Mega Mushroom"),
     "starman": ("Starman Buff",),
     "extra_lives": ("1-Up Mushroom", "3-Up Moon"),
-    "coins": ("Coin Bundle",),
+    "coins": ("Small Coin Bundle", "Coin Bundle", "Large Coin Bundle"),
     "time_capsule": ("Time Capsule",),
     "starman_lite": ("Starman Lite",),
     "trap_shield": ("Trap Shield",),
@@ -287,7 +290,7 @@ class FillerItems(OptionSet):
     powerups:      Mushrooms, Fire Flowers, Blue Shells, Mini Mushrooms, and Mega Mushrooms.
     starman:       15 seconds of invincibility.
     extra_lives:   1-Up Mushrooms and rare 3-Up Moons.
-    coins:         Bundles of 50 Coins.
+    coins:         Bundles of 10, 25, or 50 Coins.
     time_capsule:  Adds 30 seconds to the current level timer.
     starman_lite:  Five seconds of invincibility.
     trap_shield:   Blocks the next received trap.

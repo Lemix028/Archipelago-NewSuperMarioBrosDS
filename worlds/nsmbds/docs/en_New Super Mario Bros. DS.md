@@ -9,13 +9,8 @@ may be found anywhere in the multiworld.
 
 For installation and launch instructions, see the [Setup Guide](setup_en.md).
 
-> **Alpha:** Crashes and fatal errors are considered unlikely. Known types of
-> alpha issues include severe FPS drops in some levels, individual features or
-> checks no longer working, and location or item tracking unexpectedly
-> stopping. Seeds may also contain incorrect or missing logic requirements,
-> especially around Power-Up Permits and locations that need a specific
-> character form. If tracking stops, pause the game and verify the client and
-> BizHawk Lua connection before continuing.
+> **Unstable:** This unstable-release may contain severe performance, tracking,
+> feature, or logic issues. Report reproducible issues.
 
 ## What is randomized?
 
@@ -104,7 +99,9 @@ Item-based Power-Ups are queued up until you unlock the permit.
 | Starman Buff | Grants 15 seconds of invincibility |
 | 1-Up Mushroom | Adds one life |
 | 3-Up Moon | Adds three lives |
-| Coin Bundle | Adds 50 Coins |
+| Small Coin Bundle | Adds 10 Coins |
+| Coin Bundle | Adds 25 Coins |
+| Large Coin Bundle | Adds 50 Coins |
 | Time Capsule | Adds 30 seconds to the current level |
 | Starman Lite | Grants five seconds of invincibility |
 | Trap Shield | Blocks the next trap; several charges can be stored (Cyan Shield) |

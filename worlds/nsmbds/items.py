@@ -63,6 +63,8 @@ ITEM_TABLE: dict[str, tuple[int, ItemClassification]] = {
     "Trap Shield":           (BASE_ID + 0x26, ItemClassification.filler),
     "Small Care Package":    (BASE_ID + 0x27, ItemClassification.filler),
     "Life Insurance":        (BASE_ID + 0x28, ItemClassification.filler),
+    "Small Coin Bundle":     (BASE_ID + 0x29, ItemClassification.filler),
+    "Large Coin Bundle":     (BASE_ID + 0x2A, ItemClassification.filler),
 
     # --- Traps ---
     "Time Drain":            (BASE_ID + 0x31, ItemClassification.trap),  # -50 seconds from level timer
@@ -125,7 +127,9 @@ ITEM_TABLE: dict[str, tuple[int, ItemClassification]] = {
 LOCAL_BLOCKSANITY_FILLER_ITEMS: tuple[str, ...] = (
     "1-Up Mushroom",
     "3-Up Moon",
+    "Small Coin Bundle",
     "Coin Bundle",
+    "Large Coin Bundle",
     "Time Capsule",
     "Starman Lite",
     "Trap Shield",
@@ -138,12 +142,14 @@ LOCAL_BLOCKSANITY_FILLER_ITEMS: tuple[str, ...] = (
 # Power-Ups and small resource bonuses.
 FILLER_ITEM_WEIGHTS: dict[str, int] = {
     "Mushroom": 8,
-    "1-Up Mushroom": 8,
+    "1-Up Mushroom": 2,
     "Fire Flower": 6,
-    "Coin Bundle": 6,
+    "Small Coin Bundle": 5,
+    "Coin Bundle": 4,
+    "Large Coin Bundle": 3,
     "Blue Shell": 5,
-    "Time Capsule": 5,
-    "Starman Lite": 5,
+    "Time Capsule": 4,
+    "Starman Lite": 4,
     "Mini Mushroom": 3,
     "Mega Mushroom": 2,
     "Starman Buff": 2,
@@ -257,7 +263,9 @@ USEFUL_ITEM_NAMES: tuple[str, ...] = (
 FILLER_ITEM_NAMES: tuple[str, ...] = (
     "1-Up Mushroom",
     "3-Up Moon",
+    "Small Coin Bundle",
     "Coin Bundle",
+    "Large Coin Bundle",
     "Nothing",
     "Time Capsule",
     "Starman Lite",

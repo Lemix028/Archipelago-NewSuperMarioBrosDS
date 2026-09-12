@@ -146,9 +146,34 @@ class TestBalancingDefaults(NSMBDSTestBase):
         )
 
     def test_strong_filler_items_are_weighted_below_common_items(self) -> None:
-        self.assertLess(FILLER_ITEM_WEIGHTS["3-Up Moon"], FILLER_ITEM_WEIGHTS["1-Up Mushroom"])
+        self.assertLess(FILLER_ITEM_WEIGHTS["3-Up Moon"], FILLER_ITEM_WEIGHTS["Small Coin Bundle"])
         self.assertLess(FILLER_ITEM_WEIGHTS["Trap Shield"], FILLER_ITEM_WEIGHTS["Mushroom"])
         self.assertLess(FILLER_ITEM_WEIGHTS["Life Insurance"], FILLER_ITEM_WEIGHTS["Coin Bundle"])
+
+    def test_filler_item_weights(self) -> None:
+        self.assertEqual(
+            {
+                name: FILLER_ITEM_WEIGHTS[name]
+                for name in (
+                    "Small Coin Bundle", "Coin Bundle", "Large Coin Bundle",
+                    "Time Capsule", "Starman Lite", "Trap Shield",
+                    "Small Care Package", "Life Insurance", "1-Up Mushroom",
+                    "3-Up Moon",
+                )
+            },
+            {
+                "Small Coin Bundle": 5,
+                "Coin Bundle": 4,
+                "Large Coin Bundle": 3,
+                "Time Capsule": 4,
+                "Starman Lite": 4,
+                "Trap Shield": 2,
+                "Small Care Package": 2,
+                "Life Insurance": 1,
+                "1-Up Mushroom": 2,
+                "3-Up Moon": 1,
+            },
+        )
 
 
 class TestDeathLinkConfiguration(NSMBDSTestBase):

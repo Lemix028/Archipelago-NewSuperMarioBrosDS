@@ -35,6 +35,8 @@ local RECEIVED_ITEM_NAMES = {
     [0x20] = "1-UP MUSHROOM",
     [0x21] = "3-UP MOON",
     [0x22] = "COIN BUNDLE",
+    [0x29] = "SMALL COIN BUNDLE",
+    [0x2A] = "LARGE COIN BUNDLE",
     [0x40] = "GRASSLAND TOWER KEY",
     [0x41] = "GRASSLAND CASTLE KEY",
     [0x42] = "DESERT TOWER KEY",
@@ -217,6 +219,13 @@ function state.notification_state.text(notification)
     elseif notification.kind == state.notification_state.kind.goal_complete then
         return "GOAL COMPLETE!", "CONGRATULATIONS!", "green"
     elseif notification.kind == state.notification_state.kind.item_received then
+        if notification.detail == 0x29 then
+            return "SMALL COIN BUNDLE", "+10 COINS", "green"
+        elseif notification.detail == 0x22 then
+            return "COIN BUNDLE", "+25 COINS", "green"
+        elseif notification.detail == 0x2A then
+            return "LARGE COIN BUNDLE", "+50 COINS", "green"
+        end
         local item_name = RECEIVED_ITEM_NAMES[notification.detail]
         if item_name == nil and notification.detail >= 0x51
             and notification.detail <= 0x70 then

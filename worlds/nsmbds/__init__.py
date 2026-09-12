@@ -397,7 +397,8 @@ class NSMBDSWorld(World):
                 if loc_id in BLOCKSANITY_LOCATION_IDS or is_bonus_area:
                     active_block_locations.append(location)
 
-        # Apply Blocksanity global check percentage & round-robin distribution with W6-2 Bonus sub-cap (max 16)
+        # Select global Blocksanity checks uniformly across the complete eligible
+        # pool, while retaining the W6-2 Bonus Area sub-cap (max 16).
         if active_block_locations:
             percentage = int(getattr(self.options.blocksanity_global_check_percentage, "value", self.options.blocksanity_global_check_percentage))
             total_blocks = len(active_block_locations)
@@ -420,22 +421,7 @@ class NSMBDSWorld(World):
             candidates = normal_block_locs + bonus_area_global_candidates
 
             if global_target_count < len(candidates):
-                by_stage: dict[str, list[NSMBDSLocation]] = {}
-                for loc in candidates:
-                    stage_prefix = loc.name.split(" Block")[0].split(" Flying")[0]
-                    by_stage.setdefault(stage_prefix, []).append(loc)
-                for locs in by_stage.values():
-                    self.random.shuffle(locs)
-
-                global_selected: set[NSMBDSLocation] = set()
-                stages = sorted(by_stage.keys())
-                stage_idx = 0
-                while len(global_selected) < global_target_count and any(by_stage.values()):
-                    stage = stages[stage_idx % len(stages)]
-                    if by_stage[stage]:
-                        global_selected.add(by_stage[stage].pop(0))
-                    stage_idx += 1
-
+                global_selected = set(self.random.sample(candidates, global_target_count))
                 for loc in candidates:
                     if loc not in global_selected:
                         loc.progress_type = LocationProgressType.EXCLUDED

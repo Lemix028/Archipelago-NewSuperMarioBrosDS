@@ -44,7 +44,9 @@ LIFE_ITEMS = {
 }
 
 COIN_ITEMS = {
-    "Coin Bundle": 50,
+    "Small Coin Bundle": 10,
+    "Coin Bundle": 25,
+    "Large Coin Bundle": 50,
 }
 
 MAX_NEW_ITEMS_PER_POLL = 8
@@ -54,7 +56,8 @@ RECEIVED_NOTIFICATION_ITEM_IDS = frozenset(
     if item_name != "Nothing"
     and (
         int(classification) & 0b0011
-        or item_name in {"1-Up Mushroom", "3-Up Moon", "Coin Bundle"}
+        or item_name in LIFE_ITEMS
+        or item_name in COIN_ITEMS
     )
 )
 
