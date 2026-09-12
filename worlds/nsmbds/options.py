@@ -176,13 +176,16 @@ class AdvancedLocationItemPlacement(Choice):
 
 class LevelRandomization(Choice):
     """
-    [Alpha] Randomize which compatible course is loaded by each overworld level slot.
+    [Alpha preview]
+    This feature is still in development and may cause unexpected behavior.
+    Logic not fully tested; use at your own risk. Hammer Bros and red flying ? 
+    blocks can be broken by level randomization. Poptracker not supported yet.
 
     off:           Keep every course in its vanilla slot. (Default)
-    global:        Shuffle courses across all eight worlds.
-    within_world:  Shuffle courses only among compatible slots in the same world.
+    global:        Shuffle level across all eight worlds.
+    within_world:  Shuffle level only among compatible slots in the same world.
 
-    Secret-exit courses, Towers, Castles, and normal courses are separate pools.
+    Secret-exit level, Towers, Castles, and normal level are separate pools.
     World 8-Bowser's Castle always remains fixed.
     """
     display_name = "[Alpha] Level Randomization"

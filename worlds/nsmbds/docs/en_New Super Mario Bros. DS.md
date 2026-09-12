@@ -9,13 +9,8 @@ may be found anywhere in the multiworld.
 
 For installation and launch instructions, see the [Setup Guide](setup_en.md).
 
-> **Alpha:** Crashes and fatal errors are considered unlikely. Known types of
-> alpha issues include severe FPS drops in some levels, individual features or
-> checks no longer working, and location or item tracking unexpectedly
-> stopping. Seeds may also contain incorrect or missing logic requirements,
-> especially around Power-Up Permits and locations that need a specific
-> character form. If tracking stops, pause the game and verify the client and
-> BizHawk Lua connection before continuing.
+> **Unstable:** This unstable-release may contain severe performance, tracking,
+> feature, or logic issues. Report reproducible issues.
 
 ## What is randomized?
 
