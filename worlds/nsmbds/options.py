@@ -5,7 +5,7 @@ Player-facing settings exposed in the Archipelago YAML configuration file.
 
 from dataclasses import dataclass
 
-from Options import Choice, DeathLink, OptionSet, PerGameCommonOptions, Range, Toggle
+from Options import Choice, DeathLink, OptionGroup, OptionSet, PerGameCommonOptions, Range, Toggle
 
 from .locations import ACTIVE_STAR_COIN_COUNT
 
@@ -587,3 +587,58 @@ class NSMBDSOptions(PerGameCommonOptions):
     mario_palette:                        MarioPalette
     luigi_palette:                        LuigiPalette
     secondary_screen_background:          SecondaryScreenBackground
+
+
+NSMBDS_OPTION_GROUPS = [
+    OptionGroup("Goal Settings", [
+        Goal,
+        RequiredStarCoins,
+    ]),
+    OptionGroup("Location Checks", [
+        RedCoinChecks,
+        OneUpBlockChecks,
+        OneUpBlockItemPlacement,
+        Blocksanity,
+        BlocksanityItemPlacement,
+        BlocksanityGlobalCheckPercentage,
+        WorldSixTwoBonusArea,
+        SecretExitChecks,
+        ToadHouseChecks,
+        AdvancedLocationItemPlacement,
+    ]),
+    OptionGroup("Overworld & Progression", [
+        LevelRandomization,
+        StarCoinGateMode,
+        TowerCastleKeys,
+        SecretExitShortcutLogic,
+        SecretExitWorldUnlockLogic,
+        CannonRouteLogic,
+        LicenseMiniMushroom,
+        LicenseBlueShell,
+        LicenseMegaMushroom,
+        LicenseMushroom,
+        LicenseFireFlower,
+        LicenseTouchscreenPocket,
+    ]),
+    OptionGroup("Filler Items", [
+        FillerItems,
+    ]),
+    OptionGroup("Traps", [
+        TrapPercentage,
+        Traps,
+        BonkTrapCanKill,
+    ]),
+    OptionGroup("Death Link", [
+        DeathLink,
+        DeathLinkGracePercentage,
+        DeathLinkCooldownSeconds,
+        DeathLinkEffect,
+        DeathLinkRandomEffects,
+        DeathLinkTriggersOnInsuredDeath,
+    ]),
+    OptionGroup("Cosmetics", [
+        MarioPalette,
+        LuigiPalette,
+        SecondaryScreenBackground,
+    ]),
+]
