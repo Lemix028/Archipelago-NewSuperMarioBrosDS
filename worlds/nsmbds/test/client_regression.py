@@ -2296,6 +2296,7 @@ async def test_bonus_mailbox_initialization() -> None:
         (ram_addresses.ADDR_AP_TRAP_SHIELD_COUNT, [0], ram_addresses.MEMORY_DOMAIN),
         (ram_addresses.ADDR_AP_LIFE_INSURANCE_COUNT, [0], ram_addresses.MEMORY_DOMAIN),
         (ram_addresses.ADDR_AP_INSURED_DEATH_SEQUENCE, [0], ram_addresses.MEMORY_DOMAIN),
+        (ram_addresses.ADDR_AP_RETURN_TO_MAP_DEATH_SEQUENCE, [0], ram_addresses.MEMORY_DOMAIN),
         (ram_addresses.ADDR_AP_NOTIFICATION_SEQUENCE, [0], ram_addresses.MEMORY_DOMAIN),
         (ram_addresses.ADDR_AP_NOTIFICATION_TYPE, [0], ram_addresses.MEMORY_DOMAIN),
         (ram_addresses.ADDR_AP_NOTIFICATION_DETAIL, [0], ram_addresses.MEMORY_DOMAIN),
@@ -2438,6 +2439,7 @@ async def test_insured_death_still_sends_death_link() -> None:
             bytes([0]),
             bytes([0]),
             bytes([6]),
+            bytes([0]),
             struct.pack("<I", 0),
         ]
 
@@ -2462,12 +2464,13 @@ async def test_insured_death_still_sends_death_link() -> None:
 async def test_return_to_map_does_not_send_death_link() -> None:
     sent_deaths: list[str] = []
     states = iter((
-        (3, 100, ram_addresses.STAGE_EXIT_RETURN_TO_MAP_MASK),
-        (2, 100, 0),
+        (3, 100, 0, ram_addresses.STAGE_EXIT_RETURN_TO_MAP_MASK),
+        (3, 99, 0, 0),
+        (2, 99, 1, 0),
     ))
 
     async def fake_read(_bizhawk_ctx, _read_requests):
-        lives, timer_seconds, exit_flags = next(states)
+        lives, timer_seconds, return_sequence, exit_flags = next(states)
         return [
             bytes([lives]),
             struct.pack("<I", timer_seconds * ram_addresses.TIMER_UNITS_PER_SECOND),
@@ -2475,6 +2478,7 @@ async def test_return_to_map_does_not_send_death_link() -> None:
             bytes([0]),
             bytes([0]),
             bytes([0]),
+            bytes([return_sequence]),
             struct.pack("<I", exit_flags),
         ]
 
@@ -2488,6 +2492,7 @@ async def test_return_to_map_does_not_send_death_link() -> None:
         sent_deaths.append(message)
 
     context.send_death = fake_send_death
+    await client._handle_death_link(context)
     await client._handle_death_link(context)
     await client._handle_death_link(context)
     check(

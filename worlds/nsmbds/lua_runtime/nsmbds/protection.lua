@@ -9,6 +9,13 @@ local constants = require("nsmbds.constants")
 local state = require("nsmbds.state")
 local context = state.context
 
+local function publish_return_to_map_death()
+    local address = addresses.ADDR_AP_RETURN_TO_MAP_DEATH_SEQUENCE
+    local sequence = _G.memory.readbyte(address)
+    if sequence == nil or sequence < 0 or sequence > 255 then sequence = 0 end
+    _G.memory.writebyte(address, (sequence + 1) % 256)
+end
+
 function M.poll_life_insurance()
     if context.life_insurance_write_guard then return end
 
@@ -24,6 +31,7 @@ function M.poll_life_insurance()
     -- Life Insurance or publish an insured-death event.
     local exit_flags = _G.memory.readbyte(addresses.ADDR_STAGE_EXIT_FLAGS)
     if math.floor(exit_flags / constants.STAGE_EXIT_RETURN_TO_MAP_MASK) % 2 == 1 then
+        publish_return_to_map_death()
         context.last_observed_lives = current
         return
     end

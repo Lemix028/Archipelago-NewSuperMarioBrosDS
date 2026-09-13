@@ -14,6 +14,7 @@ from ...data.ram_addresses import (
     ADDR_AP_NOTIFICATION_DETAIL,
     ADDR_AP_NOTIFICATION_SEQUENCE,
     ADDR_AP_NOTIFICATION_TYPE,
+    ADDR_AP_RETURN_TO_MAP_DEATH_SEQUENCE,
     ADDR_AP_TRAP_SHIELD_COUNT,
     ADDR_COINS,
     ADDR_LIVES,
@@ -162,6 +163,7 @@ class BuffHandlingMixin:
             (ADDR_AP_TRAP_SHIELD_COUNT, [0], MEMORY_DOMAIN),
             (ADDR_AP_LIFE_INSURANCE_COUNT, [0], MEMORY_DOMAIN),
             (ADDR_AP_INSURED_DEATH_SEQUENCE, [0], MEMORY_DOMAIN),
+            (ADDR_AP_RETURN_TO_MAP_DEATH_SEQUENCE, [0], MEMORY_DOMAIN),
             (ADDR_AP_NOTIFICATION_SEQUENCE, [0], MEMORY_DOMAIN),
             (ADDR_AP_NOTIFICATION_TYPE, [0], MEMORY_DOMAIN),
             (ADDR_AP_NOTIFICATION_DETAIL, [0], MEMORY_DOMAIN),
@@ -193,6 +195,7 @@ class BuffHandlingMixin:
         self._pending_trap_shields = 0
         self._pending_life_insurance = 0
         self._last_insured_death_sequence = 0
+        self._last_return_to_map_death_sequence = 0
         self._pending_ap_notifications.clear()
         self._bonus_mailbox_needs_reset = False
         logger.info("Initialized Trap Shield and Life Insurance state for this AP session.")

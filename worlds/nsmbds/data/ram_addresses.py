@@ -68,6 +68,10 @@ ADDR_AP_TRAP_TRIGGER = 0x003FFF00  # 1 byte, uint8
 ADDR_AP_TRAP_SHIELD_COUNT = 0x00002FEA       # system 0x02002FEA, 1 byte
 ADDR_AP_LIFE_INSURANCE_COUNT = 0x00002FEB    # system 0x02002FEB, 1 byte
 ADDR_AP_INSURED_DEATH_SEQUENCE = 0x00002FEC  # system 0x02002FEC, 1 byte
+# Lua increments this sticky sequence when Return to Map actually lowers the
+# life counter. It remains observable after the game's transient exit bit has
+# disappeared and after Overlay 8 replaces the active course overlay.
+ADDR_AP_RETURN_TO_MAP_DEATH_SEQUENCE = 0x00002FF7  # system 0x02002FF7, 1 byte
 
 # Protection HUD readiness and the client-to-Lua notification mailbox. Two
 # magic bytes prevent uninitialized high-RAM contents from appearing as valid

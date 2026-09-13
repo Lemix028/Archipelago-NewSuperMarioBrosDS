@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from ...data.ram_addresses import (
     ADDR_AP_INSURED_DEATH_SEQUENCE,
     ADDR_AP_LIFE_INSURANCE_COUNT,
+    ADDR_AP_RETURN_TO_MAP_DEATH_SEQUENCE,
     ADDR_AP_TRAP_SHIELD_COUNT,
     ADDR_AP_TRAP_TRIGGER,
     ADDR_COINS,
@@ -196,7 +197,7 @@ class DeathLinkMixin:
     async def _read_lives_and_timer(
         self,
         ctx: BizHawkClientContext,
-    ) -> tuple[int, int, int, int, int, int, int] | None:
+    ) -> tuple[int, int, int, int, int, int, int, int] | None:
         """Read death state plus Lua-visible protection charges."""
         from worlds._bizhawk import read
 
@@ -210,13 +211,14 @@ class DeathLinkMixin:
                     (ADDR_AP_TRAP_SHIELD_COUNT, 1, MEMORY_DOMAIN),
                     (ADDR_AP_LIFE_INSURANCE_COUNT, 1, MEMORY_DOMAIN),
                     (ADDR_AP_INSURED_DEATH_SEQUENCE, 1, MEMORY_DOMAIN),
+                    (ADDR_AP_RETURN_TO_MAP_DEATH_SEQUENCE, 1, MEMORY_DOMAIN),
                     (ADDR_STAGE_EXIT_FLAGS, 4, MEMORY_DOMAIN),
                 ],
             )
         except Exception:
             logger.exception("Failed to read NSMBDS Death Link state.")
             return None
-        if len(result) != 7 or [len(value) for value in result] != [1, 4, 1, 1, 1, 1, 4]:
+        if len(result) != 8 or [len(value) for value in result] != [1, 4, 1, 1, 1, 1, 1, 4]:
             logger.warning("Received invalid NSMBDS Death Link state data.")
             return None
         return (
@@ -226,7 +228,8 @@ class DeathLinkMixin:
             result[3][0],
             result[4][0],
             result[5][0],
-            struct.unpack("<I", bytes(result[6]))[0],
+            result[6][0],
+            struct.unpack("<I", bytes(result[7]))[0],
         )
 
     async def _handle_death_link(self, ctx: BizHawkClientContext) -> None:
@@ -234,7 +237,16 @@ class DeathLinkMixin:
         state = await self._read_lives_and_timer(ctx)
         if state is None:
             return
-        lives, timer, powerup, shield_count, insurance_count, insured_death_sequence, exit_flags = state
+        (
+            lives,
+            timer,
+            powerup,
+            shield_count,
+            insurance_count,
+            insured_death_sequence,
+            return_to_map_death_sequence,
+            exit_flags,
+        ) = state
         self._pending_trap_shields = shield_count
         self._pending_life_insurance = insurance_count
         insured_death = (
@@ -242,16 +254,21 @@ class DeathLinkMixin:
             and insured_death_sequence != self._last_insured_death_sequence
         )
         self._last_insured_death_sequence = insured_death_sequence
+        return_to_map_death = (
+            self._last_return_to_map_death_sequence is not None
+            and return_to_map_death_sequence != self._last_return_to_map_death_sequence
+        )
+        self._last_return_to_map_death_sequence = return_to_map_death_sequence
         timer_is_counting = self._timer_is_counting(self._last_timer, timer)
         self._last_timer = timer
 
         return_to_map_active = bool(exit_flags & STAGE_EXIT_RETURN_TO_MAP_MASK)
-        if return_to_map_active:
-            self._return_to_map_pending = True
-        elif timer_is_counting:
-            # A newly active level clears a stale marker left by an earlier
-            # Return-to-Map transition.
-            self._return_to_map_pending = False
+        # The direct bit covers a same-poll life loss. The sticky Lua sequence
+        # covers the common case where the 500 ms client poll misses that bit.
+        # This is deliberately a snapshot, not a latch: the sequence is emitted
+        # only for an actual Return-to-Map life loss, so stale exits cannot hide
+        # a later real death.
+        self._return_to_map_pending = return_to_map_active or return_to_map_death
 
         if timer_is_counting:
             self._in_level_grace_polls = 16

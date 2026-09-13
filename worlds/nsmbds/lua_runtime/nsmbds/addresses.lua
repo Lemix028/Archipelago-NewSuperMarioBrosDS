@@ -21,6 +21,9 @@ function M.resolve()
     M.ADDR_AP_TRAP_SHIELD_COUNT = memory.to_domain_addr(constants.SYS_AP_TRAP_SHIELD_COUNT)
     M.ADDR_AP_LIFE_INSURANCE_COUNT = memory.to_domain_addr(constants.SYS_AP_LIFE_INSURANCE_COUNT)
     M.ADDR_AP_INSURED_DEATH_SEQUENCE = memory.to_domain_addr(constants.SYS_AP_INSURED_DEATH_SEQUENCE)
+    M.ADDR_AP_RETURN_TO_MAP_DEATH_SEQUENCE = memory.to_domain_addr(
+        constants.SYS_AP_RETURN_TO_MAP_DEATH_SEQUENCE
+    )
 
     state.notification_state.addr.magic_1 = memory.to_domain_addr(state.notification_state.sys.magic_1)
     state.notification_state.addr.magic_2 = memory.to_domain_addr(state.notification_state.sys.magic_2)

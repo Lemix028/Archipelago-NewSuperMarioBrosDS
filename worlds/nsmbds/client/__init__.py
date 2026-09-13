@@ -160,6 +160,7 @@ class NSMBDSClient(
         self._pending_life_insurance = 0
         self._pending_ap_notifications: list[tuple[int, int]] = []
         self._last_insured_death_sequence: int | None = None
+        self._last_return_to_map_death_sequence: int | None = None
         self._bonus_mailbox_needs_reset = True
         self._pending_hyper_speed_traps = 0
         self._pending_slow_speed_traps = 0
@@ -601,6 +602,7 @@ class NSMBDSClient(
         self._pending_life_insurance = 0
         self._pending_ap_notifications.clear()
         self._last_insured_death_sequence = None
+        self._last_return_to_map_death_sequence = None
         self._bonus_mailbox_needs_reset = True
         self._pending_hyper_speed_traps = 0
         self._pending_slow_speed_traps = 0

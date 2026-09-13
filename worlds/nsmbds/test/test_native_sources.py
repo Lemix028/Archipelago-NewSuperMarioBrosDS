@@ -10,12 +10,23 @@ from ..rom import BASE_ROM_MD5, BASE_ROM_SHA256, BASE_ROM_SIZE
 from ..data.ram_addresses import (
     ADDR_ACTIVE_STAR_COIN_FLAGS,
     ADDR_LEVEL_DATA_BASE,
+    ADDR_AP_RETURN_TO_MAP_DEATH_SEQUENCE,
     ADDR_STAR_COIN_STATE,
     LEVEL_DATA_WORLD_STRIDE,
 )
 
 
 class TestNativeHookSources(unittest.TestCase):
+    def test_return_to_map_death_is_published_to_a_sticky_sequence(self) -> None:
+        runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime" / "nsmbds"
+        constants = (runtime_root / "constants.lua").read_text(encoding="utf-8")
+        protection = (runtime_root / "protection.lua").read_text(encoding="utf-8")
+
+        self.assertIn("M.SYS_AP_RETURN_TO_MAP_DEATH_SEQUENCE = 0x02002FF7", constants)
+        self.assertIn("publish_return_to_map_death()", protection)
+        self.assertIn("(sequence + 1) % 256", protection)
+        self.assertEqual(ADDR_AP_RETURN_TO_MAP_DEATH_SEQUENCE, 0x00002FF7)
+
     def test_star_coin_pickups_are_committed_before_the_goal(self) -> None:
         runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime"
         orchestrator = (runtime_root / "nsmbds_sideloading.lua").read_text(encoding="utf-8")
