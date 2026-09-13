@@ -179,7 +179,7 @@ class LevelRandomization(Choice):
     [Alpha preview]
     This feature is still in development and may cause unexpected behavior.
     Logic not fully tested; use at your own risk. Hammer Bros and red flying ?
-    blocks can be broken by level randomization. Poptracker not supported yet.
+    blocks can be broken by level randomization.
 
     off:           Keep every course in its vanilla slot. (Default)
     global:        Shuffle level across all eight worlds.
