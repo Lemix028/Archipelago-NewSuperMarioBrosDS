@@ -34,10 +34,13 @@ function M.resolve()
         memory.to_domain_addr(constants.SYS_RED_COIN_COUNTERS[2]),
     }
     M.ADDR_STAGE_EXIT_FLAGS = memory.to_domain_addr(constants.SYS_STAGE_EXIT_FLAGS)
+    M.ADDR_ACTIVE_STAR_COIN_FLAGS = memory.to_domain_addr(constants.SYS_ACTIVE_STAR_COIN_FLAGS)
     M.ADDR_CURRENT_WORLD_MAP = memory.to_domain_addr(constants.SYS_CURRENT_WORLD_MAP)
     M.ADDR_CURRENT_COURSE_LEVEL = memory.to_domain_addr(constants.SYS_CURRENT_COURSE_LEVEL)
     M.ADDR_CURRENT_COURSE_AREA = memory.to_domain_addr(constants.SYS_CURRENT_COURSE_AREA)
     M.ADDR_OBJECT_LIST_HEAD = memory.to_domain_addr(constants.SYS_OBJECT_LIST_HEAD)
+    M.ADDR_STAR_COIN_STATE = memory.to_domain_addr(constants.SYS_STAR_COIN_STATE)
+    M.ADDR_LEVEL_DATA_BASE = memory.to_domain_addr(constants.SYS_LEVEL_DATA_BASE)
     M.ADDR_AP_RED_COIN_EVENT_SEQUENCE = memory.to_domain_addr(constants.SYS_AP_RED_COIN_EVENT_SEQUENCE)
     M.ADDR_AP_RED_COIN_EVENT_TYPE = memory.to_domain_addr(constants.SYS_AP_RED_COIN_EVENT_TYPE)
     M.ADDR_AP_RED_COIN_EVENT_WORLD = memory.to_domain_addr(constants.SYS_AP_RED_COIN_EVENT_WORLD)

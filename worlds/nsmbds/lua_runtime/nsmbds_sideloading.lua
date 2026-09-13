@@ -20,6 +20,7 @@ local hooks = require("nsmbds.hooks")
 local blocksanity = require("nsmbds.blocksanity")
 local protection = require("nsmbds.protection")
 local red_coins = require("nsmbds.red_coins")
+local star_coins = require("nsmbds.star_coins")
 require("nsmbds.notifications")
 local hud = require("nsmbds.hud")
 local emulator_feed = require("nsmbds.emulator_feed")
@@ -198,6 +199,10 @@ local function sideloading_tick()
             and state.input_trap_state.screen_flip_suspended then
             state.input_trap_state.resume_screen_flip()
         end
+        -- Vanilla normally commits these bits only after reaching a goal.
+        -- Persist them at pickup time so deaths and manual exits cannot erase
+        -- an Archipelago Star-Coin check.
+        pcall(star_coins.commit_active_pickups)
         -- Static blocks are produced by the patched ROM; no Execute hook.
         hooks.sync_head_bonk_execute_hook()
         red_coins.ensure_red_coin_write_hook()

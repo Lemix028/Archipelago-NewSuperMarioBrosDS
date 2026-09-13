@@ -244,6 +244,17 @@ W8_CASTLE_APPROACH_PATH_MASK = 0xC0
 #       Bit 7 (0x80): Level node appears on world map (level unlocked)
 ADDR_LEVEL_DATA_BASE = 0x00088C4C
 
+# In-level Star-Coin state. Vanilla accumulates bits 0..2 in the active byte,
+# then reads the slot world/level from STAR_COIN_STATE and copies those bits to
+# ADDR_LEVEL_DATA_BASE only when the course goal completes. The Lua runtime
+# performs the same monotone merge on every pickup so death/exit cannot roll it
+# back before the Archipelago client observes the persistent location flag.
+ADDR_ACTIVE_STAR_COIN_FLAGS = 0x00085A2C
+ADDR_STAR_COIN_STATE = 0x00088BDC
+STAR_COIN_STATE_WORLD_OFFSET = 0x20
+STAR_COIN_STATE_LEVEL_OFFSET = 0x28
+LEVEL_DATA_WORLD_STRIDE = 25
+
 # The client also reads adjacent persistent world-map flags used by active
 # Secret Exit checks (e.g. 0x02088F39 at offset 0x2ED).
 LEVEL_AND_SECRET_FLAG_READ_SIZE = 0x300

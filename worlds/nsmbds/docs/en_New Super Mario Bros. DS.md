@@ -27,8 +27,10 @@ With the standard location settings, a seed includes:
 
 Most categories except level goals and Star Coins can be disabled in your
 player options. **Star Coins are always included.** Picking up a Star Coin in a
-level sends a check, while the Star Coin item found for you becomes currency
-for overworld signs and may count toward your goal.
+level immediately commits it to that level's save data and sends a check. It
+therefore stays collected even if you die or return to the map before reaching
+the goal. The Star Coin item found for you becomes currency for overworld signs
+and may count toward your goal.
 
 ### Blocksanity
 

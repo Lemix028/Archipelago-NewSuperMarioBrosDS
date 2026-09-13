@@ -7,9 +7,33 @@ import unittest
 from pathlib import Path
 
 from ..rom import BASE_ROM_MD5, BASE_ROM_SHA256, BASE_ROM_SIZE
+from ..data.ram_addresses import (
+    ADDR_ACTIVE_STAR_COIN_FLAGS,
+    ADDR_LEVEL_DATA_BASE,
+    ADDR_STAR_COIN_STATE,
+    LEVEL_DATA_WORLD_STRIDE,
+)
 
 
 class TestNativeHookSources(unittest.TestCase):
+    def test_star_coin_pickups_are_committed_before_the_goal(self) -> None:
+        runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime"
+        orchestrator = (runtime_root / "nsmbds_sideloading.lua").read_text(encoding="utf-8")
+        constants = (runtime_root / "nsmbds" / "constants.lua").read_text(encoding="utf-8")
+        star_coins = (runtime_root / "nsmbds" / "star_coins.lua").read_text(encoding="utf-8")
+
+        self.assertIn('require("nsmbds.star_coins")', orchestrator)
+        self.assertIn("star_coins.commit_active_pickups", orchestrator)
+        self.assertIn("M.SYS_ACTIVE_STAR_COIN_FLAGS = 0x02085A2C", constants)
+        self.assertIn("M.SYS_STAR_COIN_STATE = 0x02088BDC", constants)
+        self.assertIn("M.SYS_LEVEL_DATA_BASE = 0x02088C4C", constants)
+        self.assertIn("world * constants.LEVEL_DATA_WORLD_STRIDE", star_coins)
+        self.assertIn("merge_star_coin_flags(saved, active)", star_coins)
+        self.assertEqual(ADDR_ACTIVE_STAR_COIN_FLAGS, 0x00085A2C)
+        self.assertEqual(ADDR_STAR_COIN_STATE, 0x00088BDC)
+        self.assertEqual(ADDR_LEVEL_DATA_BASE, 0x00088C4C)
+        self.assertEqual(LEVEL_DATA_WORLD_STRIDE, 25)
+
     def test_death_link_notifications_use_one_unified_dl_popup(self) -> None:
         runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime" / "nsmbds"
         state_source = (runtime_root / "state.lua").read_text(encoding="utf-8")

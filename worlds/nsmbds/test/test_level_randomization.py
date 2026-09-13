@@ -126,9 +126,14 @@ class TestLevelMapping(TestCase):
             "World 1-1 Goal", bytes(goal_data), location_ram_map=ram_map
         ))
         coin_data = bytearray(slot.ram_offset + 1)
-        coin_data[slot.ram_offset] = 0x82
+        coin_data[slot.ram_offset] = 0x02
         self.assertTrue(LocationTrackingMixin._is_location_completed(
             "World 1-1 Star Coin 2", bytes(coin_data), location_ram_map=ram_map
+        ))
+
+        goal_data[goal_offset] = 0x10
+        self.assertFalse(LocationTrackingMixin._is_location_completed(
+            "World 1-1 Goal", bytes(goal_data), location_ram_map=ram_map
         ))
 
     def test_randomized_boss_uses_the_host_slot_goal(self) -> None:

@@ -98,6 +98,12 @@ class LocationTrackingMixin:
 
         byte_offset, bit_mask = location_ram_map[location_name]
         flag_byte = game_data[byte_offset]
+        # Star-Coin pickups are committed to the slot byte while the course is
+        # still active. At that point the coin bit is authoritative even when
+        # Vanilla has not populated/preserved the separate node-active bit.
+        # Other location types retain the 0x80 guard against stale map bytes.
+        if " Star Coin " in location_name:
+            return (flag_byte & bit_mask) == bit_mask
         return bool(flag_byte & 0x80 and (flag_byte & bit_mask) == bit_mask)
 
     async def _detect_and_send_locations(
