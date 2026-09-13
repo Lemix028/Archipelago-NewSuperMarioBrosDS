@@ -24,6 +24,51 @@ local camera_held_flag = 0
 local camera_pressed_flag = 0
 local camera_filters_pressed = false
 
+function M.can_apply_gameplay_traps()
+    if not context.gameplay_player_active then
+        context.gameplay_trap_effects_enabled = false
+        return false
+    end
+
+    local freeze_ok, freeze_flag = pcall(
+        _G.memory.readbyte,
+        addresses.ADDR_STAGE_FREEZE_FLAG
+    )
+    local menu_ok, menu_open = pcall(
+        _G.memory.readbyte,
+        addresses.ADDR_STAGE_MENU_OPEN
+    )
+    local enabled = freeze_ok
+        and menu_ok
+        and freeze_flag == 0
+        and menu_open == 0
+    context.gameplay_trap_effects_enabled = enabled
+    return enabled
+end
+
+function M.update_gameplay_state(has_active_player)
+    context.gameplay_player_active = has_active_player == true
+    local enabled = M.can_apply_gameplay_traps()
+
+    -- These two Traps modify emulator/video state persistently, so merely
+    -- skipping their per-frame update is insufficient while gameplay is frozen.
+    if context.active_mode == "crazy_pixels" then
+        if enabled then
+            state.input_trap_state.resume_crazy_pixels()
+        else
+            state.input_trap_state.suspend_crazy_pixels()
+        end
+    elseif context.active_mode == "screen_flip" then
+        if enabled then
+            state.input_trap_state.resume_screen_flip()
+        else
+            state.input_trap_state.suspend_screen_flip()
+        end
+    end
+
+    return enabled
+end
+
 local function clear_byte_flag(value, flag)
     if math.floor(value / flag) % 2 == 1 then
         return value - flag
@@ -297,7 +342,7 @@ local function apply_no_turnaround_at(address)
 end
 
 local function apply_input_filter_at(address)
-    if context.trap_remaining_frames <= 0 then
+    if context.trap_remaining_frames <= 0 or not M.can_apply_gameplay_traps() then
         return
     end
 
@@ -339,12 +384,12 @@ end
 -- Camera Traps keep the exact two execute-hook addresses used by the generic
 -- input filter, but skip mode dispatch and per-callback pulse calculations.
 local function apply_camera_general_input_filter()
-    if context.trap_remaining_frames <= 0 then return end
+    if context.trap_remaining_frames <= 0 or not M.can_apply_gameplay_traps() then return end
     set_camera_shoulder_flag_at(addresses.ADDR_PRESSED_KEYS, camera_held_flag)
 end
 
 local function apply_camera_button_input_filter()
-    if context.trap_remaining_frames <= 0 then return end
+    if context.trap_remaining_frames <= 0 or not M.can_apply_gameplay_traps() then return end
     set_camera_shoulder_flag_at(addresses.ADDR_BUTTONS_HELD, camera_held_flag)
     if camera_filters_pressed then
         set_camera_shoulder_flag_at(addresses.ADDR_BUTTONS_PRESSED, camera_pressed_flag)
@@ -459,6 +504,9 @@ end
 
 function M.update_input_filter_hooks(has_active_player)
     local mode = context.active_mode
+    -- Keep hooks installed while gameplay is suspended. The callbacks use the
+    -- central live gate, so pause input remains untouched and resume is caught
+    -- from the first gameplay input write.
     local needs_input_filter = has_active_player
         and context.trap_remaining_frames > 0
         and (mode == "no_jump"
@@ -488,6 +536,7 @@ function M.apply_frame_start_input_filter()
     if memory_input_filter_hooks_initialized then return end
     local mode = context.active_mode
     if context.trap_remaining_frames <= 0
+        or not M.can_apply_gameplay_traps()
         or (mode ~= "no_jump"
             and mode ~= "camera_drift"
             and mode ~= "camera_sway"
@@ -583,7 +632,8 @@ function M.apply_frame_start_input_filter()
 end
 
 function M.poll_and_update_traps(has_active_player, trap_player)
-    if context.trap_remaining_frames == 0 and has_active_player then
+    local gameplay_trap_effects_enabled = M.update_gameplay_state(has_active_player)
+    if context.trap_remaining_frames == 0 and gameplay_trap_effects_enabled then
         local trigger_code = _G.memory.readbyte(addresses.ADDR_AP_TRAP_TRIGGER)
 
         if trigger_code == 1 then
@@ -683,7 +733,7 @@ function M.poll_and_update_traps(has_active_player, trap_player)
         end
     end
 
-    if context.trap_remaining_frames > 0 and has_active_player then
+    if context.trap_remaining_frames > 0 and gameplay_trap_effects_enabled then
         context.trap_remaining_frames = context.trap_remaining_frames - 1
         if trap_player then
             local mode = context.active_mode
@@ -974,7 +1024,7 @@ local function render_spotlight()
 end
 
 function state.input_trap_state.draw_visual_trap()
-    if not gui or not gui.drawBox then return end
+    if not gui or not gui.drawBox or not M.can_apply_gameplay_traps() then return end
 
     if context.active_mode == "screen_tint" then
         local color = state.input_trap_state.tint_colors[state.input_trap_state.tint_index]
@@ -999,6 +1049,7 @@ function state.input_trap_state.draw_visual_trap()
 end
 
 function state.input_trap_state.apply_action_damage(player)
+    if not M.can_apply_gameplay_traps() then return false end
     local frame = emu and emu.framecount and emu.framecount() or 0
     if frame - state.input_trap_state.last_action_damage_frame
         < state.input_trap_state.action_damage_cooldown then

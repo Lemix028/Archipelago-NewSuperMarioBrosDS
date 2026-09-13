@@ -287,6 +287,8 @@ ACTION_REPLAY_FULL_BYTE = 0xD7
 # The client resolves the slot through seed data before matching content areas
 # and coordinates. World indices are zero-based.
 # Stable selected-world byte retained while its course is running.
+ADDR_STAGE_FREEZE_FLAG = 0x000CA28C  # 1 byte, uint8; Stage::freezeFlag
+ADDR_STAGE_MENU_OPEN = 0x000CA870  # 1 byte, uint8; vanilla in-level pause menu
 ADDR_STAGE_EXIT_FLAGS = 0x00085A1C  # 4 bytes, uint32_le
 STAGE_EXIT_RETURN_TO_MAP_MASK = 0x08
 ADDR_CURRENT_COURSE_WORLD = 0x00088BFC  # 1 byte, uint8

@@ -103,6 +103,8 @@ M.context = {
     previous_frame_had_player = false,
     cached_player_object = nil,
     last_observer_frame = nil,
+    gameplay_player_active = false,
+    gameplay_trap_effects_enabled = false,
 }
 
 return M

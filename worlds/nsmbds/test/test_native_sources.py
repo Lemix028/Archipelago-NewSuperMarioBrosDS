@@ -11,6 +11,8 @@ from ..data.ram_addresses import (
     ADDR_ACTIVE_STAR_COIN_FLAGS,
     ADDR_LEVEL_DATA_BASE,
     ADDR_AP_RETURN_TO_MAP_DEATH_SEQUENCE,
+    ADDR_STAGE_FREEZE_FLAG,
+    ADDR_STAGE_MENU_OPEN,
     ADDR_STAR_COIN_STATE,
     LEVEL_DATA_WORLD_STRIDE,
 )
@@ -83,6 +85,35 @@ class TestNativeHookSources(unittest.TestCase):
         self.assertIn('context.active_mode == "no_turnaround"', source)
         self.assertIn('trigger_code == 32', source)
         self.assertIn('M.begin_timed_trap("no_turnaround", LONG_TRAP_FRAMES)', source)
+
+    def test_gameplay_traps_share_the_stage_freeze_gate(self) -> None:
+        runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime"
+        constants = (runtime_root / "nsmbds" / "constants.lua").read_text(encoding="utf-8")
+        addresses = (runtime_root / "nsmbds" / "addresses.lua").read_text(encoding="utf-8")
+        traps = (runtime_root / "nsmbds" / "traps.lua").read_text(encoding="utf-8")
+        orchestrator = (runtime_root / "nsmbds_sideloading.lua").read_text(encoding="utf-8")
+
+        self.assertEqual(ADDR_STAGE_FREEZE_FLAG, 0x000CA28C)
+        self.assertEqual(ADDR_STAGE_MENU_OPEN, 0x000CA870)
+        self.assertIn("M.SYS_STAGE_FREEZE_FLAG = 0x020CA28C", constants)
+        self.assertIn("M.SYS_STAGE_MENU_OPEN = 0x020CA870", constants)
+        self.assertIn("M.ADDR_STAGE_FREEZE_FLAG", addresses)
+        self.assertIn("M.ADDR_STAGE_MENU_OPEN", addresses)
+        self.assertIn("function M.can_apply_gameplay_traps()", traps)
+        self.assertIn("freeze_flag == 0", traps)
+        self.assertIn("menu_open == 0", traps)
+        self.assertIn("or not M.can_apply_gameplay_traps()", traps)
+        self.assertIn(
+            "context.trap_remaining_frames > 0 and gameplay_trap_effects_enabled",
+            traps,
+        )
+        self.assertIn("traps.update_gameplay_state(has_active_player)", orchestrator)
+
+        hook_update = traps[
+            traps.index("function M.update_input_filter_hooks"):
+            traps.index("function M.apply_frame_start_input_filter")
+        ]
+        self.assertIn("local needs_input_filter = has_active_player", hook_update)
 
     def test_powerup_pickpocket_notice_uses_trigger_33(self) -> None:
         runtime_path = (

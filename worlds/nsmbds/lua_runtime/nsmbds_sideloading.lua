@@ -155,6 +155,7 @@ local function sideloading_tick()
     context.previous_frame_had_player = has_active_player
     context.cached_player_object = player
     state.input_trap_state.active_player = player
+    traps.update_gameplay_state(has_active_player)
 
     if player ~= nil then
         state.input_trap_state.player_was_moving_up = _G.memory.read_s32_le(
@@ -191,14 +192,6 @@ local function sideloading_tick()
 
     -- Run observers and native hooks while Mario is in a level.
     if has_active_player then
-        if context.active_mode == "crazy_pixels"
-            and state.input_trap_state.crazy_pixels_suspended then
-            state.input_trap_state.resume_crazy_pixels()
-        end
-        if context.active_mode == "screen_flip"
-            and state.input_trap_state.screen_flip_suspended then
-            state.input_trap_state.resume_screen_flip()
-        end
         -- Vanilla normally commits these bits only after reaching a goal.
         -- Persist them at pickup time so deaths and manual exits cannot erase
         -- an Archipelago Star-Coin check.
@@ -211,12 +204,6 @@ local function sideloading_tick()
         pcall(blocksanity.finalize_ground_pound_capture)
     elseif had_player_last_frame then
         -- Mario left the level: stop gameplay-only effects and hooks.
-        if context.active_mode == "crazy_pixels" then
-            state.input_trap_state.suspend_crazy_pixels()
-        end
-        if context.active_mode == "screen_flip" then
-            state.input_trap_state.suspend_screen_flip()
-        end
         disable_gameplay_observer_hooks()
         blocksanity.reset_block_observer_state()
         if gui and gui.clearGraphics then gui.clearGraphics() end

@@ -27,6 +27,10 @@ M.SYS_AP_LIFE_INSURANCE_COUNT = 0x02002FEB
 M.SYS_AP_INSURED_DEATH_SEQUENCE = 0x02002FEC
 M.SYS_AP_RETURN_TO_MAP_DEATH_SEQUENCE = 0x02002FF7
 M.SYS_RED_COIN_COUNTERS = { 0x020CA2D4, 0x020CA2D5 }
+-- Stage::freezeFlag covers stage-controlled freezes. The vanilla in-level
+-- pause menu has its own flag and does not reliably set freezeFlag.
+M.SYS_STAGE_FREEZE_FLAG = 0x020CA28C
+M.SYS_STAGE_MENU_OPEN = 0x020CA870
 M.SYS_STAGE_EXIT_FLAGS = 0x02085A1C
 -- Vanilla accumulates the three Star-Coin pickup bits here while a course is
 -- active, then copies them into MainSave only during the goal sequence.
