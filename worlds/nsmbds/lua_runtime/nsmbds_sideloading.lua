@@ -239,6 +239,7 @@ local function sideloading_exit()
     pcall(state.input_trap_state.restore_screen_rotation)
     pcall(state.input_trap_state.suspend_crazy_pixels)
     pcall(disable_all_hooks)
+    pcall(star_coins.shutdown)
     pcall(emulator_feed.shutdown)
     if gui and gui.clearGraphics then gui.clearGraphics() end
 end

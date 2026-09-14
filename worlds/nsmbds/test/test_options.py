@@ -28,6 +28,7 @@ from ..options import (
     SecretExitChecks,
     SecretExitShortcutLogic,
     SecretExitWorldUnlockLogic,
+    StarCoinTracking,
     TrapPercentage,
     Traps,
     WorldSixTwoBonusArea,
@@ -105,6 +106,13 @@ class TestBalancingDefaults(NSMBDSTestBase):
         self.assertEqual(TrapPercentage.default, 15)
         self.assertEqual(SecondaryScreenBackground.default, 0)
         self.assertEqual(SecondaryScreenBackground.options["classic_overworld"], 6)
+        self.assertEqual(StarCoinTracking.default, StarCoinTracking.option_instant)
+
+    def test_star_coin_tracking_reaches_slot_data(self) -> None:
+        self.assertEqual(
+            self.world.fill_slot_data()["star_coin_tracking"],
+            StarCoinTracking.option_instant,
+        )
 
     def test_casual_defaults(self) -> None:
         self.assertEqual(OneUpBlockChecks.default, 0)

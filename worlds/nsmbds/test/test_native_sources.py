@@ -42,6 +42,11 @@ class TestNativeHookSources(unittest.TestCase):
         self.assertIn("M.SYS_LEVEL_DATA_BASE = 0x02088C4C", constants)
         self.assertIn("world * constants.LEVEL_DATA_WORLD_STRIDE", star_coins)
         self.assertIn("merge_star_coin_flags(saved, active)", star_coins)
+        self.assertIn("if not instant_tracking then return false end", star_coins)
+        self.assertIn("function M.configure(request)", star_coins)
+        self.assertIn('["NSMBDS_STAR_COIN_TRACKING"]', connector_source := (
+            runtime_root / "vendor" / "connector_bizhawk_generic.lua"
+        ).read_text(encoding="utf-8"))
         self.assertEqual(ADDR_ACTIVE_STAR_COIN_FLAGS, 0x00085A2C)
         self.assertEqual(ADDR_STAR_COIN_STATE, 0x00088BDC)
         self.assertEqual(ADDR_LEVEL_DATA_BASE, 0x00088C4C)

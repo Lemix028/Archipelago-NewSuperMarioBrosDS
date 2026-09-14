@@ -3917,6 +3917,40 @@ def test_block_resolution_never_selects_horizontal_neighbor() -> None:
     )
 
 
+async def test_star_coin_tracking_configuration() -> None:
+    requests = []
+    original_send_requests = fake_bizhawk.send_requests
+
+    async def fake_send_requests(_bizhawk_ctx, payload):
+        requests.extend(payload)
+        return [{
+            "type": "NSMBDS_STAR_COIN_TRACKING_RESPONSE",
+            "value": True,
+        }]
+
+    fake_bizhawk.send_requests = fake_send_requests
+    try:
+        client = client_module.NSMBDSClient()
+        context = FakeContext()
+        context.slot_data = {"star_coin_tracking": 0}
+        await client._sync_star_coin_tracking(context)
+        await client._sync_star_coin_tracking(context)
+
+        legacy_client = client_module.NSMBDSClient()
+        context.slot_data = {}
+        await legacy_client._sync_star_coin_tracking(context)
+    finally:
+        fake_bizhawk.send_requests = original_send_requests
+
+    check(
+        requests == [
+            {"type": "NSMBDS_STAR_COIN_TRACKING", "mode": 0},
+            {"type": "NSMBDS_STAR_COIN_TRACKING", "mode": 1},
+        ],
+        "Star Coin tracking mode is synchronized once and legacy seeds retain instant tracking",
+    )
+
+
 def main() -> None:
     tests = [
         test

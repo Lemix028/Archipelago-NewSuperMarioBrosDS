@@ -8,6 +8,14 @@ local constants = require("nsmbds.constants")
 local addresses = require("nsmbds.addresses")
 
 local STAR_COIN_BITS = { 0x01, 0x02, 0x04 }
+local instant_tracking = false
+
+function M.configure(request)
+    local mode = tonumber(request and request.mode)
+    if mode ~= 0 and mode ~= 1 then return false end
+    instant_tracking = mode == 1
+    return true
+end
 
 local function has_flag(value, flag)
     return math.floor(value / flag) % 2 >= 1
@@ -24,6 +32,8 @@ local function merge_star_coin_flags(saved, active)
 end
 
 function M.commit_active_pickups()
+    if not instant_tracking then return false end
+
     local ok_active, active = pcall(
         _G.memory.readbyte,
         addresses.ADDR_ACTIVE_STAR_COIN_FLAGS
@@ -63,6 +73,13 @@ function M.commit_active_pickups()
     return ok_write
 end
 
+function M.shutdown()
+    if _G.nsmbds_star_coin_tracking_configure == M.configure then
+        _G.nsmbds_star_coin_tracking_configure = nil
+    end
+end
+
 M.merge_star_coin_flags = merge_star_coin_flags
+_G.nsmbds_star_coin_tracking_configure = M.configure
 
 return M

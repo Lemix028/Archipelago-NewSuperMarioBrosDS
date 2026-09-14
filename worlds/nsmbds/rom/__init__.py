@@ -227,6 +227,7 @@ def write_patch_payload(world: "NSMBDSWorld", patch: NSMBDSProcedurePatch) -> No
         "license_fire_flower": bool(world.options.license_fire_flower.value),
         "license_touchscreen_pocket": bool(world.options.license_touchscreen_pocket.value),
         "star_coin_gate_mode": world.options.star_coin_gate_mode.value,
+        "star_coin_tracking": world.options.star_coin_tracking.value,
         "death_link": bool(world.options.death_link.value),
         "death_link_grace_percentage": world.options.death_link_grace_percentage.value,
         "death_link_cooldown_seconds": world.options.death_link_cooldown_seconds.value,

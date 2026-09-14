@@ -42,6 +42,27 @@ GATE_PURCHASE_COST = 5
 class LocationTrackingMixin:
     """Read RAM-backed locations and submit newly completed checks."""
 
+    async def _sync_star_coin_tracking(self, ctx: "BizHawkClientContext") -> None:
+        """Tell Lua whether pickups should be committed before level completion."""
+        mode = int((ctx.slot_data or {}).get("star_coin_tracking", 1))
+        if mode == getattr(self, "_star_coin_tracking_mode_sent", None):
+            return
+
+        from worlds._bizhawk import send_requests
+
+        responses = await send_requests(ctx.bizhawk_ctx, [{
+            "type": "NSMBDS_STAR_COIN_TRACKING",
+            "mode": mode,
+        }])
+        if (
+            len(responses) != 1
+            or responses[0].get("type") != "NSMBDS_STAR_COIN_TRACKING_RESPONSE"
+            or responses[0].get("value") is not True
+        ):
+            logger.warning("BizHawk rejected the Star Coin tracking mode; retrying next tick.")
+            return
+        self._star_coin_tracking_mode_sent = mode
+
     def _is_location_active(
         self, ctx: "BizHawkClientContext", location_name: str, location_id: int
     ) -> bool:

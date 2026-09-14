@@ -257,6 +257,19 @@ request_handlers = {
         return res
     end,
 
+    ["NSMBDS_STAR_COIN_TRACKING"] = function (req)
+        local res = {}
+
+        res["type"] = "NSMBDS_STAR_COIN_TRACKING_RESPONSE"
+        res["value"] = false
+        if type(_G.nsmbds_star_coin_tracking_configure) == "function" then
+            local ok, accepted = pcall(_G.nsmbds_star_coin_tracking_configure, req)
+            res["value"] = ok and accepted == true
+        end
+
+        return res
+    end,
+
     ["default"] = function (req)
         local res = {}
 

@@ -673,6 +673,7 @@ class NSMBDSWorld(World):
             "advanced_location_item_placement": self.options.advanced_location_item_placement.value,
             "required_star_coins": self.options.required_star_coins.value,
             "star_coin_gate_mode": self.options.star_coin_gate_mode.value,
+            "star_coin_tracking": self.options.star_coin_tracking.value,
             "tower_castle_keys": bool(self.options.tower_castle_keys.value),
             "license_mini_mushroom": bool(self.options.license_mini_mushroom.value),
             "license_blue_shell": bool(self.options.license_blue_shell.value),

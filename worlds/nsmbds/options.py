@@ -214,6 +214,21 @@ class StarCoinGateMode(Choice):
     default = 0
 
 
+class StarCoinTracking(Choice):
+    """
+    Controls when collected Star Coins become Archipelago location checks.
+
+    after_level_completion: Use the vanilla behavior. Star Coins are only saved
+                            after successfully finishing the level.
+    instant:                Track Star Coins immediately when they are collected,
+                            even if the level is exited or Mario dies. (Default)
+    """
+    display_name = "Star Coin Tracking"
+    option_after_level_completion = 0
+    option_instant = 1
+    default = 1
+
+
 class TowerCastleKeys(Toggle):
     """
     Include one physical key for every Tower and Castle in the item pool.
@@ -561,6 +576,7 @@ class NSMBDSOptions(PerGameCommonOptions):
     # Overworld & Progression Logic
     level_randomization:                  LevelRandomization
     star_coin_gate_mode:                  StarCoinGateMode
+    star_coin_tracking:                   StarCoinTracking
     tower_castle_keys:                    TowerCastleKeys
     license_mini_mushroom:               LicenseMiniMushroom
     license_blue_shell:                  LicenseBlueShell
@@ -609,6 +625,7 @@ NSMBDS_OPTION_GROUPS = [
     OptionGroup("Overworld & Progression", [
         LevelRandomization,
         StarCoinGateMode,
+        StarCoinTracking,
         TowerCastleKeys,
         SecretExitShortcutLogic,
         SecretExitWorldUnlockLogic,
