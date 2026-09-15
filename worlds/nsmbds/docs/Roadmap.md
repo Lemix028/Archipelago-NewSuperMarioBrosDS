@@ -7,6 +7,8 @@
 - Level Randomization
 - Killsanity
 - Starcoin collection mode configurable
+- Trap performance
+- Add to ap-lobby.ionium.us
 
 ## Planned
 
