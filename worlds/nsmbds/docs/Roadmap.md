@@ -27,4 +27,5 @@
 - Rotate HUD if Screen Flip
 - Add special blocks to Blocksanity
 - Add option that Mega Mario triggers blocks at blocksanity
+- Newer Super Mario Bros. DS support
 
