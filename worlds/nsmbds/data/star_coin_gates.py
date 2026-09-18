@@ -124,11 +124,15 @@ def _permit_item_name(target_stage_name: str) -> str:
     return f"{target_stage_name} Gate Pass"
 
 
-_world_gate_counts: dict[int, int] = {}
 _active_gates: list[StarCoinGateDefinition] = []
 for progressive_index, mapping in enumerate(STAR_COIN_GATE_CATALOG, start=1):
-    world_gate_index = _world_gate_counts.get(mapping.world_number, 0)
-    _world_gate_counts[mapping.world_number] = world_gate_index + 1
+    # Native connection indices follow path-address order, not catalog order.
+    # Keep catalog order stable for item IDs, progressive tiers and saved purchase bits
+    world_gate_index = sum(
+        other.world_number == mapping.world_number
+        and other.path_address < mapping.path_address
+        for other in STAR_COIN_GATE_CATALOG
+    )
     _active_gates.append(
         StarCoinGateDefinition(
             mapping.name,

@@ -2881,7 +2881,7 @@ async def test_vanilla_star_coin_gate_sync() -> None:
         ),
         (
             ram_addresses.ADDR_AP_STAR_COIN_GATE_PERMIT_MASK,
-            [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04],
+            [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01],
             ram_addresses.MEMORY_DOMAIN,
         ),
     ]
@@ -3014,6 +3014,39 @@ def test_star_coin_gate_client_budget_authorization() -> None:
         )
 
 
+def test_world_8_native_gate_identity() -> None:
+    # Seed 23273966313072830761: Orange holds Desert Pass. Native W8
+    # connections are Green=0, Orange=1, Red=2, unlike catalog/storage order.
+    gates = client_module.STAR_COIN_GATES
+    assigned = {
+        "World 8 Green Toad House Gate": 24,
+        "World 8 Orange Toad House Gate": 12,
+        "World 8 Red Toad House Gate": 28,
+    }
+    remaining = iter(tier for tier in range(1, 33) if tier not in assigned.values())
+    tiers = {g.name: assigned[g.name] if g.name in assigned else next(remaining) for g in gates}
+    star_coin_id = client_module.ITEM_TABLE["Star Coin"][0]
+    for mode in (0, 1, 2):
+        ctx = FakeContext()
+        ctx.slot_data = {
+            "star_coin_gate_mode": mode,
+            "vanilla_gate_tiers": tiers,
+            "individual_gate_tiers": {g.permit_item_name: tiers[g.name] for g in gates},
+        }
+        ctx.items_received = [types.SimpleNamespace(item=star_coin_id) for _ in range(60 if mode != 1 else 150)]
+        if mode == 1:
+            ctx.items_received += [types.SimpleNamespace(item=client_module.ITEM_TABLE["Progressive Gate Pass"][0]) for _ in range(30)]
+        elif mode == 2:
+            ctx.items_received += [types.SimpleNamespace(item=client_module.ITEM_TABLE["World 8 Orange Toad House Gate Pass"][0])]
+        mailbox = client_module.NSMBDSClient._star_coin_gate_tier_mailbox(ctx)
+        masks = client_module.NSMBDSClient._star_coin_permit_masks(ctx)
+        check(
+            mailbox[8 + 29:] == bytes((32, 30, 31) if mode == 1 else (24, 12, 28))
+            and masks[7] == 0b010,
+            f"Mode {mode}: native W8 Orange connection gets its own threshold and permit, not Red's",
+        )
+
+
 def test_star_coin_gate_tier_mailbox_rejects_old_slot_data() -> None:
     progressive_ctx = FakeContext()
     progressive_ctx.slot_data = {"star_coin_gate_mode": 1}
@@ -3024,8 +3057,8 @@ def test_star_coin_gate_tier_mailbox_rejects_old_slot_data() -> None:
         progressive_mailbox[:8]
         == ram_addresses.AP_STAR_COIN_GATE_TIER_MAGIC
         + bytes((ram_addresses.AP_STAR_COIN_GATE_TIER_VERSION, 1, 0, 0))
-        and progressive_mailbox[8:] == bytes(range(1, 33)),
-        "Progressive mode publishes a versioned 1-through-32 gate tier mailbox",
+        and progressive_mailbox[8:] == bytes((*range(1, 30), 32, 30, 31)),
+        "Progressive mode publishes tiers in native connection order",
     )
 
     missing_mapping_ctx = FakeContext()

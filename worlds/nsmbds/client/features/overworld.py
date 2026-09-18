@@ -100,7 +100,15 @@ class OverworldStateReconcilerMixin:
         )
         if len(header) != AP_STAR_COIN_GATE_TIER_HEADER_SIZE:
             raise ValueError("Invalid Star-Coin Gate tier mailbox header size.")
-        mailbox = header + bytes(tiers)
+        # The ROM indexes this table by native world/connection identity.
+        # Slot data and purchase storage retain the stable catalog order.
+        native_tiers = bytes(
+            tier for gate, tier in sorted(
+                zip(STAR_COIN_GATES, tiers),
+                key=lambda entry: (entry[0].world_number, entry[0].world_gate_index),
+            )
+        )
+        mailbox = header + native_tiers
         if len(mailbox) != AP_STAR_COIN_GATE_TIER_MAILBOX_SIZE:
             raise ValueError("Invalid Star-Coin Gate tier mailbox size.")
         return mailbox
