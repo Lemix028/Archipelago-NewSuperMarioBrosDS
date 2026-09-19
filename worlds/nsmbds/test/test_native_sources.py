@@ -78,18 +78,20 @@ class TestNativeHookSources(unittest.TestCase):
         self.assertIn("_G.nsmbds_feed_configure = M.configure", feed_source)
         self.assertIn('["NSMBDS_FEED_CONFIG"]', connector_source)
 
-    def test_no_turnaround_uses_input_filter_and_trigger_32(self) -> None:
-        runtime_path = (
-            Path(__file__).resolve().parents[1]
-            / "lua_runtime"
-            / "nsmbds"
-            / "traps.lua"
+    def test_no_turnaround_uses_native_input_filter_and_trigger_32(self) -> None:
+        world_root = Path(__file__).resolve().parents[1]
+        traps = (world_root / "lua_runtime" / "nsmbds" / "traps.lua").read_text(
+            encoding="utf-8"
         )
-        source = runtime_path.read_text(encoding="utf-8")
-        self.assertIn("local function apply_no_turnaround_at(address)", source)
-        self.assertIn('context.active_mode == "no_turnaround"', source)
-        self.assertIn('trigger_code == 32', source)
-        self.assertIn('M.begin_timed_trap("no_turnaround", LONG_TRAP_FRAMES)', source)
+        assembly = (world_root / "src" / "asm" / "input_trap_hook.s").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("cmp     r7, #9", assembly)
+        self.assertIn("beq     no_turnaround", assembly)
+        self.assertIn("no_turnaround:", assembly)
+        self.assertIn('trigger_code == 32', traps)
+        self.assertIn('M.begin_timed_trap("no_turnaround", LONG_TRAP_FRAMES)', traps)
 
     def test_gameplay_traps_share_the_stage_freeze_gate(self) -> None:
         runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime"
@@ -97,6 +99,9 @@ class TestNativeHookSources(unittest.TestCase):
         addresses = (runtime_root / "nsmbds" / "addresses.lua").read_text(encoding="utf-8")
         traps = (runtime_root / "nsmbds" / "traps.lua").read_text(encoding="utf-8")
         orchestrator = (runtime_root / "nsmbds_sideloading.lua").read_text(encoding="utf-8")
+        source_root = Path(__file__).resolve().parents[1] / "src" / "asm"
+        input_hook = (source_root / "input_trap_hook.s").read_text(encoding="utf-8")
+        head_bonk_hook = (source_root / "head_bonk_hook.s").read_text(encoding="utf-8")
 
         self.assertEqual(ADDR_STAGE_FREEZE_FLAG, 0x000CA28C)
         self.assertEqual(ADDR_STAGE_MENU_OPEN, 0x000CA870)
@@ -107,18 +112,16 @@ class TestNativeHookSources(unittest.TestCase):
         self.assertIn("function M.can_apply_gameplay_traps()", traps)
         self.assertIn("freeze_flag == 0", traps)
         self.assertIn("menu_open == 0", traps)
-        self.assertIn("or not M.can_apply_gameplay_traps()", traps)
         self.assertIn(
             "context.trap_remaining_frames > 0 and gameplay_trap_effects_enabled",
             traps,
         )
         self.assertIn("traps.update_gameplay_state(has_active_player)", orchestrator)
-
-        hook_update = traps[
-            traps.index("function M.update_input_filter_hooks"):
-            traps.index("function M.apply_frame_start_input_filter")
-        ]
-        self.assertIn("local needs_input_filter = has_active_player", hook_update)
+        self.assertIn("function M.update_native_input(has_active_player)", traps)
+        self.assertIn("native_input.sync(has_active_player", traps)
+        for native_hook in (input_hook, head_bonk_hook):
+            self.assertIn("0x020CA28C", native_hook)
+            self.assertIn("0x020CA870", native_hook)
 
     def test_powerup_pickpocket_notice_uses_trigger_33(self) -> None:
         runtime_path = (
