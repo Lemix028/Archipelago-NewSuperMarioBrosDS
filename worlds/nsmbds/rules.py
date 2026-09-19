@@ -115,7 +115,7 @@ def _stage_key_name(region_name: str) -> str | None:
     return None
 
 
-def _star_coin_gate_rule(
+def _single_star_coin_gate_rule(
     world: NSMBDSWorld, gate: StarCoinGateDefinition
 ) -> Rule:
     """Build the configured authorization rule for one Star-Coin gate."""
@@ -138,6 +138,17 @@ def _star_coin_gate_rule(
             Has("Star Coin", gate_required_lifetime_coins(gate, tier)),
         )
     raise ValueError(f"Unsupported Star Coin Gate mode: {mode}")
+
+
+def _star_coin_gate_rule(
+    world: NSMBDSWorld, gate: StarCoinGateDefinition
+) -> Rule:
+    """Include every earlier sign that must be opened to reach this gate."""
+    rule = _single_star_coin_gate_rule(world, gate)
+    gates_by_target = {entry.target_stage_name: entry for entry in STAR_COIN_GATES}
+    for target_name in gate.prerequisite_target_stage_names:
+        rule &= _star_coin_gate_rule(world, gates_by_target[target_name])
+    return rule
 
 
 def _append_location_rule(

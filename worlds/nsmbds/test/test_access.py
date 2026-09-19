@@ -426,6 +426,20 @@ class TestIndividualStarCoinGateAccess(NSMBDSTestBase):
         self.assertTrue(self.can_reach_entrance(entrances[2]))
         self.assertTrue(self.can_reach_entrance(entrances[3]))
 
+    def test_world_4_orange_toad_house_requires_both_physical_signs(self) -> None:
+        gates = {gate.target_stage_name: gate for gate in STAR_COIN_GATES}
+        first_gate = gates["World 4-A"]
+        direct_gate = gates["World 4 Orange Toad House"]
+        self.collect_by_name([
+            "Jungle Pass",
+            "Star Coin",
+            direct_gate.permit_item_name,
+        ])
+
+        self.assertFalse(self.can_reach_location("World 4 Orange Toad House Goal"))
+        self.collect_by_name(first_gate.permit_item_name)
+        self.assertTrue(self.can_reach_location("World 4 Orange Toad House Goal"))
+
     def test_slot_data_restores_the_exact_tier_mapping(self) -> None:
         original = dict(self.world.individual_gate_tiers)
         slot_data = self.world.fill_slot_data()
@@ -469,6 +483,7 @@ class TestVanillaStarCoinGateAccess(NSMBDSTestBase):
         ))
 
     def test_vanilla_gate_logic_respects_cumulative_tiers(self) -> None:
+        gates_by_target = {gate.target_stage_name: gate for gate in STAR_COIN_GATES}
         gates_by_tier = {
             tier: next(
                 gate for gate in STAR_COIN_GATES
@@ -485,20 +500,22 @@ class TestVanillaStarCoinGateAccess(NSMBDSTestBase):
             for tier, gate in gates_by_tier.items()
         }
 
-        self.collect_n_by_name("Star Coin", 5)
-        self.assertTrue(self.can_reach_entrance(entrances[1]))
-        self.assertFalse(self.can_reach_entrance(entrances[2]))
-        self.assertFalse(self.can_reach_entrance(entrances[3]))
+        def effective_tier(gate) -> int:
+            return max([
+                self.world.vanilla_gate_tiers[gate.name],
+                *(
+                    effective_tier(gates_by_target[target_name])
+                    for target_name in gate.prerequisite_target_stage_names
+                ),
+            ])
 
-        self.collect_n_by_name("Star Coin", 10)
-        self.assertTrue(self.can_reach_entrance(entrances[1]))
-        self.assertTrue(self.can_reach_entrance(entrances[2]))
-        self.assertFalse(self.can_reach_entrance(entrances[3]))
-
-        self.collect_n_by_name("Star Coin", 15)
-        self.assertTrue(self.can_reach_entrance(entrances[1]))
-        self.assertTrue(self.can_reach_entrance(entrances[2]))
-        self.assertTrue(self.can_reach_entrance(entrances[3]))
+        for available_tier in (1, 2, 3):
+            self.collect_n_by_name("Star Coin", available_tier * 5)
+            for assigned_tier, gate in gates_by_tier.items():
+                self.assertEqual(
+                    self.can_reach_entrance(entrances[assigned_tier]),
+                    effective_tier(gate) <= available_tier,
+                )
 
     def test_slot_data_restores_the_exact_tier_mapping(self) -> None:
         original = dict(self.world.vanilla_gate_tiers)

@@ -17,6 +17,7 @@ class StarCoinGateMapping:
     closed_value: int = 0x00
     opened_value: int = 0xC0
     label_verified: bool = True
+    prerequisite_target_stage_names: tuple[str, ...] = ()
 
     @property
     def name(self) -> str:
@@ -37,6 +38,7 @@ class StarCoinGateDefinition:
     world_number: int
     world_gate_index: int
     star_coin_cost: int
+    prerequisite_target_stage_names: tuple[str, ...]
 
     @property
     def region_name(self) -> str:
@@ -66,6 +68,7 @@ def _mapping(
     selector: int,
     *,
     label_verified: bool = True,
+    prerequisite_target_stage_names: tuple[str, ...] = (),
 ) -> StarCoinGateMapping:
     return StarCoinGateMapping(
         world_number,
@@ -73,6 +76,7 @@ def _mapping(
         path_address,
         selector,
         label_verified=label_verified,
+        prerequisite_target_stage_names=prerequisite_target_stage_names,
     )
 
 
@@ -94,7 +98,13 @@ STAR_COIN_GATE_CATALOG: tuple[StarCoinGateMapping, ...] = (
 
     _mapping(4, "World 4 Red Toad House 1",     0x00088D79, 0x0C),
     _mapping(4, "World 4-A",                    0x00088D7C, 0x0E),
-    _mapping(4, "World 4 Orange Toad House",    0x00088D7D, 0x0F),
+    _mapping(
+        4,
+        "World 4 Orange Toad House",
+        0x00088D7D,
+        0x0F,
+        prerequisite_target_stage_names=("World 4-A",),
+    ),
     _mapping(4, "World 4 Green Toad House 2",   0x00088D80, 0x11),
     _mapping(4, "World 4 Red Toad House 2",     0x00088D81, 0x12),
 
@@ -145,6 +155,7 @@ for progressive_index, mapping in enumerate(STAR_COIN_GATE_CATALOG, start=1):
             mapping.world_number,
             world_gate_index,
             mapping.star_coin_cost,
+            mapping.prerequisite_target_stage_names,
         )
     )
 
