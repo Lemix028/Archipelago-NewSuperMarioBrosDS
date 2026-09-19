@@ -46,11 +46,7 @@ M.notification_state = {
 
 M.input_trap_state = {
     auto_direction = 1,
-    sticky_direction = 0,
-    sticky_frames = 0,
-    sticky_last_frame = -1,
     sticky_duration = 36,
-    no_turnaround_direction = 0,
     heavy_gravity_boost = 512,
     heavy_max_fall_speed = 22528,
     camera_direction = 1,
@@ -89,13 +85,11 @@ M.context = {
     active_mode = "none",
     trap_remaining_frames = 0,
     trap_total_frames = 0,
+    native_trap_generation = 0,
     red_coin_peak_latched = { false, false },
     pending_red_coin_completion = nil,
-    head_bonk_execute_hook_initialized = false,
-    head_bonk_execute_hook_attempted = false,
+    native_head_bonk_last_sequence = nil,
     red_coin_write_hook_initialized = false,
-    input_filter_hooks_initialized = false,
-    input_filter_hooks_attempted = false,
     life_insurance_write_guard = false,
     last_observed_lives = nil,
     last_drawn_shield_count = nil,
@@ -105,6 +99,9 @@ M.context = {
     last_observer_frame = nil,
     gameplay_player_active = false,
     gameplay_trap_effects_enabled = false,
+    gameplay_gate_frame = nil,
+    gameplay_gate_result = false,
+    gameplay_gate_player_active = false,
 }
 
 return M

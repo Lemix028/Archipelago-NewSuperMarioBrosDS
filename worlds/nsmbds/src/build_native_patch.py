@@ -26,6 +26,7 @@ WORLD_ROOT = SOURCE_ROOT.parent
 METADATA_ROOT = SOURCE_ROOT / "native_hooks"
 EXPECTED_BASE_SHA256 = "9f67fef1b4c73e966767f6153431ada3751dc1b0da2c70f386c14a5e3017f354"
 BASE_ROM_SIZE = 0x02000000
+ARM9_COMPRESSED_END_POINTER = 0x02000B5C
 PATCH_MARKER_ROM_OFFSET = runpy.run_path(WORLD_ROOT / "data" / "patch_protocol.py")["PATCH_MARKER_ROM_OFFSET"]
 
 
@@ -73,23 +74,65 @@ def build_patched_rom(base_bytes: bytes) -> bytes:
     mini_castle = runpy.run_path(METADATA_ROOT / "mini_castle_hook.py")
     powerup = runpy.run_path(METADATA_ROOT / "powerup_license_hook.py")
     block = runpy.run_path(METADATA_ROOT / "block_hit_hook.py")
+    head_bonk = runpy.run_path(METADATA_ROOT / "head_bonk_hook.py")
+    input_trap = runpy.run_path(METADATA_ROOT / "input_trap_hook.py")
     save_menu = runpy.run_path(METADATA_ROOT / "native_save_menu.py")
     rom = ndspy.rom.NintendoDSRom(base_bytes)
     overlays = rom.loadArm9Overlays()
 
     arm9 = bytearray(ndspy.codeCompression.decompress(rom.arm9))
     block_payload = block["BLOCK_HIT_HOOK_BYTES"]
+    input_payload = input_trap["HOOK_BYTES"]
+    # A zero-filled span can still be live storage. The first input placement
+    # at 0204B3E8 passed the zero-byte check but retail ARM9 referenced it.
+    input_start = input_trap["HOOK_CAVE"]
+    input_end = input_start + len(input_payload)
+    referenced_input_addresses = [
+        (rom.arm9RamAddress + offset, value)
+        for offset in range(0, len(arm9) - 3, 4)
+        if input_start <= (value := struct.unpack_from("<I", arm9, offset)[0]) < input_end
+    ]
+    if referenced_input_addresses:
+        raise ValueError(
+            "Native input cave is referenced by original ARM9: "
+            + ", ".join(f"{site:#010x}->{target:#010x}" for site, target in referenced_input_addresses)
+        )
     if (len(block["BLOCK_HIT_CODE"]) > 0x200
             or len(block_payload) != block["BLOCK_HIT_END"] - block["BLOCK_HIT_HOOK_CAVE"]
             or block["BLOCK_HIT_END"] > star["CURRENCY_GETTER_CAVE"]):
         raise ValueError("Native block code/ring overlaps another reserved region.")
+    if (head_bonk["HOOK_CAVE"] < block["BLOCK_HIT_HOOK_CAVE"] + len(block["BLOCK_HIT_CODE"])
+            or head_bonk["HOOK_CAVE"] + len(head_bonk["HOOK_BYTES"])
+            > head_bonk["HOOK_CAVE_END"]
+            or head_bonk["HOOK_CAVE_END"] > block["BLOCK_HIT_PRODUCER"]):
+        raise ValueError("Native Head Bonk hook overlaps the block code or producer.")
+    if (input_trap["CONTROL"] != block["BLOCK_HIT_END"]
+            or input_trap["STATE_END"] > star["CURRENCY_GETTER_CAVE"]
+            or len(input_trap["DEFAULT_CONTROL_AND_STATE"])
+            != input_trap["STATE_END"] - input_trap["CONTROL"]
+            or input_trap["HOOK_CAVE"] + len(input_payload)
+            > input_trap["HOOK_CAVE_END"]):
+        raise ValueError("Native input code or state overlaps an allocated ARM9 region.")
     for address, payload, label in (
         (block["BLOCK_HIT_HOOK_CAVE"], block_payload, "Block-hit code and ring cave"),
+        (head_bonk["HOOK_CAVE"], head_bonk["HOOK_BYTES"], "Head Bonk hook cave"),
+        (input_trap["CONTROL"], input_trap["DEFAULT_CONTROL_AND_STATE"], "Native input control and state"),
+        (input_trap["HOOK_CAVE"], input_payload, "Native input code cave"),
         (star["CURRENCY_GETTER_CAVE"], star["STAR_COIN_CURRENCY_HOOK_BYTES"], "Star-Coin currency cave"),
         (powerup["POWERUP_HOOK_CAVE"], powerup["POWERUP_LICENSE_HOOK_BYTES"], "Power-Up License cave"),
     ):
         offset = address - rom.arm9RamAddress
         checked_write(arm9, offset, bytes(len(payload)), payload, label)
+    for site, original, entry, label in (
+        (input_trap["GENERAL_SITE"], input_trap["GENERAL_ORIGINAL_WORD"],
+         input_trap["GENERAL_ENTRY"], "Native general-input hook"),
+        (input_trap["BUTTONS_SITE"], input_trap["BUTTONS_ORIGINAL_WORD"],
+         input_trap["BUTTONS_ENTRY"], "Native button-input hook"),
+    ):
+        checked_write(
+            arm9, site - rom.arm9RamAddress, word(original),
+            word(arm_branch(site, entry)), label,
+        )
     if powerup["POWERUP_LICENSE_STATE"] + powerup["POWERUP_STATE_SIZE"] > mini_castle["MINI_CASTLE_FLAGS"]:
         raise ValueError("Power-Up License state overlaps the Mini-Castle flags.")
     mini_castle_flags_offset = mini_castle["MINI_CASTLE_FLAGS"] - rom.arm9RamAddress
@@ -116,10 +159,26 @@ def build_patched_rom(base_bytes: bytes) -> bytes:
         word(arm_branch(star["CURRENCY_GETTER_SITE"], star["CURRENCY_GETTER_CAVE"])),
         "Star-Coin currency hook",
     )
-    rom.arm9 = ndspy.codeCompression.compress(arm9, isArm9=True)
+    compressed_arm9 = bytearray(ndspy.codeCompression.compress(arm9, isArm9=True))
+    # Nitro's ARM9 boot stub reads this absolute end address before expanding
+    # the compressed body. A one-word size change leaves its old value pointing
+    # inside the compressed stream and prevents the game from booting.
+    checked_write(
+        compressed_arm9,
+        ARM9_COMPRESSED_END_POINTER - rom.arm9RamAddress,
+        word(rom.arm9RamAddress + len(rom.arm9)),
+        word(rom.arm9RamAddress + len(compressed_arm9)),
+        "ARM9 compressed-body end pointer",
+    )
+    rom.arm9 = bytes(compressed_arm9)
 
     overlay_0 = overlays[powerup["POWERUP_OVERLAY_ID"]]
     block_overlay = overlays[block["BLOCK_HIT_OVERLAY_ID"]]
+    patch_overlay_word(
+        block_overlay, head_bonk["HOOK_SITE"], head_bonk["ORIGINAL_WORD"],
+        arm_branch(head_bonk["HOOK_SITE"], head_bonk["HOOK_CAVE"]),
+        "Native Head Bonk function entry",
+    )
     for address, expected in block["BLOCK_HIT_CALL_SITES"]:
         if expected != arm_branch(address, block["BLOCK_HIT_CHANGE_TILE"], link=True):
             raise ValueError(f"Unexpected original block call target at {address:#x}")
