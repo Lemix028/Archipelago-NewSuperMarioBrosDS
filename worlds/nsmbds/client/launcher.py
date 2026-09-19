@@ -98,10 +98,17 @@ def _resolved_setting_path(value: object) -> Path | None:
     return Path(resolved).expanduser().resolve()
 
 
+def _raw_emuhawk_setting(options: object | None = None):
+    """Read EmuHawk's setting without invoking required-path browsing."""
+    if options is None:
+        options = _settings().bizhawkclient_options
+    values = object.__getattribute__(options, "__dict__")
+    return values.get("emuhawk_path", getattr(type(options), "emuhawk_path", None))
+
+
 def configured_emuhawk_path() -> Path | None:
     """Return Archipelago's shared EmuHawk setting, including an invalid path."""
-    value = _settings().bizhawkclient_options.emuhawk_path
-    return _resolved_setting_path(value)
+    return _resolved_setting_path(_raw_emuhawk_setting())
 
 
 def emuhawk_launcher_error(path: Path | None) -> str | None:
@@ -177,7 +184,7 @@ def browse_for_emuhawk() -> Path | None:
     from Utils import open_filename
 
     settings = _settings()
-    current = settings.bizhawkclient_options.emuhawk_path
+    current = _raw_emuhawk_setting(settings.bizhawkclient_options)
     current_path = _resolved_setting_path(current)
     patterns = ["*.exe"] if sys.platform == "win32" else ["*.sh", "*"]
     chosen = open_filename(
@@ -188,9 +195,10 @@ def browse_for_emuhawk() -> Path | None:
     if not chosen:
         return None
     value_type = type(current) if current is not None else str
-    settings.bizhawkclient_options.emuhawk_path = value_type(chosen)
+    stored = value_type(chosen)
+    settings.bizhawkclient_options.emuhawk_path = stored
     settings.save()
-    return _resolved_setting_path(settings.bizhawkclient_options.emuhawk_path)
+    return _resolved_setting_path(stored)
 
 
 def _remember_rom(path: Path) -> None:

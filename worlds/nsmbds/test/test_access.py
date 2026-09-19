@@ -165,6 +165,12 @@ class TestStarCoinPowerupAccessRules(NSMBDSTestBase):
         self.collect_by_name("Isle Pass")
         self.assertTrue(self.can_reach_location("World 3-1 Star Coin 3"))
 
+    def test_world_3_tower_star_coin_3_requires_large_mario(self) -> None:
+        self.collect_by_name("Isle Pass")
+        self.assertFalse(self.can_reach_location("World 3-Tower Star Coin 3"))
+        self.collect_by_name("Mushroom Permit")
+        self.assertTrue(self.can_reach_location("World 3-Tower Star Coin 3"))
+
     def test_world_3_a_requires_mini(self) -> None:
         self.collect_by_name(["Desert Pass", "Isle Pass"] + ["Star Coin"] * 5)
         self.assertFalse(self.can_reach_location("World 3-A Star Coin 3"))
