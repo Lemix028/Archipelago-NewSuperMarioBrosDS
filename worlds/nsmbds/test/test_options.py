@@ -22,6 +22,7 @@ from ..options import (
     FillerItems,
     LicenseMushroom,
     LicenseTouchscreenPocket,
+    MusicRandomization,
     OneUpBlockChecks,
     RequiredStarCoins,
     SecondaryScreenBackground,
@@ -106,6 +107,10 @@ class TestBalancingDefaults(NSMBDSTestBase):
         self.assertEqual(TrapPercentage.default, 15)
         self.assertEqual(SecondaryScreenBackground.default, 0)
         self.assertEqual(SecondaryScreenBackground.options["classic_overworld"], 6)
+        self.assertEqual(MusicRandomization.default, MusicRandomization.option_off)
+        self.assertEqual(MusicRandomization.from_any("level").value, 1)
+        self.assertEqual(MusicRandomization.from_any("level_and_worlds").value, 2)
+        self.assertEqual(MusicRandomization.from_any("mixed_level_and_worlds").value, 3)
         self.assertEqual(StarCoinTracking.default, StarCoinTracking.option_instant)
 
     def test_star_coin_tracking_reaches_slot_data(self) -> None:

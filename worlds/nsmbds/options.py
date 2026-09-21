@@ -550,6 +550,25 @@ class SecondaryScreenBackground(Choice):
     default = 0
 
 
+class MusicRandomization(Choice):
+    """
+    Randomize complete music sequences while keeping boss music, temporary
+    power-up music, jingles, ambience, menus, and minigames untouched.
+
+    off:                     Keep all music vanilla. (Default)
+    level:                   Shuffle the 11 normal level themes among levels.
+    level_and_worlds:        Also shuffle the eight world-map themes.
+    mixed_level_and_worlds:  Mix all 19 level and world-map themes across both
+                             the story levels and the eight world maps.
+    """
+    display_name = "Music Randomization"
+    option_off = 0
+    option_level = 1
+    option_level_and_worlds = 2
+    option_mixed_level_and_worlds = 3
+    default = 0
+
+
 # =============================================================================
 # 6. NSMBDS OPTIONS DATACLASS
 # =============================================================================
@@ -603,6 +622,7 @@ class NSMBDSOptions(PerGameCommonOptions):
     mario_palette:                        MarioPalette
     luigi_palette:                        LuigiPalette
     secondary_screen_background:          SecondaryScreenBackground
+    music_randomization:                   MusicRandomization
 
 
 NSMBDS_OPTION_GROUPS = [
@@ -657,5 +677,6 @@ NSMBDS_OPTION_GROUPS = [
         MarioPalette,
         LuigiPalette,
         SecondaryScreenBackground,
+        MusicRandomization,
     ]),
 ]

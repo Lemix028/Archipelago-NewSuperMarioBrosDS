@@ -12,9 +12,11 @@ from typing import TYPE_CHECKING
 from worlds.Files import APPatchExtension, APProcedurePatch, APTokenMixin, APTokenTypes
 
 from ..data.level_randomization import LEVEL_RANDOMIZATION_VERSION, level_mapping_digest
+from ..data.music import MUSIC_MAPPING_VERSION
 from ..data.patch_protocol import PATCH_MARKER, PATCH_MARKER_ROM_OFFSET, PATCH_PROTOCOL_VERSION
 from ..version import APWORLD_VERSION, DISPLAY_VERSION, RELEASE_CHANNEL
 from .level_randomization import patch_level_randomization_from_json
+from .music import patch_music_randomization_from_json
 from .palette import patch_player_palettes_from_json
 from .secondary_screen import patch_secondary_screen_backgrounds_from_json
 
@@ -150,6 +152,11 @@ class NSMBDSPatchExtension(APPatchExtension):
         return patch_player_palettes_from_json(rom, caller.get_file(config_file))
 
     @staticmethod
+    def apply_music_randomization(caller: APProcedurePatch, rom: bytes, config_file: str) -> bytes:
+        """Apply seed-stable level and world-map sequence assignments."""
+        return patch_music_randomization_from_json(rom, caller.get_file(config_file))
+
+    @staticmethod
     def apply_secondary_screen_backgrounds(
         caller: APProcedurePatch,
         rom: bytes,
@@ -185,6 +192,7 @@ class NSMBDSProcedurePatch(APProcedurePatch, APTokenMixin):
         ("apply_bsdiff4", ["native_hooks.bsdiff4"]),
         ("apply_tokens", ["token_data.bin"]),
         ("apply_level_randomization", ["nsmbds_patch_config.json"]),
+        ("apply_music_randomization", ["nsmbds_patch_config.json"]),
         ("apply_secondary_screen_backgrounds", ["nsmbds_patch_config.json"]),
         ("apply_player_palettes", ["nsmbds_patch_config.json"]),
         ("verify_native_patch_marker", []),
@@ -219,6 +227,7 @@ def write_patch_payload(world: "NSMBDSWorld", patch: NSMBDSProcedurePatch) -> No
         "mario_palette": world.options.mario_palette.value,
         "luigi_palette": world.options.luigi_palette.value,
         "secondary_screen_background": world.options.secondary_screen_background.value,
+        "music_randomization": world.options.music_randomization.value,
         "tower_castle_keys": bool(world.options.tower_castle_keys.value),
         "license_mini_mushroom": bool(world.options.license_mini_mushroom.value),
         "license_blue_shell": bool(world.options.license_blue_shell.value),
@@ -250,6 +259,9 @@ def write_patch_payload(world: "NSMBDSWorld", patch: NSMBDSProcedurePatch) -> No
         "level_randomization_version": LEVEL_RANDOMIZATION_VERSION,
         "level_mapping": dict(world.level_mapping),
         "level_mapping_digest": level_mapping_digest(world.level_mapping),
+        "music_mapping_version": MUSIC_MAPPING_VERSION,
+        "level_music_mapping": dict(world.level_music_mapping),
+        "world_map_music_mapping": dict(world.world_map_music_mapping),
         "options": options,
     }
     patch.write_token(APTokenTypes.WRITE, PATCH_MARKER_ROM_OFFSET, PATCH_MARKER)

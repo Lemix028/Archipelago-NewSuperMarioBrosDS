@@ -161,6 +161,7 @@ class TestProcedurePatch(NSMBDSTestBase):
                     ["apply_bsdiff4", ["native_hooks.bsdiff4"]],
                     ["apply_tokens", ["token_data.bin"]],
                     ["apply_level_randomization", ["nsmbds_patch_config.json"]],
+                    ["apply_music_randomization", ["nsmbds_patch_config.json"]],
                     ["apply_secondary_screen_backgrounds", ["nsmbds_patch_config.json"]],
                     ["apply_player_palettes", ["nsmbds_patch_config.json"]],
                     ["verify_native_patch_marker", []],
@@ -174,6 +175,9 @@ class TestProcedurePatch(NSMBDSTestBase):
             self.assertEqual(patch_config["options"]["secondary_screen_background"], 0)
             self.assertEqual(patch_config["level_randomization"], 0)
             self.assertEqual(len(patch_config["level_mapping"]), 80)
+            self.assertEqual(patch_config["options"]["music_randomization"], 0)
+            self.assertEqual(patch_config["level_music_mapping"], {})
+            self.assertEqual(patch_config["world_map_music_mapping"], {})
             self.assertEqual(patch_config["options"]["death_link_grace_percentage"], 0)
             self.assertEqual(patch_config["options"]["death_link_cooldown_seconds"], 0)
             self.assertEqual(patch_config["options"]["death_link_effect"], 0)
@@ -200,3 +204,30 @@ class TestRandomizedSecondaryScreenProcedurePatch(NSMBDSTestBase):
                 patch_config = json.loads(patch.read("nsmbds_patch_config.json"))
 
             self.assertEqual(patch_config["options"]["secondary_screen_background"], 1)
+
+
+class TestMusicProcedurePatch(NSMBDSTestBase):
+    options = {
+        "music_randomization": "mixed_level_and_worlds",
+    }
+
+    def test_generate_output_serializes_complete_stable_music_mapping(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            self.world.generate_output(temporary_directory)
+            patch_path = next(Path(temporary_directory).glob("*.apnsmbds"))
+            with zipfile.ZipFile(patch_path) as patch:
+                raw_config = patch.read("nsmbds_patch_config.json")
+                patch_config = json.loads(raw_config)
+
+            levels = patch_config["level_music_mapping"]
+            maps = patch_config["world_map_music_mapping"]
+            self.assertEqual(patch_config["options"]["music_randomization"], 3)
+            self.assertEqual(len(levels), 80)
+            self.assertEqual(len(maps), 8)
+            self.assertEqual(len(set(levels.values())), 19)
+            self.assertEqual(list(levels), sorted(levels))
+            self.assertEqual(list(maps), sorted(maps))
+            self.assertEqual(
+                raw_config,
+                json.dumps(patch_config, sort_keys=True).encode("utf-8"),
+            )

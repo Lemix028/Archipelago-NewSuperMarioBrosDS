@@ -31,6 +31,10 @@ from .data.level_randomization import (
     mapped_event_name,
     validate_level_mapping,
 )
+from .data.music import (
+    generate_music_mapping,
+    validate_music_mapping,
+)
 from .data.powerup_licenses import license_items_for_mode
 from .data.star_coin_gates import STAR_COIN_GATES, TOTAL_STAR_COIN_GATE_COST
 from .items import (
@@ -137,6 +141,8 @@ class NSMBDSWorld(World):
     vanilla_gate_tiers: dict[str, int]
     level_mapping: dict[str, str]
     content_to_slot: dict[str, str]
+    level_music_mapping: dict[str, int]
+    world_map_music_mapping: dict[str, int]
 
     @staticmethod
     def interpret_slot_data(slot_data: dict[str, Any]) -> dict[str, Any]:
@@ -188,6 +194,14 @@ class NSMBDSWorld(World):
                 level_randomization,
             )
         self.content_to_slot = invert_level_mapping(self.level_mapping)
+
+        music_mode = int(self.options.music_randomization.value)
+        self.level_music_mapping, self.world_map_music_mapping = generate_music_mapping(
+            self.random, music_mode
+        )
+        validate_music_mapping(
+            music_mode, self.level_music_mapping, self.world_map_music_mapping
+        )
 
         def gate_tiers(
             identifiers: tuple[str, ...],

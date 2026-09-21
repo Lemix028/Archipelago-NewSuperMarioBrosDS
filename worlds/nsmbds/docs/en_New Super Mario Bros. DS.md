@@ -89,6 +89,38 @@ option is enabled, you must find that Permit before using the ability.
 Power-Ups simply disappear when collected if you don't own the permit yet. 
 Item-based Power-Ups are queued up until you unlock the permit.
 
+### Music randomization
+
+Music randomization is cosmetic and is disabled by default. The assignment is
+stable for the seed and applies to all normal views in all of a level's areas.
+Boss themes, ambience, power-up music, jingles, menus, minigames, sound effects,
+and unknown sequences remain vanilla.
+
+- `off` keeps all music vanilla.
+- `level` distributes the 11 normal level themes among the 80 story levels.
+- `level_and_worlds` also creates an independent one-to-one shuffle of the eight
+  world-map themes.
+- `mixed_level_and_worlds` creates one shared pool containing all 19 normal
+  level and world-map themes. It distributes that pool across both the 80 story
+  levels and the eight world maps. Level music can therefore play on a world
+  map, and world-map music can play inside a level.
+
+Use Archipelago's usual weighted-choice form when you want a random choice per
+generated multiworld:
+
+```yaml
+music_randomization:
+  off: 50
+  level: 20
+  level_and_worlds: 20
+  mixed_level_and_worlds: 10
+```
+
+For a fixed choice, use for example
+`music_randomization: mixed_level_and_worlds`. The mapping is generated once
+and stored inside the `.apnsmbds` patch; the client and Lua script are not
+involved.
+
 ## Items you can receive
 
 | Item | What it does |
