@@ -7,6 +7,9 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
 
+from test.general import gen_steps, setup_multiworld
+from worlds.AutoWorld import call_all
+
 from ..client.features.block_checks import BlockCheckTrackingMixin
 from ..client.features.goals import GoalHandlingMixin
 from ..client.features.locations import LocationTrackingMixin
@@ -43,6 +46,72 @@ from ..rom.level_randomization import (
     patch_level_randomization,
 )
 from .bases import NSMBDSTestBase
+
+
+class TestUniversalTrackerDerivedState(TestCase):
+    def test_slot_data_restores_randomized_location_state_with_a_different_seed(self) -> None:
+        from .. import NSMBDSWorld
+
+        options = {
+            "blocksanity": True,
+            "world_6_2_bonus_area": True,
+            "blocksanity_global_check_percentage": 30,
+            "level_randomization": "global",
+            "star_coin_gate_mode": "vanilla",
+        }
+        original = setup_multiworld(NSMBDSWorld, seed=12345, options=options)
+        slot_data = original.worlds[1].fill_slot_data()
+
+        reconstructed = setup_multiworld(NSMBDSWorld, steps=(), seed=98765)
+        reconstructed.re_gen_passthrough = {NSMBDSWorld.game: slot_data}
+        for step in gen_steps:
+            call_all(reconstructed, step)
+
+        original_world = original.worlds[1]
+        reconstructed_world = reconstructed.worlds[1]
+        self.assertEqual(original_world.level_mapping, reconstructed_world.level_mapping)
+        self.assertEqual(original_world.vanilla_gate_tiers, reconstructed_world.vanilla_gate_tiers)
+        self.assertEqual(original_world.individual_gate_tiers, reconstructed_world.individual_gate_tiers)
+        self.assertEqual(
+            {name: getattr(original_world.options, name).value
+             for name in original_world.options.__annotations__},
+            {name: getattr(reconstructed_world.options, name).value
+             for name in reconstructed_world.options.__annotations__},
+        )
+        self.assertEqual(
+            {region.name: sorted(
+                (entrance.name, entrance.connected_region.name)
+                for entrance in region.exits
+            ) for region in original.get_regions(1)},
+            {region.name: sorted(
+                (entrance.name, entrance.connected_region.name)
+                for entrance in region.exits
+            ) for region in reconstructed.get_regions(1)},
+        )
+        self.assertEqual(
+            original_world.global_blocksanity_locations,
+            reconstructed_world.global_blocksanity_locations,
+        )
+        self.assertEqual(
+            {
+                location.name: (
+                    location.address,
+                    location.progress_type,
+                    bool(getattr(location, "is_local_filler_only", False)),
+                    bool(getattr(location, "is_non_progression_only", False)),
+                )
+                for location in original.get_locations(1)
+            },
+            {
+                location.name: (
+                    location.address,
+                    location.progress_type,
+                    bool(getattr(location, "is_local_filler_only", False)),
+                    bool(getattr(location, "is_non_progression_only", False)),
+                )
+                for location in reconstructed.get_locations(1)
+            },
+        )
 
 
 class TestLevelMapping(TestCase):

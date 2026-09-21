@@ -14,6 +14,18 @@ from .bases import NSMBDSTestBase
 
 
 class TestProcedurePatch(NSMBDSTestBase):
+    @patch("worlds.nsmbds.rom.NSMBDSProcedurePatch.get_source_data",
+           side_effect=AssertionError("ROM read during patch generation"))
+    @patch("Utils.open_filename",
+           side_effect=AssertionError("ROM dialog during patch generation"))
+    def test_patch_generation_needs_no_base_rom(self, _dialog, _source) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch("worlds.nsmbds.get_settings", return_value=SimpleNamespace(
+                nsmbds_options=SimpleNamespace(base_rom=None)
+            )):
+                self.world.generate_output(temporary_directory)
+            self.assertEqual(len(tuple(Path(temporary_directory).glob("*.apnsmbds"))), 1)
+
     @patch("worlds.nsmbds.rom._base_rom_setting_path", return_value=None)
     @patch("Utils.open_filename", return_value="")
     def test_base_rom_selection_cancel_has_clear_error(self, open_filename, _saved_path) -> None:

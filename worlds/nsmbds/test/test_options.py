@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from BaseClasses import ItemClassification, LocationProgressType
+from test.general import setup_multiworld
 
 from ..data.star_coin_gates import STAR_COIN_GATES, TOTAL_STAR_COIN_GATE_COST
 from ..items import FILLER_ITEM_WEIGHTS, KEY_ITEM_NAMES
@@ -84,6 +85,15 @@ class TestStarCoinsAlwaysIncluded(NSMBDSTestBase):
 
     def test_required_gate_currency_is_never_behind_a_star_coin_sign(self) -> None:
         self.assertFalse(advancement_star_coins_behind_gates(self))
+
+    def test_useful_star_coin_still_counts_as_gate_currency(self) -> None:
+        item = next(
+            item for item in self.multiworld.itempool
+            if item.name == "Star Coin" and not item.advancement
+        )
+        before = self.multiworld.state.count("Star Coin", self.player)
+        self.multiworld.state.collect(item, True)
+        self.assertEqual(self.multiworld.state.count("Star Coin", self.player), before + 1)
 
 
 class TestMaximumStarCoinGoalClassification(NSMBDSTestBase):
@@ -416,16 +426,46 @@ class TestNormalBlockPlacementNonProgression(NSMBDSTestBase):
 
 
 class TestUnsafeHostOptions(NSMBDSTestBase):
-    def test_filler_list_cannot_be_empty(self) -> None:
+    def test_percentage_cap_boundary_matrix(self) -> None:
+        world = self.multiworld.worlds[self.player]
+        cases = (
+            (30, 50, False),
+            (42, 73, False),
+            (30, 50, True),
+        )
+        for block_cap, trap_cap, unsafe in cases:
+            host = SimpleNamespace(nsmbds_options=SimpleNamespace(
+                blocksanity_global_check_percentage_cap=block_cap,
+                trap_percentage_cap=trap_cap,
+                allow_unsafe_nsmbds_options=unsafe,
+            ))
+            for block_value in (0, block_cap - 1, block_cap, block_cap + 1, 99, 100):
+                for trap_value in (0, trap_cap - 1, trap_cap, trap_cap + 1, 99, 100):
+                    with self.subTest(block_cap=block_cap, trap_cap=trap_cap,
+                                      unsafe=unsafe, block=block_value, trap=trap_value):
+                        world.options.blocksanity_global_check_percentage.value = block_value
+                        world.options.trap_percentage.value = trap_value
+                        with patch("worlds.nsmbds.get_settings", return_value=host):
+                            world.generate_early()
+                        self.assertEqual(
+                            world.options.blocksanity_global_check_percentage.value,
+                            block_value if unsafe else min(block_value, block_cap),
+                        )
+                        self.assertEqual(
+                            world.options.trap_percentage.value,
+                            trap_value if unsafe else min(trap_value, trap_cap),
+                        )
+
+    def test_empty_filler_list_is_normalized_by_item_generation(self) -> None:
         world = self.multiworld.worlds[self.player]
         world.options.filler_items.value = set()
         world.options.traps.value = set()
+        world.options.trap_percentage.value = 0
         host = SimpleNamespace(nsmbds_options=SimpleNamespace(
             allow_unsafe_nsmbds_options=False,
         ))
         with patch("worlds.nsmbds.get_settings", return_value=host):
-            with self.assertRaisesRegex(Exception, "at least one enabled category"):
-                world.generate_early()
+            world.generate_early()
 
     def test_traps_can_be_empty_with_nonzero_percentage(self) -> None:
         world = self.multiworld.worlds[self.player]
@@ -437,7 +477,7 @@ class TestUnsafeHostOptions(NSMBDSTestBase):
         with patch("worlds.nsmbds.get_settings", return_value=host):
             world.generate_early()
 
-    def test_random_death_link_requires_at_least_one_effect(self) -> None:
+    def test_random_death_link_restores_the_default_effect_pool(self) -> None:
         world = self.multiworld.worlds[self.player]
         world.options.death_link_effect.value = DeathLinkEffect.option_random_effect
         world.options.death_link_random_effects.value = set()
@@ -445,8 +485,15 @@ class TestUnsafeHostOptions(NSMBDSTestBase):
             allow_unsafe_nsmbds_options=False,
         ))
         with patch("worlds.nsmbds.get_settings", return_value=host):
-            with self.assertRaisesRegex(Exception, "at least one enabled effect"):
-                world.generate_early()
+            world.generate_early()
+        self.assertEqual(
+            world.options.death_link_random_effects.value,
+            DeathLinkRandomEffects.default,
+        )
+        self.assertEqual(
+            set(world.fill_slot_data()["options"]["death_link_random_effects"]),
+            DeathLinkRandomEffects.default,
+        )
 
     def test_fixed_death_link_allows_an_empty_random_pool(self) -> None:
         world = self.multiworld.worlds[self.player]
@@ -458,15 +505,31 @@ class TestUnsafeHostOptions(NSMBDSTestBase):
         with patch("worlds.nsmbds.get_settings", return_value=host):
             world.generate_early()
 
-    def test_host_rejects_unsafe_percentages_by_default(self) -> None:
+    def test_host_clamps_percentages_by_default(self) -> None:
         world = self.multiworld.worlds[self.player]
-        world.options.blocksanity_global_check_percentage.value = 31
+        world.options.blocksanity_global_check_percentage.value = 100
+        world.options.trap_percentage.value = 100
         host = SimpleNamespace(nsmbds_options=SimpleNamespace(
             allow_unsafe_nsmbds_options=False,
         ))
         with patch("worlds.nsmbds.get_settings", return_value=host):
-            with self.assertRaisesRegex(Exception, "host maximum of 30%"):
-                world.generate_early()
+            world.generate_early()
+        self.assertEqual(world.options.blocksanity_global_check_percentage.value, 30)
+        self.assertEqual(world.options.trap_percentage.value, 50)
+
+    def test_host_can_configure_percentage_caps(self) -> None:
+        world = self.multiworld.worlds[self.player]
+        world.options.blocksanity_global_check_percentage.value = 99
+        world.options.trap_percentage.value = 99
+        host = SimpleNamespace(nsmbds_options=SimpleNamespace(
+            blocksanity_global_check_percentage_cap=42,
+            trap_percentage_cap=73,
+            allow_unsafe_nsmbds_options=False,
+        ))
+        with patch("worlds.nsmbds.get_settings", return_value=host):
+            world.generate_early()
+        self.assertEqual(world.options.blocksanity_global_check_percentage.value, 42)
+        self.assertEqual(world.options.trap_percentage.value, 73)
 
     def test_host_can_allow_unsafe_percentages(self) -> None:
         world = self.multiworld.worlds[self.player]
@@ -477,6 +540,88 @@ class TestUnsafeHostOptions(NSMBDSTestBase):
         ))
         with patch("worlds.nsmbds.get_settings", return_value=host):
             world.generate_early()
+        self.assertEqual(world.options.blocksanity_global_check_percentage.value, 31)
+        self.assertEqual(world.options.trap_percentage.value, 51)
+
+
+class TestEmptyFillerWithoutTraps(NSMBDSTestBase):
+    options = {
+        "filler_items": [],
+        "traps": [],
+        "trap_percentage": 0,
+    }
+
+    def test_generation_uses_nothing_for_ordinary_filler(self) -> None:
+        names = [item.name for item in self.multiworld.itempool]
+        self.assertIn("Nothing", names)
+        self.assertFalse(any(
+            ItemClassification.trap in item.classification
+            for item in self.multiworld.itempool
+        ))
+
+
+class TestEmptyFillerWithTraps(NSMBDSTestBase):
+    options = {
+        "filler_items": [],
+        "traps": ["timer_drain"],
+        "trap_percentage": 25,
+    }
+
+    def test_generation_uses_traps_and_nothing(self) -> None:
+        names = [item.name for item in self.multiworld.itempool]
+        self.assertIn("Time Drain", names)
+        self.assertIn("Nothing", names)
+
+
+class TestEmptyFillerWithAllTraps(NSMBDSTestBase):
+    def test_unsafe_one_hundred_percent_traps_generates(self) -> None:
+        from .. import NSMBDSWorld
+
+        host = SimpleNamespace(nsmbds_options=SimpleNamespace(
+            allow_unsafe_nsmbds_options=True,
+        ))
+        with patch("worlds.nsmbds.get_settings", return_value=host):
+            multiworld = setup_multiworld(NSMBDSWorld, seed=12345, options={
+                "filler_items": [],
+                "traps": sorted(Traps.valid_keys),
+                "trap_percentage": 100,
+            })
+        self.assertEqual(multiworld.worlds[1].options.trap_percentage.value, 100)
+        self.assertTrue(any(
+            ItemClassification.trap in item.classification
+            for item in multiworld.itempool
+        ))
+
+
+class TestLargeOptionalBlockPools(NSMBDSTestBase):
+    def test_all_percentages_and_placement_modes_generate(self) -> None:
+        from .. import NSMBDSWorld
+
+        host = SimpleNamespace(nsmbds_options=SimpleNamespace(
+            allow_unsafe_nsmbds_options=True,
+        ))
+        for percentage in (0, 30, 100):
+            for placement in ("progression", "non_progression", "excluded"):
+                with self.subTest(percentage=percentage, placement=placement):
+                    with patch("worlds.nsmbds.get_settings", return_value=host):
+                        multiworld = setup_multiworld(NSMBDSWorld, seed=12345, options={
+                            "blocksanity": True,
+                            "world_6_2_bonus_area": True,
+                            "blocksanity_global_check_percentage": percentage,
+                            "blocksanity_item_placement": placement,
+                        })
+                    world = multiworld.worlds[1]
+                    self.assertEqual(world.options.blocksanity_global_check_percentage.value,
+                                     percentage)
+                    self.assertLessEqual(
+                        len(set(world.global_blocksanity_locations) &
+                            WORLD_6_2_BONUS_AREA_LOCATION_NAMES), 16,
+                    )
+                    self.assertEqual(
+                        len(multiworld.itempool),
+                        len([location for location in multiworld.get_locations(1)
+                             if location.address is not None and location.item is None]),
+                    )
 
 
 class TestTowerCastleKeysEnabled(NSMBDSTestBase):

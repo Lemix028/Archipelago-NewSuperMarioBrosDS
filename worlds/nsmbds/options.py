@@ -102,7 +102,8 @@ class BlocksanityGlobalCheckPercentage(Range):
 
     The remaining percentage is restricted to local filler items and traps for the NSMBDS player.
     0% = All block checks are local filler and traps.
-    30% = Standard host safety maximum (values above 30% require host setting 'allow_unsafe_nsmbds_options: true').
+    Hosts may cap the effective percentage (30% by default) without rejecting the seed.
+    The host setting 'allow_unsafe_nsmbds_options: true' disables that cap.
     100% = All block checks are global multiworld locations.
     """
     display_name = "Blocksanity Global Check Percentage"
@@ -300,7 +301,7 @@ FILLER_ITEMS_BY_KEY: dict[str, tuple[str, ...]] = {
 class FillerItems(OptionSet):
     """
     Filler item categories enabled for the item pool. Remove an entry to disable
-    that category. At least one entry must remain enabled.
+    that category. If all categories are disabled, ordinary filler slots contain Nothing.
 
     powerups:      Mushrooms, Fire Flowers, Blue Shells, Mini Mushrooms, and Mega Mushrooms.
     starman:       15 seconds of invincibility.
@@ -326,7 +327,8 @@ class TrapPercentage(Range):
     Percentage of filler item slots that will be replaced with traps.
     Set to 0 to disable all traps.
 
-    Values above 50% require host setting 'allow_unsafe_nsmbds_options: true'.
+    Hosts may cap the effective percentage (50% by default) without rejecting the seed.
+    The host setting 'allow_unsafe_nsmbds_options: true' disables that cap.
     """
     display_name = "Trap Percentage"
     range_start = 0
@@ -413,7 +415,8 @@ class DeathLinkEffect(Choice):
 class DeathLinkRandomEffects(OptionSet):
     """
     Effects that may be selected when Death Link: Effect is set to random_effect.
-    At least one effect must remain enabled.
+    If empty while random_effect is selected, generation restores the documented
+    default pool deterministically.
     """
     display_name = "Death Link: Random Effects"
     valid_keys = frozenset({"death", "damage", "timer_drain", "lose_all_coins"})

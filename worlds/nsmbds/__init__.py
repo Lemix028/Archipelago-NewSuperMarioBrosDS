@@ -70,6 +70,7 @@ from .options import (
     ITEM_PLACEMENT_PROGRESSION,
     TRAP_ITEMS_BY_KEY,
     DeathLinkEffect,
+    DeathLinkRandomEffects,
     NSMBDSOptions,
 )
 from .regions import REGION_LIST, build_region_connections, build_region_locations
@@ -143,6 +144,8 @@ class NSMBDSWorld(World):
     content_to_slot: dict[str, str]
     level_music_mapping: dict[str, int]
     world_map_music_mapping: dict[str, int]
+    global_blocksanity_locations: list[str]
+    _re_gen_slot_data: dict[str, Any]
 
     @staticmethod
     def interpret_slot_data(slot_data: dict[str, Any]) -> dict[str, Any]:
@@ -153,6 +156,7 @@ class NSMBDSWorld(World):
         """Validate option combinations and host limits before regions and items are created."""
         re_gen_passthrough = getattr(self.multiworld, "re_gen_passthrough", {})
         slot_data = re_gen_passthrough.get(self.game, {})
+        self._re_gen_slot_data = slot_data
         if slot_data:
             # New seeds carry every option. The top-level fallback keeps older
             # 0.4.x seeds trackable with the options they already exposed.
@@ -263,26 +267,32 @@ class NSMBDSWorld(World):
         def _bool(opt: Any) -> bool:
             return bool(getattr(opt, "value", opt))
 
-        blocksanity_pct = _val(self.options.blocksanity_global_check_percentage)
-        trap_pct = _val(self.options.trap_percentage)
-
         if (
             _val(self.options.death_link_effect) == DeathLinkEffect.option_random_effect
             and not self.options.death_link_random_effects.value
         ):
-            raise Exception("Death Link Random Effects must contain at least one enabled effect.")
+            self.options.death_link_random_effects.value = set(DeathLinkRandomEffects.default)
 
         if not allow_unsafe:
-            if blocksanity_pct > 30:
-                raise Exception(
-                    f"Blocksanity Global Check Percentage ({blocksanity_pct}%) "
-                    f"exceeds host maximum of 30%. Enable allow_unsafe_nsmbds_options to override."
-                )
-            if trap_pct > 50:
-                raise Exception(
-                    f"Trap Percentage ({trap_pct}%) "
-                    f"exceeds host maximum of 50%. Enable allow_unsafe_nsmbds_options to override."
-                )
+            def host_percentage_cap(name: str, default: int) -> int:
+                try:
+                    value = int(getattr(host_settings, name, default))
+                except (TypeError, ValueError):
+                    value = default
+                return max(0, min(100, value))
+
+            blocksanity_cap = host_percentage_cap(
+                "blocksanity_global_check_percentage_cap", 30
+            )
+            trap_cap = host_percentage_cap("trap_percentage_cap", 50)
+            self.options.blocksanity_global_check_percentage.value = min(
+                _val(self.options.blocksanity_global_check_percentage),
+                blocksanity_cap,
+            )
+            self.options.trap_percentage.value = min(
+                _val(self.options.trap_percentage),
+                trap_cap,
+            )
 
         goal = _val(self.options.goal)
         if goal in (1, 3):
@@ -290,9 +300,6 @@ class NSMBDSWorld(World):
                 raise Exception(
                     "Required Star Coins cannot exceed 240."
                 )
-
-        if not self.options.filler_items.value:
-            raise Exception("Filler Items must contain at least one enabled category.")
 
     def create_regions(self) -> None:
         """Create all game regions, connect them, and populate with locations."""
@@ -413,6 +420,7 @@ class NSMBDSWorld(World):
 
         # Select global Blocksanity checks uniformly across the complete eligible
         # pool, while retaining the W6-2 Bonus Area sub-cap (max 16).
+        self.global_blocksanity_locations = []
         if active_block_locations:
             percentage = int(getattr(self.options.blocksanity_global_check_percentage, "value", self.options.blocksanity_global_check_percentage))
             total_blocks = len(active_block_locations)
@@ -423,23 +431,56 @@ class NSMBDSWorld(World):
             normal_block_locs = [loc for loc in active_block_locations if loc.name not in WORLD_6_2_BONUS_AREA_LOCATION_NAMES]
 
             MAX_BONUS_AREA_GLOBAL_CHECKS = 16
-            if len(bonus_area_locs) > MAX_BONUS_AREA_GLOBAL_CHECKS:
-                self.random.shuffle(bonus_area_locs)
-                bonus_area_global_candidates = bonus_area_locs[:MAX_BONUS_AREA_GLOBAL_CHECKS]
-                for loc in bonus_area_locs[MAX_BONUS_AREA_GLOBAL_CHECKS:]:
+            stored_global_locations = self._re_gen_slot_data.get(
+                "global_blocksanity_locations"
+            ) if self._re_gen_slot_data else None
+            if stored_global_locations is not None:
+                if not isinstance(stored_global_locations, (list, tuple, set, frozenset)):
+                    raise ValueError(
+                        "Invalid global_blocksanity_locations in NSMBDS slot data."
+                    )
+                active_names = {loc.name for loc in active_block_locations}
+                global_selected_names = {
+                    str(location_name) for location_name in stored_global_locations
+                }
+                selected_bonus_count = len(
+                    global_selected_names & WORLD_6_2_BONUS_AREA_LOCATION_NAMES
+                )
+                max_global_count = len(normal_block_locs) + min(
+                    len(bonus_area_locs), MAX_BONUS_AREA_GLOBAL_CHECKS
+                )
+                expected_global_count = min(global_target_count, max_global_count)
+                if (
+                    not global_selected_names <= active_names
+                    or selected_bonus_count > MAX_BONUS_AREA_GLOBAL_CHECKS
+                    or len(global_selected_names) != expected_global_count
+                ):
+                    raise ValueError(
+                        "NSMBDS slot data contains an invalid global Blocksanity selection."
+                    )
+            else:
+                if len(bonus_area_locs) > MAX_BONUS_AREA_GLOBAL_CHECKS:
+                    self.random.shuffle(bonus_area_locs)
+                    bonus_area_global_candidates = bonus_area_locs[
+                        :MAX_BONUS_AREA_GLOBAL_CHECKS
+                    ]
+                else:
+                    bonus_area_global_candidates = bonus_area_locs
+
+                candidates = normal_block_locs + bonus_area_global_candidates
+                if global_target_count < len(candidates):
+                    global_selected_names = {
+                        loc.name
+                        for loc in self.random.sample(candidates, global_target_count)
+                    }
+                else:
+                    global_selected_names = {loc.name for loc in candidates}
+
+            self.global_blocksanity_locations = sorted(global_selected_names)
+            for loc in active_block_locations:
+                if loc.name not in global_selected_names:
                     loc.progress_type = LocationProgressType.EXCLUDED
                     setattr(loc, "is_local_filler_only", True)
-            else:
-                bonus_area_global_candidates = bonus_area_locs
-
-            candidates = normal_block_locs + bonus_area_global_candidates
-
-            if global_target_count < len(candidates):
-                global_selected = set(self.random.sample(candidates, global_target_count))
-                for loc in candidates:
-                    if loc not in global_selected:
-                        loc.progress_type = LocationProgressType.EXCLUDED
-                        setattr(loc, "is_local_filler_only", True)
 
         # Connect regions via entrances
         for source_name, target_name, entrance_name in build_region_connections(self.level_mapping):
@@ -605,6 +646,12 @@ class NSMBDSWorld(World):
         data = ITEM_TABLE[name]
         return NSMBDSItem(name, data[1], data[0], self.player)
 
+    def collect_item(self, state: Any, item: Item, remove: bool = False) -> str | None:
+        """Every collected Star Coin counts, even when fill classifies it as useful."""
+        if item.name == "Star Coin":
+            return item.name
+        return super().collect_item(state, item, remove)
+
     def get_filler_item_name(self) -> str:
         """Return a safe repeatable replacement for plando and item links."""
         return "Nothing"
@@ -669,6 +716,7 @@ class NSMBDSWorld(World):
             "level_randomization_version": LEVEL_RANDOMIZATION_VERSION,
             "level_mapping": dict(self.level_mapping),
             "level_mapping_digest": level_mapping_digest(self.level_mapping),
+            "global_blocksanity_locations": list(self.global_blocksanity_locations),
             # Keep these explicit compatibility flags for clients and trackers.
             # New seeds always use randomized Star Coin checks and items.
             "star_coin_checks": True,

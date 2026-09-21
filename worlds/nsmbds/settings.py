@@ -20,6 +20,8 @@ class NSMBDSSettings(Group):
     base_rom: Optional[BaseRom] = None
     last_patched_rom: Optional[LastPatchedRom] = None
     auto_launch_game: bool = False
+    blocksanity_global_check_percentage_cap: int = 30
+    trap_percentage_cap: int = 50
     allow_unsafe_nsmbds_options: bool = False
     emulator_feed_enabled: bool = True
     emulator_feed_width: int = 500
