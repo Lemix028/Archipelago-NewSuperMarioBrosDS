@@ -238,6 +238,7 @@ def write_patch_payload(world: "NSMBDSWorld", patch: NSMBDSProcedurePatch) -> No
         "star_coin_gate_mode": world.options.star_coin_gate_mode.value,
         "star_coin_tracking": world.options.star_coin_tracking.value,
         "death_link": bool(world.options.death_link.value),
+        "death_link_amnesty": world.options.death_link_amnesty.value,
         "death_link_grace_percentage": world.options.death_link_grace_percentage.value,
         "death_link_cooldown_seconds": world.options.death_link_cooldown_seconds.value,
         "death_link_effect": world.options.death_link_effect.value,

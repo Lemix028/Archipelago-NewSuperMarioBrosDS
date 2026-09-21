@@ -92,6 +92,7 @@ class DeathLinkMixin:
             self._pending_death_link_effect = None
             self._return_to_map_pending = False
             self._death_link_cooldown_until = 0.0
+            self._death_link_amnesty_count = 0
             self._suppress_next_local_death = False
         logger.info("NSMBDS Death Link %s.", "enabled" if enabled else "disabled")
 
@@ -302,5 +303,17 @@ class DeathLinkMixin:
         if not self._in_level_grace_polls:
             logger.info("Ignored life loss outside a recently active level timer.")
             return
+
+        amnesty = max(1, min(30, int((ctx.slot_data or {}).get("death_link_amnesty", 1))))
+        self._death_link_amnesty_count += 1
+        if self._death_link_amnesty_count < amnesty:
+            logger.info(
+                "Death Link amnesty: counted eligible local death %d of %d.",
+                self._death_link_amnesty_count,
+                amnesty,
+            )
+            return
+
+        self._death_link_amnesty_count = 0
         await ctx.send_death("Mario died.")
         logger.info("Sent Death Link for a local Mario death.")

@@ -367,6 +367,18 @@ class DeathLinkGracePercentage(Range):
     default = 0
 
 
+class DeathLinkAmnesty(Range):
+    """
+    Number of eligible local deaths required to send one Death Link.
+    Set to 1 to send every eligible death, or 5 to send only every fifth.
+    Deaths caused by incoming Death Links and Return to Map do not count.
+    """
+    display_name = "Death Link: Amnesty"
+    range_start = 1
+    range_end = 30
+    default = 1
+
+
 class DeathLinkCooldownSeconds(Range):
     """
     Number of seconds after an incoming Death Link effect is applied during which
@@ -612,6 +624,7 @@ class NSMBDSOptions(PerGameCommonOptions):
     trap_percentage:                      TrapPercentage
     bonk_trap_can_kill:                   BonkTrapCanKill
     death_link:                           DeathLink
+    death_link_amnesty:                   DeathLinkAmnesty
     death_link_grace_percentage:          DeathLinkGracePercentage
     death_link_cooldown_seconds:           DeathLinkCooldownSeconds
     death_link_effect:                    DeathLinkEffect
@@ -667,6 +680,7 @@ NSMBDS_OPTION_GROUPS = [
     ]),
     OptionGroup("Death Link", [
         DeathLink,
+        DeathLinkAmnesty,
         DeathLinkGracePercentage,
         DeathLinkCooldownSeconds,
         DeathLinkEffect,

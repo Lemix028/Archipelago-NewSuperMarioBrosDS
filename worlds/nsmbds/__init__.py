@@ -703,6 +703,7 @@ class NSMBDSWorld(World):
             "filler_items": sorted(self.options.filler_items.value),
             "traps": sorted(self.options.traps.value),
             "death_link": bool(self.options.death_link.value),
+            "death_link_amnesty": self.options.death_link_amnesty.value,
             "death_link_grace_percentage": self.options.death_link_grace_percentage.value,
             "death_link_cooldown_seconds": self.options.death_link_cooldown_seconds.value,
             "death_link_effect": self.options.death_link_effect.value,

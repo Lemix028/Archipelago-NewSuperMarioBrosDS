@@ -147,6 +147,7 @@ class NSMBDSClient(
         self._pending_death_link_effect: int | None = None
         self._death_link_rng = random.Random()
         self._death_link_cooldown_until = 0.0
+        self._death_link_amnesty_count = 0
         self._suppress_next_local_death = False
         self._last_lives: int | None = None
         self._last_timer: int | None = None
@@ -593,6 +594,7 @@ class NSMBDSClient(
         self._pending_death_link = False
         self._pending_death_link_effect = None
         self._death_link_cooldown_until = 0.0
+        self._death_link_amnesty_count = 0
         self._suppress_next_local_death = False
         self._last_lives = None
         self._last_timer = None

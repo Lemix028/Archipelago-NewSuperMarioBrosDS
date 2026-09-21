@@ -179,6 +179,7 @@ class TestProcedurePatch(NSMBDSTestBase):
             self.assertEqual(patch_config["level_music_mapping"], {})
             self.assertEqual(patch_config["world_map_music_mapping"], {})
             self.assertEqual(patch_config["options"]["death_link_grace_percentage"], 0)
+            self.assertEqual(patch_config["options"]["death_link_amnesty"], 1)
             self.assertEqual(patch_config["options"]["death_link_cooldown_seconds"], 0)
             self.assertEqual(patch_config["options"]["death_link_effect"], 0)
             self.assertEqual(patch_config["options"]["trap_percentage"], 15)

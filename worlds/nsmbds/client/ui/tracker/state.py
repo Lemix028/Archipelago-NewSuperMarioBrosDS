@@ -82,6 +82,7 @@ class TrackerSnapshot:
     death_link_enabled: bool
     death_link_effect: str
     death_link_random_effects: tuple[str, ...]
+    death_link_amnesty: int
     death_link_grace_percentage: int
     death_link_cooldown_seconds: int
     trap_shields: int
@@ -269,6 +270,7 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
             for key, name in DEATH_LINK_RANDOM_EFFECT_NAMES.items()
             if key in slot_data.get("death_link_random_effects", DEATH_LINK_RANDOM_EFFECT_NAMES)
         ),
+        death_link_amnesty=int(slot_data.get("death_link_amnesty", 1)),
         death_link_grace_percentage=int(slot_data.get("death_link_grace_percentage", 0)),
         death_link_cooldown_seconds=int(slot_data.get("death_link_cooldown_seconds", 0)),
         trap_shields=int(getattr(rom_handler, "_pending_trap_shields", 0)),
@@ -290,6 +292,11 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
 
 def render_tracker_markup(snapshot: TrackerSnapshot) -> str:
     """Render a compact Kivy-markup view of a spoiler-free snapshot."""
+    death_link_amnesty = (
+        "every local death"
+        if snapshot.death_link_amnesty == 1
+        else f"1 in {snapshot.death_link_amnesty} local deaths"
+    )
     lines = [
         "[size=24sp][b]NSMBDS Overview[/b][/size]",
         "[color=9E9E9E]No item placements are shown. Use the Hints tab for hinted information.[/color]",
@@ -341,6 +348,7 @@ def render_tracker_markup(snapshot: TrackerSnapshot) -> str:
         f"Death Link: {'On' if snapshot.death_link_enabled else 'Off'}",
         (
             f"Death Link Rules: {snapshot.death_link_effect} | "
+            f"{death_link_amnesty} | "
             f"{snapshot.death_link_grace_percentage}% grace | "
             f"{snapshot.death_link_cooldown_seconds}s cooldown"
         ),

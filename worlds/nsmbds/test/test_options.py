@@ -15,6 +15,7 @@ from ..locations import (
 )
 from ..options import (
     CannonRouteLogic,
+    DeathLinkAmnesty,
     DeathLinkCooldownSeconds,
     DeathLinkEffect,
     DeathLinkGracePercentage,
@@ -135,6 +136,9 @@ class TestBalancingDefaults(NSMBDSTestBase):
         self.assertEqual(Traps.default, Traps.valid_keys)
 
     def test_death_link_defaults_and_ranges(self) -> None:
+        self.assertEqual(DeathLinkAmnesty.range_start, 1)
+        self.assertEqual(DeathLinkAmnesty.range_end, 30)
+        self.assertEqual(DeathLinkAmnesty.default, 1)
         self.assertEqual(DeathLinkGracePercentage.range_start, 0)
         self.assertEqual(DeathLinkGracePercentage.range_end, 75)
         self.assertEqual(DeathLinkGracePercentage.default, 0)
@@ -192,6 +196,7 @@ class TestBalancingDefaults(NSMBDSTestBase):
 class TestDeathLinkConfiguration(NSMBDSTestBase):
     options = {
         "death_link": True,
+        "death_link_amnesty": 5,
         "death_link_grace_percentage": 35,
         "death_link_cooldown_seconds": 20,
         "death_link_effect": "random_effect",
@@ -202,6 +207,7 @@ class TestDeathLinkConfiguration(NSMBDSTestBase):
     def test_complete_death_link_configuration_reaches_slot_data(self) -> None:
         slot_data = self.world.fill_slot_data()
         self.assertTrue(slot_data["death_link"])
+        self.assertEqual(slot_data["death_link_amnesty"], 5)
         self.assertEqual(slot_data["death_link_grace_percentage"], 35)
         self.assertEqual(slot_data["death_link_cooldown_seconds"], 20)
         self.assertEqual(slot_data["death_link_effect"], DeathLinkEffect.option_random_effect)

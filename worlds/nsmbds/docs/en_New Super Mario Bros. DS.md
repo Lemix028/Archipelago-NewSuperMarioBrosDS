@@ -221,6 +221,11 @@ Life Insurance prevents the next local death from consuming a life.
 The option Death Link: Trigger on Insured Deaths determines whether that insured death is still sent through Death Link. 
 It is disabled by default.
 
+**Death Link: Amnesty** controls how often eligible local deaths are shared.
+The default value of 1 sends every death; a value of 5 sends only every fifth
+eligible death. Deaths caused by an incoming Death Link and Return to Map life
+losses neither send nor advance the amnesty counter.
+
 Incoming Death Links can be customized with four additional options:
 
 - **Grace Percentage** is the chance to ignore an incoming Death Link completely.
@@ -291,7 +296,7 @@ you will find there:
 - **Filler:** select which Power-Ups, lives, Coins, bonuses, and protection
   items may appear through one list.
 - **Traps:** set the overall percentage and select allowed effects through one list.
-- **Multiplayer:** configure Death Link effects, grace, cooldown, and Life Insurance behavior.
+- **Multiplayer:** configure Death Link amnesty, effects, grace, cooldown, and Life Insurance behavior.
 - **Cosmetics:** select separate Mario and Luigi palettes and optionally
   shuffle the in-level secondary-screen backgrounds.
 

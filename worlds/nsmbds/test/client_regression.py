@@ -164,6 +164,7 @@ class FakeContext:
             "star_coin_checks": True,
             "red_coin_checks": True,
             "death_link": death_link,
+            "death_link_amnesty": 1,
             "death_link_grace_percentage": 0,
             "death_link_cooldown_seconds": 0,
             "death_link_effect": death_link_module.DEATH_LINK_EFFECT_DEATH,
@@ -559,6 +560,7 @@ def test_spoiler_free_tracker() -> None:
     )
     context.slot_data.update({
         "death_link": True,
+        "death_link_amnesty": 5,
         "death_link_grace_percentage": 25,
         "death_link_cooldown_seconds": 12,
         "death_link_effect": death_link_module.DEATH_LINK_EFFECT_RANDOM,
@@ -605,9 +607,10 @@ def test_spoiler_free_tracker() -> None:
         snapshot.death_link_enabled
         and snapshot.death_link_effect == "Random"
         and snapshot.death_link_random_effects == ("Damage", "100-Second Timer Drain")
+        and snapshot.death_link_amnesty == 5
         and snapshot.death_link_grace_percentage == 25
         and snapshot.death_link_cooldown_seconds == 12
-        and "Death Link Rules: Random | 25% grace | 12s cooldown" in markup
+        and "Death Link Rules: Random | 1 in 5 local deaths | 25% grace | 12s cooldown" in markup
         and "Death Link Random Pool: Damage, 100-Second Timer Drain" in markup,
         "Overview exposes the active Death Link rules and configured random pool",
     )
@@ -2461,6 +2464,51 @@ async def test_insured_death_still_sends_death_link() -> None:
     )
 
 
+async def test_death_link_amnesty_sends_only_every_configured_death() -> None:
+    sent_deaths: list[str] = []
+    states = iter(
+        (10 - death, 200 - death)
+        for death in range(1, 6)
+    )
+
+    async def fake_read(_bizhawk_ctx, _read_requests):
+        lives, timer_seconds = next(states)
+        return [
+            bytes([lives]),
+            struct.pack("<I", timer_seconds * ram_addresses.TIMER_UNITS_PER_SECOND),
+            bytes([0]),
+            bytes([0]),
+            bytes([0]),
+            bytes([0]),
+            bytes([0]),
+            struct.pack("<I", 0),
+        ]
+
+    async def fake_send_death(message):
+        sent_deaths.append(message)
+
+    fake_bizhawk.read = fake_read
+    client = client_module.NSMBDSClient()
+    client._last_lives = 10
+    client._last_timer = 200 * ram_addresses.TIMER_UNITS_PER_SECOND
+    context = FakeContext(death_link=True)
+    context.slot_data["death_link_amnesty"] = 5
+    context.send_death = fake_send_death
+
+    for _ in range(4):
+        await client._handle_death_link(context)
+    check(
+        not sent_deaths and client._death_link_amnesty_count == 4,
+        "Death Link amnesty counts eligible local deaths without sending early",
+    )
+
+    await client._handle_death_link(context)
+    check(
+        sent_deaths == ["Mario died."] and client._death_link_amnesty_count == 0,
+        "Death Link amnesty sends and resets exactly on the configured death",
+    )
+
+
 async def test_return_to_map_does_not_send_death_link() -> None:
     sent_deaths: list[str] = []
     states = iter((
@@ -2496,8 +2544,10 @@ async def test_return_to_map_does_not_send_death_link() -> None:
     await client._handle_death_link(context)
     await client._handle_death_link(context)
     check(
-        not sent_deaths and not client._return_to_map_pending,
-        "Return to Map life loss is not treated as a local death",
+        not sent_deaths
+        and not client._return_to_map_pending
+        and client._death_link_amnesty_count == 0,
+        "Return to Map life loss neither sends nor advances Death Link amnesty",
     )
 
 
