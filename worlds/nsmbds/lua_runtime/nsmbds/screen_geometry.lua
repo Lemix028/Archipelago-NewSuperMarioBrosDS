@@ -21,6 +21,22 @@ local ROTATION_INDEX = {
     Rotate270 = 3,
 }
 
+-- Geometry is requested by several independent HUD components during the same
+-- frame. BizHawk's layout/buffer queries are comparatively expensive, while a
+-- layout cannot usefully change halfway through one rendered frame.
+local cached_frame = nil
+local cached_screens = nil
+local cached_geometry = nil
+local cached_gameplay_frame = nil
+local cached_gameplay_domain = nil
+local cached_gameplay_kind = nil
+
+local function current_frame()
+    if not emu or not emu.framecount then return nil end
+    local ok, frame = pcall(emu.framecount)
+    return ok and frame or nil
+end
+
 
 local function safe_call(fn, fallback)
     if not fn then
@@ -93,6 +109,13 @@ end
 
 
 function M.get_gameplay_kind(system_bus_domain)
+    local frame = current_frame()
+    if frame ~= nil and frame == cached_gameplay_frame
+        and system_bus_domain == cached_gameplay_domain
+        and cached_gameplay_kind ~= nil then
+        return cached_gameplay_kind
+    end
+
     if system_bus_domain == nil
         or not _G.memory
         or not _G.memory.read_u16_le then
@@ -104,8 +127,15 @@ function M.get_gameplay_kind(system_bus_domain)
         0x04000304,
         system_bus_domain
     )
-    if not ok or type(powcnt1) ~= "number" then return "top" end
-    return (powcnt1 & 0x8000) ~= 0 and "top" or "bottom"
+    local kind = (not ok or type(powcnt1) ~= "number")
+        and "top"
+        or ((powcnt1 & 0x8000) ~= 0 and "top" or "bottom")
+    if frame ~= nil then
+        cached_gameplay_frame = frame
+        cached_gameplay_domain = system_bus_domain
+        cached_gameplay_kind = kind
+    end
+    return kind
 end
 
 
@@ -308,6 +338,11 @@ end
 
 
 function M.get_screens()
+    local frame = current_frame()
+    if frame ~= nil and frame == cached_frame and cached_screens ~= nil then
+        return cached_screens, cached_geometry
+    end
+
     local layout = get_layout()
     local rotation = get_rotation()
     local rotation_index = ROTATION_INDEX[rotation] or 0
@@ -434,7 +469,7 @@ function M.get_screens()
     end
 
 
-    return screens, {
+    local geometry = {
         layout = layout,
         rotation = rotation,
         rotation_index = rotation_index,
@@ -453,6 +488,21 @@ function M.get_screens()
         screen_width = screen_width,
         screen_height = screen_height,
     }
+    if frame ~= nil then
+        cached_frame = frame
+        cached_screens = screens
+        cached_geometry = geometry
+    end
+    return screens, geometry
+end
+
+function M.invalidate_cache()
+    cached_frame = nil
+    cached_screens = nil
+    cached_geometry = nil
+    cached_gameplay_frame = nil
+    cached_gameplay_domain = nil
+    cached_gameplay_kind = nil
 end
 
 

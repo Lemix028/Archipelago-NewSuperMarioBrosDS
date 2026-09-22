@@ -52,6 +52,43 @@ class TestNativeHookSources(unittest.TestCase):
         self.assertEqual(ADDR_LEVEL_DATA_BASE, 0x00088C4C)
         self.assertEqual(LEVEL_DATA_WORLD_STRIDE, 25)
 
+    def test_runtime_caches_geometry_and_has_opt_in_slow_frame_profiling(self) -> None:
+        runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime"
+        geometry = (runtime_root / "nsmbds" / "screen_geometry.lua").read_text(
+            encoding="utf-8"
+        )
+        orchestrator = (runtime_root / "nsmbds_sideloading.lua").read_text(
+            encoding="utf-8"
+        )
+        profiler = (runtime_root / "nsmbds" / "profiler.lua").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("frame == cached_frame", geometry)
+        self.assertIn("frame == cached_gameplay_frame", geometry)
+        self.assertIn('require("nsmbds.profiler")', orchestrator)
+        for section in (
+            "actor_scan",
+            "native_block_drain",
+            "star_coin_persistence",
+            "blocksanity_observers",
+            "trap_update",
+            "hud_rendering",
+            "hud_clear",
+            "notification_mailbox",
+            "protection_hud",
+            "notification_hud",
+            "visual_trap_hud",
+            "trap_status_hud",
+            "emulator_feed_hud",
+        ):
+            self.assertIn(f'profiler.finish_section("{section}"', orchestrator)
+        self.assertIn('rawget(_G, "NSMBDS_PERF_PROFILE") == true', profiler)
+        bootstrap = (runtime_root / "nsmbds_bizhawk_bootstrap.lua").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("NSMBDS_PERF_PROFILE = false", bootstrap)
+
     def test_death_link_notifications_use_one_unified_dl_popup(self) -> None:
         runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime" / "nsmbds"
         state_source = (runtime_root / "state.lua").read_text(encoding="utf-8")
@@ -92,6 +129,32 @@ class TestNativeHookSources(unittest.TestCase):
         self.assertIn("no_turnaround:", assembly)
         self.assertIn('trigger_code == 32', traps)
         self.assertIn('M.begin_timed_trap("no_turnaround", LONG_TRAP_FRAMES)', traps)
+
+    def test_sideloading_uses_only_the_native_input_and_head_bonk_api(self) -> None:
+        runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime"
+        orchestrator = (runtime_root / "nsmbds_sideloading.lua").read_text(
+            encoding="utf-8"
+        )
+        constants = (runtime_root / "nsmbds" / "constants.lua").read_text(
+            encoding="utf-8"
+        )
+        traps = (runtime_root / "nsmbds" / "traps.lua").read_text(encoding="utf-8")
+        hooks = (runtime_root / "nsmbds" / "hooks.lua").read_text(encoding="utf-8")
+
+        self.assertIn("function M.disable_native_input()", traps)
+        self.assertIn("function M.poll_native_head_bonk()", hooks)
+        self.assertIn("traps.disable_native_input()", orchestrator)
+        self.assertIn("hooks.poll_native_head_bonk()", orchestrator)
+        for retired_call in (
+            "disable_input_filter_hooks",
+            "cleanup_previous_block_hooks",
+            "disable_head_bonk_execute_hook",
+            "sync_head_bonk_execute_hook",
+        ):
+            self.assertNotIn(retired_call, orchestrator)
+        self.assertIn("M.SYS_NATIVE_INPUT_CONTROL = 0x02002C40", constants)
+        self.assertIn("M.NATIVE_INPUT_MAGIC = 0x54495041", constants)
+        self.assertIn("M.NATIVE_INPUT_VERSION = 1", constants)
 
     def test_gameplay_traps_share_the_stage_freeze_gate(self) -> None:
         runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime"

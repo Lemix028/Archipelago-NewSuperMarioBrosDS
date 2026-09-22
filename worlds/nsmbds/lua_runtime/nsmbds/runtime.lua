@@ -21,6 +21,8 @@ function M.ensure_initialized()
     if context.initialized_rom_hash ~= rom_hash then
         context.is_initialized = false
         context.initialized_rom_hash = rom_hash
+        context.gameplay_gate_frame = nil
+        context.native_head_bonk_last_sequence = nil
         incompatible_rom_reported = false
     end
     if context.is_initialized then return true end

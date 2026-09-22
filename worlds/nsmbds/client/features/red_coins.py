@@ -35,7 +35,11 @@ logger = logging.getLogger("NSMBDS")
 class RedCoinTrackingMixin:
     """Consume Lua-latched Red Coin completion events exactly once."""
 
-    async def _detect_and_send_red_coin_challenge(self, ctx: "BizHawkClientContext") -> None:
+    async def _detect_and_send_red_coin_challenge(
+        self,
+        ctx: "BizHawkClientContext",
+        pending_checks: list[tuple[str, int, int]] | None = None,
+    ) -> None:
         """Resolve one pending Lua event and acknowledge it after safe handling."""
         from worlds._bizhawk import guarded_write, read
 
@@ -118,6 +122,10 @@ class RedCoinTrackingMixin:
                 location_name,
             )
             await self._acknowledge_red_coin_event(ctx, sequence_value, guarded_write)
+            return
+
+        if pending_checks is not None:
+            pending_checks.append(("red_coin", location_id, sequence_value))
             return
 
         try:

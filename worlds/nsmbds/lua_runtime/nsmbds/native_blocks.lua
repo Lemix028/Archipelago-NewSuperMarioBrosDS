@@ -5,11 +5,22 @@ local constants = require("nsmbds.constants")
 local UINT32 = 0x100000000
 local reported_error = nil
 local last_overflow = 0
+local last_ready_frame = nil
+local last_ready_result = false
+local READY_RECHECK_FRAMES = 30
 
 function M.is_ready()
+    local frame = emu and emu.framecount and emu.framecount() or nil
+    if frame ~= nil and last_ready_frame ~= nil and frame >= last_ready_frame
+        and frame - last_ready_frame < READY_RECHECK_FRAMES then
+        return last_ready_result
+    end
     local header = memory.to_domain_addr(constants.SYS_NATIVE_BLOCK_PRODUCER)
-    return _G.memory.read_u32_le(header) == constants.NATIVE_BLOCK_MAGIC
+    local ready = _G.memory.read_u32_le(header) == constants.NATIVE_BLOCK_MAGIC
         and _G.memory.read_u32_le(header + 4) == constants.NATIVE_BLOCK_VERSION
+    last_ready_frame = frame
+    last_ready_result = ready
+    return ready
 end
 
 local function report(message)

@@ -7,6 +7,7 @@ import hashlib
 import logging
 import random
 from collections import deque
+from time import perf_counter
 from typing import TYPE_CHECKING, Sequence
 
 from worlds._bizhawk.client import BizHawkClient
@@ -62,6 +63,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("NSMBDS")
 _dedicated_client_mode = False
+WATCHER_OPERATION_SLOW_SECONDS = 0.050
+WATCHER_TOTAL_SLOW_SECONDS = 0.150
+MEDIUM_POLL_TICKS = 3
+SLOW_POLL_TICKS = 10
+WATCHER_SLOW_LOG_COOLDOWN_SECONDS = 5.0
 
 
 def _selected_seed_rom_matches_hash(ctx: "BizHawkClientContext") -> bool:
@@ -205,6 +211,9 @@ class NSMBDSClient(
         self._gate_storage_sync_pending = False
         self._gate_storage_write_pending = False
         self._last_published_poptracker_view: str | None = None
+        self._watcher_tick = 0
+        self._native_block_configuration_ready = False
+        self._watcher_slow_log_times: dict[str, float] = {}
 
     async def validate_rom(self, ctx: "BizHawkClientContext") -> bool:
         """Accept only the verified NSMBDS USA ROM header code."""
@@ -264,9 +273,72 @@ class NSMBDSClient(
         self._emulator_feed_server_announced = False
         self._emulator_feed_config_sent = None
         self._star_coin_tracking_mode_sent = None
+        self._native_block_configuration_ready = False
         return True
+
     async def game_watcher(self, ctx: "BizHawkClientContext") -> None:
         """Poll verified game data, submit checks, and apply pending features."""
+        watcher_started = perf_counter()
+        try:
+            await self._run_game_watcher(ctx)
+        finally:
+            elapsed = perf_counter() - watcher_started
+            if elapsed >= WATCHER_TOTAL_SLOW_SECONDS:
+                self._log_slow_watcher_operation("total", elapsed)
+
+    def _log_slow_watcher_operation(self, operation_name: str, elapsed: float) -> None:
+        """Rate-limit diagnostics so a persistent stall cannot create a log storm."""
+        now = perf_counter()
+        previous = self._watcher_slow_log_times.get(operation_name, -WATCHER_SLOW_LOG_COOLDOWN_SECONDS)
+        if now - previous < WATCHER_SLOW_LOG_COOLDOWN_SECONDS:
+            return
+        self._watcher_slow_log_times[operation_name] = now
+        if operation_name == "total":
+            logger.warning("Slow NSMBDS game_watcher: %.1f ms.", elapsed * 1000)
+        else:
+            logger.warning(
+                "Slow NSMBDS watcher operation %s: %.1f ms.",
+                operation_name,
+                elapsed * 1000,
+            )
+
+    async def _run_watcher_operation(self, operation_name: str, operation):
+        """Run one watcher operation and report only meaningful stalls."""
+        started = perf_counter()
+        try:
+            return await operation
+        except Exception:
+            logger.exception("NSMBDS %s failed; the watcher will retry next tick.", operation_name)
+        finally:
+            elapsed = perf_counter() - started
+            if elapsed >= WATCHER_OPERATION_SLOW_SECONDS:
+                self._log_slow_watcher_operation(operation_name, elapsed)
+
+    async def _submit_pending_mailbox_checks(
+        self,
+        ctx: "BizHawkClientContext",
+        pending_checks: list[tuple[str, int, int]],
+    ) -> None:
+        """Submit simultaneous Lua mailbox checks in one AP message, then acknowledge them."""
+        if not pending_checks:
+            return
+        location_ids = list(dict.fromkeys(
+            location_id for _kind, location_id, _sequence in pending_checks
+        ))
+        await ctx.send_msgs([{"cmd": "LocationChecks", "locations": location_ids}])
+        self._observed_locations.update(location_ids)
+        self._sent_locations.update(location_ids)
+
+        from worlds._bizhawk import guarded_write
+
+        for kind, _location_id, sequence in pending_checks:
+            if kind == "block":
+                await self._acknowledge_block_event(ctx, sequence, guarded_write)
+            else:
+                await self._acknowledge_red_coin_event(ctx, sequence, guarded_write)
+
+    async def _run_game_watcher(self, ctx: "BizHawkClientContext") -> None:
+        """Prioritize event-sensitive work and stagger maintenance polling."""
         server_connected = (
             ctx.server is not None
             and not ctx.server.socket.closed
@@ -274,21 +346,40 @@ class NSMBDSClient(
             and ctx.slot_data is not None
         )
 
-        try:
-            await self._sync_emulator_feed(ctx, server_connected=server_connected)
-        except Exception:
-            logger.exception("NSMBDS emulator feed synchronization failed; retrying next tick.")
+        await self._run_watcher_operation(
+            "emulator feed synchronization",
+            self._sync_emulator_feed(ctx, server_connected=server_connected),
+        )
 
         if not server_connected:
             self._last_published_poptracker_view = None
             return
 
-        await self._sync_star_coin_tracking(ctx)
+        self._watcher_tick += 1
+        medium_due = self._watcher_tick == 1 or self._watcher_tick % MEDIUM_POLL_TICKS == 0
+        slow_due = self._watcher_tick == 1 or self._watcher_tick % SLOW_POLL_TICKS == 0
 
-        if not await self._sync_native_block_configuration(ctx):
-            return
+        if self._star_coin_tracking_mode_sent is None or slow_due:
+            await self._run_watcher_operation(
+                "Star Coin tracking configuration", self._sync_star_coin_tracking(ctx)
+            )
 
-        level_data = await self._read_level_data(ctx)
+        if not self._native_block_configuration_ready or slow_due:
+            configuration_ready = await self._run_watcher_operation(
+                "native Blocksanity configuration",
+                self._sync_native_block_configuration(ctx),
+            )
+            if configuration_ready is False:
+                self._native_block_configuration_ready = False
+                return
+            if configuration_ready is True:
+                self._native_block_configuration_ready = True
+            elif not self._native_block_configuration_ready:
+                return
+
+        level_data = await self._run_watcher_operation(
+            "level data read", self._read_level_data(ctx)
+        )
         if level_data is None:
             return
         if not self._is_game_data_ready(level_data):
@@ -308,22 +399,24 @@ class NSMBDSClient(
             level_data[offset] for offset in LEVEL_DATA_WORLD_HEADER_OFFSETS
         )
 
-        try:
-            await self._sync_death_link(ctx)
-        except Exception:
-            logger.exception("NSMBDS Death Link synchronization failed; the watcher will retry next tick.")
-
+        # Fast path: gameplay-affecting deliveries and transient mailboxes must
+        # remain responsive even when maintenance work is deferred.
+        await self._run_watcher_operation("item application", self._apply_pending_items(ctx))
+        await self._run_watcher_operation("Death Link synchronization", self._sync_death_link(ctx))
+        mailbox_checks: list[tuple[str, int, int]] = []
+        await self._run_watcher_operation(
+            "Red Coin detection", self._detect_and_send_red_coin_challenge(ctx, mailbox_checks)
+        )
+        await self._run_watcher_operation(
+            "Block check detection", self._detect_and_send_block_check(ctx, mailbox_checks)
+        )
+        await self._run_watcher_operation(
+            "mailbox check submission", self._submit_pending_mailbox_checks(ctx, mailbox_checks)
+        )
+        await self._run_watcher_operation(
+            "location detection", self._detect_and_send_locations(ctx, level_data)
+        )
         for operation_name, operation in (
-            ("location detection", self._detect_and_send_locations(ctx, level_data)),
-            ("gate purchase storage sync", self._sync_gate_purchase_storage(ctx)),
-            ("Star Coin gate detection", self._detect_and_store_gate_purchases(ctx, level_data)),
-            ("Red Coin detection", self._detect_and_send_red_coin_challenge(ctx)),
-            ("Block check detection", self._detect_and_send_block_check(ctx)),
-            ("overworld state reconciliation", self._reconcile_overworld_state(ctx, level_data)),
-            ("PopTracker world synchronization", self._sync_poptracker_world(ctx)),
-            ("Power-Up License sync", self._sync_powerup_licenses(ctx)),
-            ("bonus mailbox initialization", self._initialize_bonus_mailbox(ctx)),
-            ("item application", self._apply_pending_items(ctx)),
             ("Death Link", self._handle_death_link(ctx)),
             ("Timer Drain", self._apply_pending_timer_drains(ctx)),
             ("Starman Buff", self._apply_pending_starman_buffs(ctx)),
@@ -331,12 +424,32 @@ class NSMBDSClient(
             ("Speed Traps", self._apply_pending_speed_traps(ctx)),
             ("in-game notifications", self._publish_next_ap_notification(ctx)),
             ("emulator feed", self._flush_emulator_feed(ctx)),
-            ("goal detection", self._send_goal_if_complete(ctx)),
         ):
-            try:
-                await operation
-            except Exception:
-                logger.exception("NSMBDS %s failed; the watcher will retry next tick.", operation_name)
+            await self._run_watcher_operation(operation_name, operation)
+
+        if medium_due:
+            for operation_name, operation in (
+                ("Star Coin gate detection", self._detect_and_store_gate_purchases(ctx, level_data)),
+                ("overworld state reconciliation", self._reconcile_overworld_state(ctx, level_data)),
+                ("goal detection", self._send_goal_if_complete(ctx)),
+            ):
+                await self._run_watcher_operation(operation_name, operation)
+
+        if self._gate_storage_sync_pending or self._gate_storage_write_pending or slow_due:
+            await self._run_watcher_operation(
+                "gate purchase storage sync", self._sync_gate_purchase_storage(ctx)
+            )
+        if self._bonus_mailbox_needs_reset or slow_due:
+            await self._run_watcher_operation(
+                "bonus mailbox initialization", self._initialize_bonus_mailbox(ctx)
+            )
+        if slow_due:
+            await self._run_watcher_operation(
+                "PopTracker world synchronization", self._sync_poptracker_world(ctx)
+            )
+            await self._run_watcher_operation(
+                "Power-Up License sync", self._sync_powerup_licenses(ctx)
+            )
 
     async def _read_level_data(self, ctx: "BizHawkClientContext") -> bytes | None:
         """Read the world-map block plus the native Mini-Castle flags."""
@@ -648,6 +761,8 @@ class NSMBDSClient(
         self._gate_storage_sync_pending = False
         self._gate_storage_write_pending = False
         self._last_published_poptracker_view = None
+        self._watcher_tick = 0
+        self._native_block_configuration_ready = False
 
 
 def restrict_bizhawk_handlers_to_nsmbds() -> None:

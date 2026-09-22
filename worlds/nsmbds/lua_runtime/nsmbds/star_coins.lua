@@ -9,11 +9,17 @@ local addresses = require("nsmbds.addresses")
 
 local STAR_COIN_BITS = { 0x01, 0x02, 0x04 }
 local instant_tracking = false
+local last_committed_world = nil
+local last_committed_level = nil
+local last_committed_flags = nil
 
 function M.configure(request)
     local mode = tonumber(request and request.mode)
     if mode ~= 0 and mode ~= 1 then return false end
     instant_tracking = mode == 1
+    last_committed_world = nil
+    last_committed_level = nil
+    last_committed_flags = nil
     return true
 end
 
@@ -40,7 +46,10 @@ function M.commit_active_pickups()
     )
     if not ok_active or active == nil then return false end
     active = active % (constants.STAR_COIN_FLAGS_MASK + 1)
-    if active == 0 then return false end
+    if active == 0 then
+        last_committed_flags = nil
+        return false
+    end
 
     -- Use the identity selected by Vanilla's own goal-time commit routine,
     -- rather than the content-course byte. This writes into the destination
@@ -60,6 +69,10 @@ function M.commit_active_pickups()
     if world < 0 or world > 7 or level < 1 or level >= constants.LEVEL_DATA_WORLD_STRIDE then
         return false
     end
+    if world == last_committed_world and level == last_committed_level
+        and active == last_committed_flags then
+        return false
+    end
 
     local target = addresses.ADDR_LEVEL_DATA_BASE
         + world * constants.LEVEL_DATA_WORLD_STRIDE
@@ -68,8 +81,18 @@ function M.commit_active_pickups()
     if not ok_saved or saved == nil then return false end
 
     local merged = merge_star_coin_flags(saved, active)
-    if merged == saved then return false end
+    if merged == saved then
+        last_committed_world = world
+        last_committed_level = level
+        last_committed_flags = active
+        return false
+    end
     local ok_write = pcall(_G.memory.writebyte, target, merged)
+    if ok_write then
+        last_committed_world = world
+        last_committed_level = level
+        last_committed_flags = active
+    end
     return ok_write
 end
 

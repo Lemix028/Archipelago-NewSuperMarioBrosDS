@@ -3707,6 +3707,50 @@ async def test_one_up_block_mailbox() -> None:
     )
 
 
+async def test_mailbox_location_checks_are_batched() -> None:
+    writes: list[tuple] = []
+    sent_messages: list[dict] = []
+
+    async def fake_guarded_write(_bizhawk_ctx, write_requests, guards):
+        writes.append((write_requests, guards))
+        return True
+
+    async def fake_send_msgs(messages):
+        sent_messages.extend(messages)
+
+    fake_bizhawk.guarded_write = fake_guarded_write
+    client = client_module.NSMBDSClient()
+    context = FakeContext()
+    context.send_msgs = fake_send_msgs
+    red_coin_id = locations.LOCATION_TABLE["World 1-1 Red Coin Challenge"]
+    block_id = locations.LOCATION_TABLE["World 1-1 Blocksanity Block 1"]
+
+    await client._submit_pending_mailbox_checks(context, [
+        ("red_coin", red_coin_id, 12),
+        ("block", block_id, 13),
+    ])
+
+    check(
+        sent_messages == [{
+            "cmd": "LocationChecks",
+            "locations": [red_coin_id, block_id],
+        }],
+        "Red Coin and Blocksanity mailbox events share one LocationChecks message",
+    )
+    check(
+        len(writes) == 2
+        and {write[0][0][0] for write in writes} == {
+            ram_addresses.ADDR_AP_RED_COIN_EVENT_ACK_SEQUENCE,
+            ram_addresses.ADDR_AP_BLOCK_EVENT_ACK_SEQUENCE,
+        },
+        "Batched mailbox events are acknowledged only after their shared submission",
+    )
+    check(
+        {red_coin_id, block_id} <= client._sent_locations,
+        "Every batched mailbox location enters the sent-location cache",
+    )
+
+
 async def test_block_mailbox_send_failure_keeps_event_pending() -> None:
     writes: list[tuple] = []
 

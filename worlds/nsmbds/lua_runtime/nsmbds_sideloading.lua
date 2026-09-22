@@ -26,6 +26,8 @@ local hud = require("nsmbds.hud")
 local emulator_feed = require("nsmbds.emulator_feed")
 local traps = require("nsmbds.traps")
 local runtime = require("nsmbds.runtime")
+local profiler = require("nsmbds.profiler")
+local profiling_enabled = profiler.is_enabled()
 local context = state.context
 local reported_ui_errors = {}
 
@@ -89,13 +91,11 @@ end
 
 emulator_feed.initialize()
 check_bizhawk_version()
--- Remove any high-frequency input hooks left by an older loaded revision.
-traps.disable_input_filter_hooks()
-hooks.cleanup_previous_block_hooks()
+-- Reset ROM-native input control before the first frame update.
+traps.disable_native_input()
 
 -- Remove hooks that are only needed during gameplay.
 local function disable_gameplay_observer_hooks()
-    hooks.disable_head_bonk_execute_hook()
     if event and event.unregisterbyname then
         pcall(event.unregisterbyname, "NSMBDS Red Coin Counter 1")
         pcall(event.unregisterbyname, "NSMBDS Red Coin Counter 2")
@@ -106,12 +106,14 @@ end
 
 -- Remove every hook owned by this script.
 local function disable_all_hooks()
-    traps.disable_input_filter_hooks()
+    traps.disable_native_input()
     disable_gameplay_observer_hooks()
 end
 
 -- Main per-frame update called by BizHawk.
 local function sideloading_tick()
+    local frame = emu and emu.framecount and emu.framecount() or 0
+    if profiling_enabled then profiler.begin_frame(frame) end
     -- Stop gameplay features while no ROM is loaded.
     if not memory.is_rom_loaded() then
         disable_all_hooks()
@@ -119,10 +121,12 @@ local function sideloading_tick()
         if gui and gui.clearGraphics then gui.clearGraphics() end
         context.is_initialized = false
         context.cached_player_object = nil
+        if profiling_enabled then profiler.end_frame() end
         return
     end
 
     if not runtime.ensure_initialized() then
+        if profiling_enabled then profiler.end_frame() end
         return
     end
 
@@ -142,7 +146,7 @@ local function sideloading_tick()
     pcall(protection.poll_life_insurance)
 
     -- Read Mario and the current actor list.
-    local frame = emu and emu.framecount and emu.framecount() or 0
+    local actor_profile = profiling_enabled and profiler.start_section() or nil
     local had_player_last_frame = context.previous_frame_had_player
     local should_scan_actors = had_player_last_frame or frame % 4 == 0
     local objects = {}
@@ -151,6 +155,7 @@ local function sideloading_tick()
         objects = actors.get_active_objects()
         player = actors.find_player_object(objects, context.cached_player_object)
     end
+    if profiling_enabled then profiler.finish_section("actor_scan", actor_profile) end
     local has_active_player = player ~= nil
     context.previous_frame_had_player = has_active_player
     context.cached_player_object = player
@@ -167,7 +172,11 @@ local function sideloading_tick()
 
     -- Drain the ROM ring even on the frame where Mario disappears. Each record
     -- already owns the hit-time course identity and remains valid in transit.
+    local native_blocks_profile = profiling_enabled and profiler.start_section() or nil
     local blocks_ok, blocks_ready = pcall(blocksanity.observe_native_block_hits)
+    if profiling_enabled then
+        profiler.finish_section("native_block_drain", native_blocks_profile)
+    end
     if not blocks_ok then
         if not context.block_error_reported then
             print("NSMBDS native block delivery failed: " .. tostring(blocks_ready))
@@ -178,6 +187,7 @@ local function sideloading_tick()
         -- Fail closed instead of silently falling back to execution hooks.
         disable_all_hooks()
         context.is_initialized = false
+        if profiling_enabled then profiler.end_frame() end
         return
     else
         context.block_error_reported = false
@@ -187,21 +197,30 @@ local function sideloading_tick()
     if context.last_observer_frame ~= nil
         and (frame <= context.last_observer_frame or frame > context.last_observer_frame + 5) then
         blocksanity.reset_block_observer_state()
+        context.gameplay_gate_frame = nil
+        context.native_head_bonk_last_sequence = nil
     end
     context.last_observer_frame = frame
+    hooks.poll_native_head_bonk()
 
     -- Run observers and native hooks while Mario is in a level.
     if has_active_player then
         -- Vanilla normally commits these bits only after reaching a goal.
         -- Persist them at pickup time so deaths and manual exits cannot erase
         -- an Archipelago Star-Coin check.
+        local star_coin_profile = profiling_enabled and profiler.start_section() or nil
         pcall(star_coins.commit_active_pickups)
-        -- Static blocks are produced by the patched ROM; no Execute hook.
-        hooks.sync_head_bonk_execute_hook()
+        if profiling_enabled then
+            profiler.finish_section("star_coin_persistence", star_coin_profile)
+        end
         red_coins.ensure_red_coin_write_hook()
+        local blocksanity_profile = profiling_enabled and profiler.start_section() or nil
         pcall(blocksanity.observe_ground_pound_blocks, player)
         pcall(blocksanity.observe_block_bumps, objects)
         pcall(blocksanity.finalize_ground_pound_capture)
+        if profiling_enabled then
+            profiler.finish_section("blocksanity_observers", blocksanity_profile)
+        end
     elseif had_player_last_frame then
         -- Mario left the level: stop gameplay-only effects and hooks.
         disable_gameplay_observer_hooks()
@@ -213,20 +232,61 @@ local function sideloading_tick()
     pcall(blocksanity.publish_next_block_event)
 
     -- Apply incoming traps and draw the in-game UI.
+    local traps_profile = profiling_enabled and profiler.start_section() or nil
     traps.poll_and_update_traps(has_active_player, player)
+    if profiling_enabled then profiler.finish_section("trap_update", traps_profile) end
 
     -- Clear once before redrawing the complete AP HUD to avoid components
     -- erasing each other during large item deliveries.
+    local hud_profile = profiling_enabled and profiler.start_section() or nil
+    local hud_component_profile = profiling_enabled and profiler.start_section() or nil
     if gui and gui.clearGraphics then gui.clearGraphics() end
+    if profiling_enabled then
+        profiler.finish_section("hud_clear", hud_component_profile)
+    end
+
+    hud_component_profile = profiling_enabled and profiler.start_section() or nil
     local notification_snapshot = state.notification_state.capture_snapshot(false)
     pcall(state.notification_state.receive, notification_snapshot)
-    call_ui_safely("protection HUD", hud.draw_protection_hud, notification_snapshot)
-    call_ui_safely("notification HUD", state.notification_state.draw)
-    if has_active_player then
-        call_ui_safely("visual Trap renderer", state.input_trap_state.draw_visual_trap)
-        call_ui_safely("Trap status HUD", hud.draw_trap_status_hud)
+    if profiling_enabled then
+        profiler.finish_section("notification_mailbox", hud_component_profile)
     end
+
+    hud_component_profile = profiling_enabled and profiler.start_section() or nil
+    call_ui_safely("protection HUD", hud.draw_protection_hud, notification_snapshot)
+    if profiling_enabled then
+        profiler.finish_section("protection_hud", hud_component_profile)
+    end
+
+    hud_component_profile = profiling_enabled and profiler.start_section() or nil
+    call_ui_safely("notification HUD", state.notification_state.draw)
+    if profiling_enabled then
+        profiler.finish_section("notification_hud", hud_component_profile)
+    end
+
+    if has_active_player then
+        hud_component_profile = profiling_enabled and profiler.start_section() or nil
+        call_ui_safely("visual Trap renderer", state.input_trap_state.draw_visual_trap)
+        if profiling_enabled then
+            profiler.finish_section("visual_trap_hud", hud_component_profile)
+        end
+
+        hud_component_profile = profiling_enabled and profiler.start_section() or nil
+        call_ui_safely("Trap status HUD", hud.draw_trap_status_hud)
+        if profiling_enabled then
+            profiler.finish_section("trap_status_hud", hud_component_profile)
+        end
+    end
+
+    hud_component_profile = profiling_enabled and profiler.start_section() or nil
     call_ui_safely("emulator feed", emulator_feed.draw)
+    if profiling_enabled then
+        profiler.finish_section("emulator_feed_hud", hud_component_profile)
+    end
+    if profiling_enabled then
+        profiler.finish_section("hud_rendering", hud_profile)
+        profiler.end_frame()
+    end
 end
 
 -- Forward the frame event to the main update function.

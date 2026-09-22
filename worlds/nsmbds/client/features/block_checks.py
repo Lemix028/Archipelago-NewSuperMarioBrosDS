@@ -73,7 +73,11 @@ class BlockCheckTrackingMixin:
             ))
         return True
 
-    async def _detect_and_send_block_check(self, ctx: "BizHawkClientContext") -> None:
+    async def _detect_and_send_block_check(
+        self,
+        ctx: "BizHawkClientContext",
+        pending_checks: list[tuple[str, int, int]] | None = None,
+    ) -> None:
         """Consume and acknowledge one pending bumped-block event."""
         from worlds._bizhawk import guarded_write, read
 
@@ -146,6 +150,10 @@ class BlockCheckTrackingMixin:
         if not self._is_location_active(ctx, location_name, location_id):
             logger.warning("Ignored %s %r because it is not active in this seed.", category, location_name)
             await self._acknowledge_block_event(ctx, sequence_value, guarded_write)
+            return
+
+        if pending_checks is not None:
+            pending_checks.append(("block", location_id, sequence_value))
             return
 
         try:

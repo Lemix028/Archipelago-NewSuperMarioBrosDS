@@ -9,6 +9,9 @@ local state = require("nsmbds.state")
 local screen_geometry = require("nsmbds.screen_geometry")
 local RENDER_HUD_ON_BOTH_HYBRID_SCREENS = false
 local context = state.context
+local hud_screens_frame = nil
+local cached_hud_screens = nil
+local cached_hud_geometry = nil
 local draw_shield_icon
 local draw_insurance_icon
 local RECEIVED_ITEM_NAMES = {
@@ -82,20 +85,33 @@ local function draw_icon_box(x, y, ox, oy, w, h, color, scale)
 end
 
 local function get_hud_screens()
+    local frame = emu and emu.framecount and emu.framecount() or nil
+    if frame ~= nil and frame == hud_screens_frame and cached_hud_screens ~= nil then
+        return cached_hud_screens, cached_hud_geometry
+    end
     local screens, geometry = get_gameplay_screens()
 
     if RENDER_HUD_ON_BOTH_HYBRID_SCREENS or #screens <= 1 then
+        hud_screens_frame = frame
+        cached_hud_screens = screens
+        cached_hud_geometry = geometry
         return screens, geometry
     end
 
     -- In Hybrid prefer the enlarged gameplay instance.
     for _, screen in ipairs(screens) do
         if screen.duplicate then
-            return { screen }, geometry
+            cached_hud_screens = { screen }
+            cached_hud_geometry = geometry
+            hud_screens_frame = frame
+            return cached_hud_screens, geometry
         end
     end
 
-    return { screens[1] }, geometry
+    cached_hud_screens = { screens[1] }
+    cached_hud_geometry = geometry
+    hud_screens_frame = frame
+    return cached_hud_screens, geometry
 end
 
 function M.draw_protection_hud(snapshot)

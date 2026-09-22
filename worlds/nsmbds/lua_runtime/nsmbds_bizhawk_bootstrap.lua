@@ -1,6 +1,10 @@
 -- Loads the NSMBDS gameplay hook before handing control to Archipelago's connector.
 -- The sideloading script registers frame callbacks and returns; the connector owns the persistent BizHawk client loop.
 
+-- Keep diagnostics off for normal play, including after a Lua-console session
+-- that enabled profiling earlier. Set this to true only for a profiling build.
+NSMBDS_PERF_PROFILE = false
+
 local script_dir = debug.getinfo(1, "S").source:sub(2):match("(.*[/\\])") or ""
 local sideloading_script = script_dir .. "nsmbds_sideloading.lua"
 
