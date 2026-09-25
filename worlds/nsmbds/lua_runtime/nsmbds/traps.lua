@@ -18,6 +18,7 @@ local BASE_MAX_SPEED = constants.BASE_MAX_SPEED
 local HYPER_TARGET = constants.HYPER_TARGET
 local SLOW_TARGET = constants.SLOW_TARGET
 local ICE_GRIP_COMPENSATION = constants.ICE_GRIP_COMPENSATION
+local CRAZY_PIXELS_REFRESH_FRAMES = 4
 local camera_held_flag = 0
 local camera_pressed_flag = 0
 
@@ -308,8 +309,9 @@ function M.poll_and_update_traps(has_active_player, trap_player)
                     )
                 end
             elseif mode == "crazy_pixels" then
-                -- Refresh only the eight BG control words and two hardware
-                -- mosaic registers. Sprite-table scans caused audio crackle.
+                -- Hardware registers normally retain the effect. Reassert at
+                -- a low cadence so game-side BG reconfiguration is repaired
+                -- without ten System Bus accesses on every emulator frame.
                 state.input_trap_state.apply_crazy_pixels()
             elseif mode == "hyper"
                 or mode == "slow"
@@ -403,9 +405,29 @@ function state.input_trap_state.restore_screen_rotation()
     end
 end
 
-function state.input_trap_state.apply_crazy_pixels()
+local function bg_mosaic_flag(value)
+    return math.floor(value / 0x40) % 2
+end
+
+local function set_bg_mosaic_flag(value, enabled)
+    local current = bg_mosaic_flag(value)
+    if current == enabled then return value end
+    return enabled == 1 and value + 0x40 or value - 0x40
+end
+
+function state.input_trap_state.apply_crazy_pixels(force)
     local domain = memory.sys_bus_domain
-    if domain == nil then return end
+    if domain == nil then return false end
+
+    local frame = emu and emu.framecount and emu.framecount() or nil
+    local previous_frame = state.input_trap_state.crazy_pixels_last_refresh_frame
+    if not force and frame ~= nil and previous_frame ~= nil
+        and frame > previous_frame
+        and frame - previous_frame < CRAZY_PIXELS_REFRESH_FRAMES then
+        return false
+    end
+    state.input_trap_state.crazy_pixels_last_refresh_frame = frame
+
     _G.memory.write_u16_le(0x0400004C, 0x7777, domain)
     _G.memory.write_u16_le(0x0400104C, 0x7777, domain)
 
@@ -414,12 +436,12 @@ function state.input_trap_state.apply_crazy_pixels()
         for bg = 0, 3 do
             local address = base + bg * 2
             local value = _G.memory.read_u16_le(address, domain)
-            if math.floor(value / 0x40) % 2 == 0 then
-                _G.memory.write_u16_le(address, value + 0x40, domain)
+            if bg_mosaic_flag(value) == 0 then
+                _G.memory.write_u16_le(address, set_bg_mosaic_flag(value, 1), domain)
             end
         end
     end
-
+    return true
 end
 
 function state.input_trap_state.resume_crazy_pixels()
@@ -429,16 +451,19 @@ function state.input_trap_state.resume_crazy_pixels()
         _G.memory.read_u16_le(0x0400004C, domain),
         _G.memory.read_u16_le(0x0400104C, domain),
     }
+    -- Retain only the Mosaic-enable bit. Restoring complete BGCNT words after
+    -- a layer or course transition could resurrect stale game configuration.
     state.input_trap_state.crazy_pixels_original_bg = {}
     for engine = 0, 1 do
         local base = engine == 0 and 0x04000008 or 0x04001008
         for bg = 0, 3 do
             state.input_trap_state.crazy_pixels_original_bg[engine * 4 + bg + 1]
-                = _G.memory.read_u16_le(base + bg * 2, domain)
+                = bg_mosaic_flag(_G.memory.read_u16_le(base + bg * 2, domain))
         end
     end
     state.input_trap_state.crazy_pixels_suspended = false
-    state.input_trap_state.apply_crazy_pixels()
+    state.input_trap_state.crazy_pixels_last_refresh_frame = nil
+    state.input_trap_state.apply_crazy_pixels(true)
 end
 
 function state.input_trap_state.suspend_crazy_pixels()
@@ -452,13 +477,23 @@ function state.input_trap_state.suspend_crazy_pixels()
     for engine = 0, 1 do
         local base = engine == 0 and 0x04000008 or 0x04001008
         for bg = 0, 3 do
-            local original = state.input_trap_state.crazy_pixels_original_bg[engine * 4 + bg + 1]
-            if original ~= nil then _G.memory.write_u16_le(base + bg * 2, original, domain) end
+            local original_flag = state.input_trap_state.crazy_pixels_original_bg[
+                engine * 4 + bg + 1
+            ]
+            if original_flag ~= nil then
+                local address = base + bg * 2
+                local current = _G.memory.read_u16_le(address, domain)
+                local restored = set_bg_mosaic_flag(current, original_flag)
+                if restored ~= current then
+                    _G.memory.write_u16_le(address, restored, domain)
+                end
+            end
         end
     end
     state.input_trap_state.crazy_pixels_suspended = true
     state.input_trap_state.crazy_pixels_original_mosaic = {}
     state.input_trap_state.crazy_pixels_original_bg = {}
+    state.input_trap_state.crazy_pixels_last_refresh_frame = nil
 end
 
 function state.input_trap_state.resume_screen_flip()

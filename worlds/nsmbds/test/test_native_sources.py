@@ -200,6 +200,18 @@ class TestNativeHookSources(unittest.TestCase):
             source,
         )
 
+    def test_pixelation_reasserts_periodically_and_restores_only_mosaic_bits(self) -> None:
+        runtime_root = Path(__file__).resolve().parents[1] / "lua_runtime" / "nsmbds"
+        traps = (runtime_root / "traps.lua").read_text(encoding="utf-8")
+        state = (runtime_root / "state.lua").read_text(encoding="utf-8")
+
+        self.assertIn("local CRAZY_PIXELS_REFRESH_FRAMES = 4", traps)
+        self.assertIn("frame - previous_frame < CRAZY_PIXELS_REFRESH_FRAMES", traps)
+        self.assertIn("apply_crazy_pixels(true)", traps)
+        self.assertIn("local current = _G.memory.read_u16_le(address, domain)", traps)
+        self.assertIn("set_bg_mosaic_flag(current, original_flag)", traps)
+        self.assertIn("crazy_pixels_last_refresh_frame = nil", state)
+
     def test_checked_in_native_artifacts_match_manifest(self) -> None:
         source_root = Path(__file__).resolve().parents[1] / "src"
         verifier_path = source_root / "verify_native_hooks.py"

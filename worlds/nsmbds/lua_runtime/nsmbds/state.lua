@@ -69,6 +69,7 @@ M.input_trap_state = {
     crazy_pixels_suspended = true,
     crazy_pixels_original_mosaic = {},
     crazy_pixels_original_bg = {},
+    crazy_pixels_last_refresh_frame = nil,
     tint_index = 1,
     tint_colors = {
         0xD8FF3030,
