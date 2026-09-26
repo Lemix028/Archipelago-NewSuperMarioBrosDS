@@ -7,6 +7,7 @@ local M = {}
 local memory = require("nsmbds.memory")
 local state = require("nsmbds.state")
 local screen_geometry = require("nsmbds.screen_geometry")
+local notification_popup_sprites = require("nsmbds.notification_popup_sprites")
 local RENDER_HUD_ON_BOTH_HYBRID_SCREENS = false
 local context = state.context
 local hud_screens_frame = nil
@@ -17,6 +18,34 @@ local PROTECTION_ATLAS_1X = hud_directory .. "assets/protection_hud_1x.png"
 local PROTECTION_ATLAS_2X = hud_directory .. "assets/protection_hud_2x.png"
 local PROTECTION_TILE_WIDTH = 27
 local PROTECTION_TILE_HEIGHT = 13
+local NOTIFICATION_POPUP_COLUMNS = 6
+local NOTIFICATION_POPUP_ATLASES = {
+    normal = hud_directory .. "assets/notification_popup_normal.png",
+    horizontal = hud_directory .. "assets/notification_popup_horizontal.png",
+    hybrid = hud_directory .. "assets/notification_popup_hybrid.png",
+}
+local NOTIFICATION_POPUP_ATLASES_2X = {
+    normal = hud_directory .. "assets/notification_popup_normal_2x.png",
+    horizontal = hud_directory .. "assets/notification_popup_horizontal_2x.png",
+    hybrid = hud_directory .. "assets/notification_popup_hybrid_2x.png",
+}
+local NOTIFICATION_POPUP_ATLASES_3X = {
+    normal = hud_directory .. "assets/notification_popup_normal_3x.png",
+    horizontal = hud_directory .. "assets/notification_popup_horizontal_3x.png",
+    hybrid = hud_directory .. "assets/notification_popup_hybrid_3x.png",
+}
+local NOTIFICATION_POPUP_BAR_COLORS = {
+    cyan = 0xFF44DEF0,
+    green = 0xFF4AD78B,
+    yellow = 0xFFFFD35C,
+    red = 0xFFFF6971,
+}
+local popup_cached_active = nil
+local popup_cached_title = nil
+local popup_cached_subtitle = nil
+local popup_cached_color = nil
+local popup_cached_sprite = nil
+local popup_client_surface_used = false
 local RECEIVED_ITEM_NAMES = {
     [0x00] = "DESERT PASS",
     [0x01] = "ISLE PASS",
@@ -238,8 +267,33 @@ function state.notification_state.text(notification)
     return "BONUS RECEIVED", "", "green"
 end
 
+local function notification_client_scale()
+    if not client or not client.screenwidth or not client.screenheight
+        or not client.bufferwidth or not client.bufferheight then return nil end
+    local ok_width, screen_width = pcall(client.screenwidth)
+    local ok_height, screen_height = pcall(client.screenheight)
+    local ok_buffer_width, buffer_width = pcall(client.bufferwidth)
+    local ok_buffer_height, buffer_height = pcall(client.bufferheight)
+    if not ok_width or not ok_height or not ok_buffer_width or not ok_buffer_height
+        or type(screen_width) ~= "number" or type(screen_height) ~= "number"
+        or type(buffer_width) ~= "number" or type(buffer_height) ~= "number"
+        or buffer_width <= 0 or buffer_height <= 0 then return nil end
+
+    local scale_x = screen_width / buffer_width
+    local scale_y = screen_height / buffer_height
+    -- Letterboxing and aspect correction need offsets that these APIs do not
+    -- expose; use the emucore atlas when scaling is not uniform.
+    if scale_x < 1.5 or math.abs(scale_x - scale_y)
+        > math.max(scale_x, scale_y) * 0.04 then return nil end
+    return scale_x, scale_y
+end
+
 function state.notification_state.draw()
     if not gui or not gui.drawBox or not gui.drawText then return end
+    if popup_client_surface_used and gui.clearGraphics then
+        gui.clearGraphics("client")
+        popup_client_surface_used = false
+    end
 
     if state.notification_state.active == nil and #state.notification_state.queue > 0 then
         state.notification_state.active = table.remove(state.notification_state.queue, 1)
@@ -257,11 +311,25 @@ function state.notification_state.draw()
         return
     end
 
-    local title, subtitle, color = state.notification_state.text(state.notification_state.active)
+    -- A notification's text and sprite stay fixed for its entire duration.
+    if popup_cached_active ~= state.notification_state.active then
+        popup_cached_active = state.notification_state.active
+        popup_cached_title, popup_cached_subtitle, popup_cached_color =
+            state.notification_state.text(popup_cached_active)
+        popup_cached_sprite = notification_popup_sprites[
+            popup_cached_title .. "\t" .. popup_cached_subtitle .. "\t" .. popup_cached_color
+        ]
+    end
+    local title, subtitle, color =
+        popup_cached_title, popup_cached_subtitle, popup_cached_color
 
     -- Filler details need more room than the compact Trap status.
     local hud_screens, geometry = get_hud_screens()
     local layout = geometry and geometry.layout or "Natural"
+    local client_scale_x, client_scale_y = nil, nil
+    if popup_cached_sprite ~= nil and gui.drawImageRegion and gui.clearGraphics then
+        client_scale_x, client_scale_y = notification_client_scale()
+    end
     for _, screen in ipairs(hud_screens) do
         local scale = screen.duplicate and 1.20 or (layout == "Horizontal" and 0.85 or 1)
 
@@ -275,31 +343,42 @@ function state.notification_state.draw()
         local x2 = x1 + width - 1
         local y2 = y1 + height - 1
 
-        gui.drawBox(x1, y1, x2, y2, "black", 0xD011111B)
-
-        local accent_width = math.max(3, math.floor(3 * scale + 0.5))
-        gui.drawBox(x1, y1, x1 + accent_width - 1, y2, color, color)
-
-        local title_size = screen.duplicate and 12 or 10
-        local subtitle_size = screen.duplicate and 10 or 9
-
-        gui.drawText(
-            x1 + math.floor(4 * scale),
-            y1 + math.floor(2 * scale),
-            title,
-            "white",
-            "clear",
-            title_size
-        )
-
-        gui.drawText(
-            x1 + math.floor(4 * scale),
-            y1 + math.floor(12 * scale),
-            subtitle,
-            color,
-            "clear",
-            subtitle_size
-        )
+        local sprite_drawn = popup_cached_sprite ~= nil and gui.drawImageRegion ~= nil
+        if sprite_drawn then
+            local layout_name = screen.duplicate and "hybrid"
+                or (layout == "Horizontal" and "horizontal" or "normal")
+            local column = popup_cached_sprite % NOTIFICATION_POPUP_COLUMNS
+            local row = math.floor(popup_cached_sprite / NOTIFICATION_POPUP_COLUMNS)
+            if client_scale_x then
+                local source_scale = client_scale_x < 2.5 and 2 or 3
+                local client_atlases = source_scale == 2
+                    and NOTIFICATION_POPUP_ATLASES_2X or NOTIFICATION_POPUP_ATLASES_3X
+                gui.drawImageRegion(client_atlases[layout_name],
+                    column * width * source_scale, row * height * source_scale,
+                    width * source_scale, height * source_scale,
+                    math.floor(x1 * client_scale_x + 0.5),
+                    math.floor(y1 * client_scale_y + 0.5),
+                    math.floor(width * client_scale_x + 0.5),
+                    math.floor(height * client_scale_y + 0.5), "client")
+                popup_client_surface_used = true
+            else
+                gui.drawImageRegion(NOTIFICATION_POPUP_ATLASES[layout_name],
+                    column * width, row * height,
+                    width, height, x1, y1)
+            end
+        else
+            -- Preserve the old renderer for a notification missing from the
+            -- generated atlas or a BizHawk build without image-region support.
+            gui.drawBox(x1, y1, x2, y2, "black", 0xD011111B)
+            local accent_width = math.max(3, math.floor(3 * scale + 0.5))
+            gui.drawBox(x1, y1, x1 + accent_width - 1, y2, color, color)
+            local title_size = screen.duplicate and 12 or 10
+            local subtitle_size = screen.duplicate and 10 or 9
+            gui.drawText(x1 + math.floor(4 * scale), y1 + math.floor(2 * scale),
+                title, "white", "clear", title_size)
+            gui.drawText(x1 + math.floor(4 * scale), y1 + math.floor(12 * scale),
+                subtitle, color, "clear", subtitle_size)
+        end
 
         local bar_x1 = x1 + math.floor(4 * scale)
         local bar_x2 = x2 - math.floor(3 * scale)
@@ -311,10 +390,24 @@ function state.notification_state.draw()
             / state.notification_state.duration_frames
         )
 
-        gui.drawBox(bar_x1, bar_y, bar_x2, bar_y, "gray", "gray")
+        if not sprite_drawn then
+            gui.drawBox(bar_x1, bar_y, bar_x2, bar_y, "gray", "gray")
+        end
 
         if fill_width > 0 then
-            gui.drawBox(bar_x1, bar_y, bar_x1 + fill_width, bar_y, color, color)
+            local fill_color = sprite_drawn and NOTIFICATION_POPUP_BAR_COLORS[color]
+                or color
+            if client_scale_x then
+                gui.drawBox(
+                    math.floor(bar_x1 * client_scale_x + 0.5),
+                    math.floor(bar_y * client_scale_y + 0.5),
+                    math.floor((bar_x1 + fill_width + 1) * client_scale_x + 0.5) - 1,
+                    math.floor((bar_y + 1) * client_scale_y + 0.5) - 1,
+                    fill_color, fill_color, "client")
+            else
+                gui.drawBox(bar_x1, bar_y, bar_x1 + fill_width, bar_y,
+                    fill_color, fill_color)
+            end
         end
     end
     state.notification_state.remaining_frames = state.notification_state.remaining_frames - 1
