@@ -26,11 +26,17 @@ With the standard location settings, a seed includes:
   World 5 castles.
 
 Most categories except level goals and Star Coins can be disabled in your
-player options. **Star Coins are always included.** Picking up a Star Coin in a
-level immediately commits it to that level's save data and sends a check. It
-therefore stays collected even if you die or return to the map before reaching
-the goal. The Star Coin item found for you becomes currency for overworld signs
-and may count toward your goal.
+player options. **Star Coins are always included.** The **Star Coin Tracking**
+option controls when a pickup is saved and reported as a check:
+
+- **Instant (default):** picking up a Star Coin immediately commits it to the
+  level's save data and sends the check. It stays collected if you die or leave
+  the level before reaching the goal.
+- **After Level Completion:** a Star Coin is saved and reported only when you
+  successfully finish the level, as in the original game.
+
+The Star Coin item found for you becomes currency for overworld signs and may
+count toward your goal.
 
 ### Blocksanity
 
@@ -290,15 +296,15 @@ The generated YAML explains every available setting. These are the main groups
 you will find there:
 
 - **Goal:** victory condition and required Star Coin total.
-- **Locations:** Red Coin Challenges, 1-Up Blocks, Secret Exits, Toad Houses,
-  and Blocksanity.
+- **Locations:** Star Coin tracking, Red Coin Challenges, 1-Up Blocks, Secret
+  Exits, Toad Houses, and Blocksanity.
 - **Progression:** Star Coin gate mode, Tower/Castle Keys, and Power-Up Permits.
 - **Filler:** select which Power-Ups, lives, Coins, bonuses, and protection
   items may appear through one list.
 - **Traps:** set the overall percentage and select allowed effects through one list.
 - **Multiplayer:** configure Death Link amnesty, effects, grace, cooldown, and Life Insurance behavior.
-- **Cosmetics:** select separate Mario and Luigi palettes and optionally
-  shuffle the in-level secondary-screen backgrounds.
+- **Cosmetics:** select separate Mario and Luigi palettes, secondary-screen
+  backgrounds, and music randomization.
 
 Normal host safety limits allow up to 30% global Blocksanity checks and a 50%
 trap rate. Higher values require the host to explicitly allow unsafe NSMBDS
