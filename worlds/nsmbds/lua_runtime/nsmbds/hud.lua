@@ -12,8 +12,11 @@ local context = state.context
 local hud_screens_frame = nil
 local cached_hud_screens = nil
 local cached_hud_geometry = nil
-local draw_shield_icon
-local draw_insurance_icon
+local hud_directory = debug.getinfo(1, "S").source:sub(2):match("^(.*[/\\])") or ""
+local PROTECTION_ATLAS_1X = hud_directory .. "assets/protection_hud_1x.png"
+local PROTECTION_ATLAS_2X = hud_directory .. "assets/protection_hud_2x.png"
+local PROTECTION_TILE_WIDTH = 27
+local PROTECTION_TILE_HEIGHT = 13
 local RECEIVED_ITEM_NAMES = {
     [0x00] = "DESERT PASS",
     [0x01] = "ISLE PASS",
@@ -73,17 +76,6 @@ local function get_gameplay_screens()
     return result, geometry
 end
 
-local function draw_icon_box(x, y, ox, oy, w, h, color, scale)
-    gui.drawBox(
-        x + ox * scale,
-        y + oy * scale,
-        x + (ox + w) * scale - 1,
-        y + (oy + h) * scale - 1,
-        color,
-        color
-    )
-end
-
 local function get_hud_screens()
     local frame = emu and emu.framecount and emu.framecount() or nil
     if frame ~= nil and frame == hud_screens_frame and cached_hud_screens ~= nil then
@@ -115,7 +107,7 @@ local function get_hud_screens()
 end
 
 function M.draw_protection_hud(snapshot)
-    if not gui or not gui.drawBox or not gui.drawText then return end
+    if not gui or not gui.drawImageRegion then return end
     snapshot = snapshot or state.notification_state.capture_snapshot(false)
     if not snapshot or not state.notification_state.is_ready(snapshot) then
         state.notification_state.protection_hud_was_ready = false
@@ -142,49 +134,32 @@ function M.draw_protection_hud(snapshot)
     context.last_drawn_shield_count = shield_count
     context.last_drawn_insurance_count = insurance_count
 
-    -- No icons to draw: avoid querying the NDS layout and building screen
+    -- No status to draw: avoid querying the NDS layout and building screen
     -- geometry every frame while still updating mailbox readiness above.
     if shield_count <= 0 and insurance_count <= 0 then return end
 
-    -- Tiny pixel icons beside the vanilla timer; on multiple screens.
+    -- Each atlas tile contains the original pixel icon and its count. BizHawk
+    -- caches the PNG, so each visible status takes one GUI call per frame.
     for _, screen in ipairs(get_hud_screens()) do
         local scale = screen.duplicate and 2 or 1
-
-        local shield_base_x = 145
-        local insurance_base_x = 172
-
-        local text_size = screen.duplicate and 18 or 10
-        local text_style = screen.duplicate and "bold" or "regular"
-        local outline = screen.duplicate and 2 or 1
-
+        local atlas = screen.duplicate and PROTECTION_ATLAS_2X or PROTECTION_ATLAS_1X
+        local tile_width = PROTECTION_TILE_WIDTH * scale
+        local tile_height = PROTECTION_TILE_HEIGHT * scale
+        local y = screen.y + (screen.duplicate and 6 or 3) - 2 * scale
         if shield_count > 0 then
-            local x = screen.x + shield_base_x * scale
-            local y = screen.y + (screen.duplicate and 6 or 3)
-
-            draw_shield_icon(x, y, "cyan", scale)
-            state.notification_state.drawTextWithOutline(
-                x + 10 * scale,
-                y + (screen.duplicate and -2 or -1),
-                tostring(shield_count),
-                text_size,
-                text_style,
-                outline
-            )
+            local index = shield_count - 1
+            gui.drawImageRegion(atlas,
+                (index % 10) * tile_width, math.floor(index / 10) * tile_height,
+                tile_width, tile_height,
+                screen.x + 145 * scale - scale, y)
         end
 
         if insurance_count > 0 then
-            local x = screen.x + insurance_base_x * scale
-            local y = screen.y + (screen.duplicate and 6 or 3)
-
-            draw_insurance_icon(x, y, "green", scale)
-            state.notification_state.drawTextWithOutline(
-                x + 10 * scale,
-                y + (screen.duplicate and -2 or -1),
-                tostring(insurance_count),
-                text_size,
-                text_style,
-                outline
-            )
+            local index = insurance_count - 1
+            gui.drawImageRegion(atlas,
+                (10 + index % 10) * tile_width, math.floor(index / 10) * tile_height,
+                tile_width, tile_height,
+                screen.x + 172 * scale - scale, y)
         end
     end
 end
@@ -482,63 +457,5 @@ function M.draw_trap_status_hud()
     end
 end
 
-
-function state.notification_state.drawTextWithOutline(x, y, text, size, style, outline)
-    style = style or "regular"
-    outline = outline or 1
-
-    if outline == 1 then
-        gui.drawText(x - 1, y, text, "black", "clear", size, "Courier New", style)
-        gui.drawText(x + 1, y, text, "black", "clear", size, "Courier New", style)
-        gui.drawText(x, y - 1, text, "black", "clear", size, "Courier New", style)
-        gui.drawText(x, y + 1, text, "black", "clear", size, "Courier New", style)
-    else
-        for ox = -outline, outline do
-            for oy = -outline, outline do
-                if ox ~= 0 or oy ~= 0 then
-                    gui.drawText(x + ox, y + oy, text, "black", "clear", size, "Courier New", style)
-                end
-            end
-        end
-    end
-
-    gui.drawText(x, y, text, "white", "clear", size, "Courier New", style)
-end
-
-draw_shield_icon = function(x, y, color, scale)
-    scale = scale or 1
-
-    for _, o in ipairs({{-1,0},{1,0},{0,-1},{0,1}}) do
-        draw_icon_box(x, y, o[1],     o[2],     9, 5, "black", scale)
-        draw_icon_box(x, y, o[1] + 1, o[2] + 5, 7, 2, "black", scale)
-        draw_icon_box(x, y, o[1] + 2, o[2] + 7, 5, 2, "black", scale)
-        draw_icon_box(x, y, o[1] + 4, o[2] + 9, 1, 1, "black", scale)
-    end
-
-    draw_icon_box(x, y, 0, 0, 9, 5, color, scale)
-    draw_icon_box(x, y, 1, 5, 7, 2, color, scale)
-    draw_icon_box(x, y, 2, 7, 5, 2, color, scale)
-    draw_icon_box(x, y, 4, 9, 1, 1, color, scale)
-end
-
-draw_insurance_icon = function(x, y, color, scale)
-    scale = scale or 1
-
-    for _, o in ipairs({{-1,0},{1,0},{0,-1},{0,1}}) do
-        draw_icon_box(x, y, o[1] + 1, o[2],     3, 3, "black", scale)
-        draw_icon_box(x, y, o[1] + 5, o[2],     3, 3, "black", scale)
-        draw_icon_box(x, y, o[1],     o[2] + 2, 9, 3, "black", scale)
-        draw_icon_box(x, y, o[1] + 1, o[2] + 5, 7, 2, "black", scale)
-        draw_icon_box(x, y, o[1] + 2, o[2] + 7, 5, 2, "black", scale)
-        draw_icon_box(x, y, o[1] + 4, o[2] + 9, 1, 1, "black", scale)
-    end
-
-    draw_icon_box(x, y, 1, 0, 3, 3, color, scale)
-    draw_icon_box(x, y, 5, 0, 3, 3, color, scale)
-    draw_icon_box(x, y, 0, 2, 9, 3, color, scale)
-    draw_icon_box(x, y, 1, 5, 7, 2, color, scale)
-    draw_icon_box(x, y, 2, 7, 5, 2, color, scale)
-    draw_icon_box(x, y, 4, 9, 1, 1, color, scale)
-end
 
 return M
