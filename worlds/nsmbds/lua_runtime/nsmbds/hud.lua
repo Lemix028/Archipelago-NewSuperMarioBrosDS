@@ -8,6 +8,7 @@ local memory = require("nsmbds.memory")
 local state = require("nsmbds.state")
 local screen_geometry = require("nsmbds.screen_geometry")
 local notification_popup_sprites = require("nsmbds.notification_popup_sprites")
+local trap_status_sprites = require("nsmbds.trap_status_sprites")
 local RENDER_HUD_ON_BOTH_HYBRID_SCREENS = false
 local context = state.context
 local hud_screens_frame = nil
@@ -18,7 +19,8 @@ local PROTECTION_ATLAS_1X = hud_directory .. "assets/protection_hud_1x.png"
 local PROTECTION_ATLAS_2X = hud_directory .. "assets/protection_hud_2x.png"
 local PROTECTION_TILE_WIDTH = 27
 local PROTECTION_TILE_HEIGHT = 13
-local NOTIFICATION_POPUP_COLUMNS = 6
+local HUD_ATLAS_COLUMNS = 6
+local HUD_ATLAS_GUTTER = 2
 local NOTIFICATION_POPUP_ATLASES = {
     normal = hud_directory .. "assets/notification_popup_normal.png",
     horizontal = hud_directory .. "assets/notification_popup_horizontal.png",
@@ -34,11 +36,25 @@ local NOTIFICATION_POPUP_ATLASES_3X = {
     horizontal = hud_directory .. "assets/notification_popup_horizontal_3x.png",
     hybrid = hud_directory .. "assets/notification_popup_hybrid_3x.png",
 }
+local TRAP_STATUS_ATLASES = {
+    normal = hud_directory .. "assets/trap_status_normal.png",
+    hybrid = hud_directory .. "assets/trap_status_hybrid.png",
+}
+local TRAP_STATUS_ATLASES_2X = {
+    normal = hud_directory .. "assets/trap_status_normal_2x.png",
+    hybrid = hud_directory .. "assets/trap_status_hybrid_2x.png",
+}
+local TRAP_STATUS_ATLASES_3X = {
+    normal = hud_directory .. "assets/trap_status_normal_3x.png",
+    hybrid = hud_directory .. "assets/trap_status_hybrid_3x.png",
+}
 local NOTIFICATION_POPUP_BAR_COLORS = {
     cyan = 0xFF44DEF0,
     green = 0xFF4AD78B,
     yellow = 0xFFFFD35C,
     red = 0xFFFF6971,
+    orange = 0xFFFFA659,
+    purple = 0xFFB393FF,
 }
 local popup_cached_active = nil
 local popup_cached_title = nil
@@ -347,15 +363,19 @@ function state.notification_state.draw()
         if sprite_drawn then
             local layout_name = screen.duplicate and "hybrid"
                 or (layout == "Horizontal" and "horizontal" or "normal")
-            local column = popup_cached_sprite % NOTIFICATION_POPUP_COLUMNS
-            local row = math.floor(popup_cached_sprite / NOTIFICATION_POPUP_COLUMNS)
+            local column = popup_cached_sprite % HUD_ATLAS_COLUMNS
+            local row = math.floor(popup_cached_sprite / HUD_ATLAS_COLUMNS)
             if client_scale_x then
                 local source_scale = client_scale_x < 2.5 and 2 or 3
                 local client_atlases = source_scale == 2
                     and NOTIFICATION_POPUP_ATLASES_2X or NOTIFICATION_POPUP_ATLASES_3X
+                local source_gutter = HUD_ATLAS_GUTTER * source_scale
+                local source_width = width * source_scale
+                local source_height = height * source_scale
                 gui.drawImageRegion(client_atlases[layout_name],
-                    column * width * source_scale, row * height * source_scale,
-                    width * source_scale, height * source_scale,
+                    column * (source_width + 2 * source_gutter) + source_gutter,
+                    row * (source_height + 2 * source_gutter) + source_gutter,
+                    source_width, source_height,
                     math.floor(x1 * client_scale_x + 0.5),
                     math.floor(y1 * client_scale_y + 0.5),
                     math.floor(width * client_scale_x + 0.5),
@@ -363,7 +383,10 @@ function state.notification_state.draw()
                 popup_client_surface_used = true
             else
                 gui.drawImageRegion(NOTIFICATION_POPUP_ATLASES[layout_name],
-                    column * width, row * height,
+                    column * (width + 2 * HUD_ATLAS_GUTTER)
+                        + HUD_ATLAS_GUTTER,
+                    row * (height + 2 * HUD_ATLAS_GUTTER)
+                        + HUD_ATLAS_GUTTER,
                     width, height, x1, y1)
             end
         else
@@ -500,6 +523,13 @@ function M.draw_trap_status_hud()
         title, color = "BONK TRAP", "red"
     end
 
+    local sprite_index = trap_status_sprites[title .. "\t" .. color]
+    local sprite_drawn = sprite_index ~= nil and gui.drawImageRegion ~= nil
+    local client_scale_x, client_scale_y = nil, nil
+    if sprite_drawn and gui.clearGraphics then
+        client_scale_x, client_scale_y = notification_client_scale()
+    end
+
     for _, screen in ipairs(get_hud_screens()) do
         local scale = screen.duplicate and 1.25 or 1
 
@@ -513,19 +543,41 @@ function M.draw_trap_status_hud()
         local x2 = x1 + width - 1
         local y2 = y1 + height - 1
 
-        gui.drawBox(x1, y1, x2, y2, "black", 0xD011111B)
-
-        local accent_width = math.max(3, math.floor(3 * scale + 0.5))
-        gui.drawBox(x1, y1, x1 + accent_width - 1, y2, color, color)
-
-        gui.drawText(
-            x1 + math.floor(4 * scale),
-            y1 + math.floor(2 * scale),
-            title,
-            "white",
-            "clear",
-            screen.duplicate and 11 or 10
-        )
+        if sprite_drawn then
+            local layout_name = screen.duplicate and "hybrid" or "normal"
+            local column = sprite_index % HUD_ATLAS_COLUMNS
+            local row = math.floor(sprite_index / HUD_ATLAS_COLUMNS)
+            if client_scale_x then
+                local source_scale = client_scale_x < 2.5 and 2 or 3
+                local atlases = source_scale == 2
+                    and TRAP_STATUS_ATLASES_2X or TRAP_STATUS_ATLASES_3X
+                local gutter = HUD_ATLAS_GUTTER * source_scale
+                local source_width = width * source_scale
+                local source_height = height * source_scale
+                gui.drawImageRegion(atlases[layout_name],
+                    column * (source_width + 2 * gutter) + gutter,
+                    row * (source_height + 2 * gutter) + gutter,
+                    source_width, source_height,
+                    math.floor(x1 * client_scale_x + 0.5),
+                    math.floor(y1 * client_scale_y + 0.5),
+                    math.floor(width * client_scale_x + 0.5),
+                    math.floor(height * client_scale_y + 0.5), "client")
+                popup_client_surface_used = true
+            else
+                gui.drawImageRegion(TRAP_STATUS_ATLASES[layout_name],
+                    column * (width + 2 * HUD_ATLAS_GUTTER)
+                        + HUD_ATLAS_GUTTER,
+                    row * (height + 2 * HUD_ATLAS_GUTTER)
+                        + HUD_ATLAS_GUTTER,
+                    width, height, x1, y1)
+            end
+        else
+            gui.drawBox(x1, y1, x2, y2, "black", 0xD011111B)
+            local accent_width = math.max(3, math.floor(3 * scale + 0.5))
+            gui.drawBox(x1, y1, x1 + accent_width - 1, y2, color, color)
+            gui.drawText(x1 + math.floor(4 * scale), y1 + math.floor(2 * scale),
+                title, "white", "clear", screen.duplicate and 11 or 10)
+        end
 
         if context.trap_total_frames > 0 then
             local bar_x1 = x1 + math.floor(4 * scale)
@@ -541,10 +593,25 @@ function M.draw_trap_status_hud()
                 )
             )
 
-            gui.drawBox(bar_x1, bar_y, bar_x2, bar_y, "gray", "gray")
-
-            if fill_width > 0 then
-                gui.drawBox(bar_x1, bar_y, bar_x1 + fill_width, bar_y, color, color)
+            local bar_color = sprite_drawn and NOTIFICATION_POPUP_BAR_COLORS[color]
+                or color
+            if client_scale_x then
+                local client_x1 = math.floor(bar_x1 * client_scale_x + 0.5)
+                local client_y1 = math.floor(bar_y * client_scale_y + 0.5)
+                local client_y2 = math.floor((bar_y + 1) * client_scale_y + 0.5) - 1
+                if fill_width > 0 then
+                    gui.drawBox(client_x1, client_y1,
+                        math.floor((bar_x1 + fill_width + 1) * client_scale_x + 0.5) - 1,
+                        client_y2, bar_color, bar_color, "client")
+                end
+            else
+                if not sprite_drawn then
+                    gui.drawBox(bar_x1, bar_y, bar_x2, bar_y, "gray", "gray")
+                end
+                if fill_width > 0 then
+                    gui.drawBox(bar_x1, bar_y, bar_x1 + fill_width, bar_y,
+                        bar_color, bar_color)
+                end
             end
         end
     end

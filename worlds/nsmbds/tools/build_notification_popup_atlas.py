@@ -1,4 +1,4 @@
-"""Build cached notification cards for BizHawk's in-game popup.
+"""Build cached notification and Trap status cards for BizHawk.
 
 The existing Lua text tables provide the variable item, trap, and DeathLink
 labels. Pillow is only needed while rebuilding assets, never at game runtime.
@@ -18,11 +18,14 @@ RUNTIME = ROOT / "lua_runtime" / "nsmbds"
 ASSETS = RUNTIME / "assets"
 HUD_SOURCE = RUNTIME / "hud.lua"
 COLUMNS = 6
+GUTTER = 2
 COLORS = {
     "cyan": (68, 222, 240, 255),
     "green": (74, 215, 139, 255),
     "yellow": (255, 211, 92, 255),
     "red": (255, 105, 113, 255),
+    "orange": (255, 166, 89, 255),
+    "purple": (179, 147, 255, 255),
 }
 BLACK = (0, 0, 0, 255)
 WHITE = (245, 248, 255, 255)
@@ -68,6 +71,13 @@ def descriptions(source: str) -> list[tuple[str, str, str]]:
     return list(dict.fromkeys(cards))
 
 
+def trap_descriptions(source: str) -> list[tuple[str, str]]:
+    section = source.split("function M.draw_trap_status_hud()", 1)[1]
+    cards = [("TRAP ACTIVE", "red")]
+    cards.extend(re.findall(r'title, color = "([^"]+)", "([^"]+)"', section))
+    return list(dict.fromkeys(cards))
+
+
 @lru_cache(maxsize=None)
 def font(size: int, bold: bool) -> ImageFont.FreeTypeFont:
     # Rendered glyphs are bundled as PNGs; no font is needed at game runtime.
@@ -92,6 +102,33 @@ def draw_fitting_text(draw: ImageDraw.ImageDraw, xy: tuple[int, int],
               text, font=font(pixel_size, bold), fill=color)
 
 
+def add_gutter(card: Image.Image, gutter: int) -> Image.Image:
+    width, height = card.size
+    padded = Image.new("RGBA", (width + 2 * gutter, height + 2 * gutter))
+    padded.paste(card, (gutter, gutter))
+    padded.paste(card.crop((0, 0, width, 1)).resize((width, gutter)),
+                 (gutter, 0))
+    padded.paste(card.crop((0, height - 1, width, height)).resize((width, gutter)),
+                 (gutter, gutter + height))
+    padded.paste(card.crop((0, 0, 1, height)).resize((gutter, height)),
+                 (0, gutter))
+    padded.paste(card.crop((width - 1, 0, width, height)).resize((gutter, height)),
+                 (gutter + width, gutter))
+    corner_draw = ImageDraw.Draw(padded)
+    for corner_x, corner_y, source_x, source_y in (
+        (0, 0, 0, 0),
+        (gutter + width, 0, width - 1, 0),
+        (0, gutter + height, 0, height - 1),
+        (gutter + width, gutter + height, width - 1, height - 1),
+    ):
+        corner_draw.rectangle(
+            (corner_x, corner_y, corner_x + gutter - 1,
+             corner_y + gutter - 1),
+            fill=card.getpixel((source_x, source_y)),
+        )
+    return padded
+
+
 def build_layout(cards: list[tuple[str, str, str]], name: str,
                  scale: float, title_size: int, subtitle_size: int,
                  output_scale: int = 1) -> None:
@@ -99,8 +136,11 @@ def build_layout(cards: list[tuple[str, str, str]], name: str,
     native_height = math.floor(30 * scale + 0.5)
     width = native_width * output_scale
     height = native_height * output_scale
+    gutter = GUTTER * output_scale
+    cell_width = width + 2 * gutter
+    cell_height = height + 2 * gutter
     rows = math.ceil(len(cards) / COLUMNS)
-    atlas = Image.new("RGBA", (COLUMNS * width, rows * height))
+    atlas = Image.new("RGBA", (COLUMNS * cell_width, rows * cell_height))
     accent_width = max(3, math.floor(3 * scale + 0.5))
     text_x = math.floor(7 * scale)
     # Horizontal keeps the normal title size, so it needs the same row spacing.
@@ -110,8 +150,8 @@ def build_layout(cards: list[tuple[str, str, str]], name: str,
     bar_y = native_height - 1 - math.floor(3 * scale)
 
     for index, (title, subtitle, color_name) in enumerate(cards):
-        x = index % COLUMNS * width
-        y = index // COLUMNS * height
+        x = index % COLUMNS * cell_width
+        y = index // COLUMNS * cell_height
         color = COLORS[color_name]
         card = Image.new("RGBA", (width, height))
         card_draw = ImageDraw.Draw(card)
@@ -138,19 +178,75 @@ def build_layout(cards: list[tuple[str, str, str]], name: str,
         card_draw.rectangle((bar_x1 * output_scale, bar_y * output_scale,
                              (bar_x2 + 1) * output_scale - 1,
                              (bar_y + 1) * output_scale - 1), fill=GRAY)
-        atlas.alpha_composite(card, (x, y))
+        # Extrude edge pixels into each gutter. Image-region filtering can then
+        # sample past a card edge without picking up a neighboring popup.
+        atlas.alpha_composite(add_gutter(card, gutter), (x, y))
 
     suffix = f"_{output_scale}x" if output_scale > 1 else ""
     atlas.save(ASSETS / f"notification_popup_{name}{suffix}.png", optimize=True)
 
 
+def build_trap_layout(cards: list[tuple[str, str]], name: str,
+                      scale: float, output_scale: int) -> None:
+    native_width = math.floor(93 * scale + 0.5)
+    native_height = math.floor(18 * scale + 0.5)
+    width = native_width * output_scale
+    height = native_height * output_scale
+    gutter = GUTTER * output_scale
+    cell_width = width + 2 * gutter
+    cell_height = height + 2 * gutter
+    rows = math.ceil(len(cards) / COLUMNS)
+    atlas = Image.new("RGBA", (COLUMNS * cell_width, rows * cell_height))
+    accent_width = max(3, math.floor(3 * scale + 0.5))
+    text_x = math.floor(7 * scale)
+    title_size = 9 if name == "hybrid" else 8
+    bar_x1 = math.floor(4 * scale)
+    bar_x2 = native_width - 1 - math.floor(3 * scale)
+    bar_y = native_height - 1 - math.floor(3 * scale)
+
+    for index, (title, color_name) in enumerate(cards):
+        color = COLORS[color_name]
+        card = Image.new("RGBA", (width, height))
+        draw = ImageDraw.Draw(card)
+        draw.rectangle((0, 0, width - 1, height - 1), fill=BACKGROUND)
+        draw.rectangle((0, 0, width - 1, output_scale - 1), fill=BLACK)
+        draw.rectangle((0, height - output_scale, width - 1, height - 1), fill=BLACK)
+        draw.rectangle((0, 0, output_scale - 1, height - 1), fill=BLACK)
+        draw.rectangle((width - output_scale, 0, width - 1, height - 1), fill=BLACK)
+        draw.rectangle((0, 0, accent_width * output_scale - 1, height - 1),
+                       fill=color)
+        raster_scale = max(2, output_scale)
+        text_layer = Image.new("RGBA", (native_width * raster_scale,
+                                        native_height * raster_scale))
+        draw_fitting_text(ImageDraw.Draw(text_layer),
+                          (text_x, math.floor(2 * scale)), title, WHITE,
+                          title_size, native_width - text_x - 3,
+                          raster_scale, bold=True)
+        if raster_scale != output_scale:
+            text_layer = text_layer.resize((width, height), Image.Resampling.BOX)
+        card.alpha_composite(text_layer)
+        draw.rectangle((bar_x1 * output_scale, bar_y * output_scale,
+                        (bar_x2 + 1) * output_scale - 1,
+                        (bar_y + 1) * output_scale - 1), fill=GRAY)
+        atlas.alpha_composite(add_gutter(card, gutter),
+                              (index % COLUMNS * cell_width,
+                               index // COLUMNS * cell_height))
+
+    suffix = f"_{output_scale}x" if output_scale > 1 else ""
+    atlas.save(ASSETS / f"trap_status_{name}{suffix}.png", optimize=True)
+
+
 def main() -> None:
-    cards = descriptions(HUD_SOURCE.read_text(encoding="utf-8"))
+    source = HUD_SOURCE.read_text(encoding="utf-8")
+    cards = descriptions(source)
+    trap_cards = trap_descriptions(source)
     ASSETS.mkdir(parents=True, exist_ok=True)
     for output_scale in (1, 2, 3):
         build_layout(cards, "normal", 1, 10, 7, output_scale)
         build_layout(cards, "horizontal", 0.85, 10, 6, output_scale)
         build_layout(cards, "hybrid", 1.2, 11, 8, output_scale)
+        build_trap_layout(trap_cards, "normal", 1, output_scale)
+        build_trap_layout(trap_cards, "hybrid", 1.25, output_scale)
     index = {"\t".join(card): number for number, card in enumerate(cards)}
     (RUNTIME / "notification_popup_sprites.lua").write_text(
         "-- Generated by tools/build_notification_popup_atlas.py.\nreturn {\n"
@@ -159,7 +255,15 @@ def main() -> None:
         + "}\n",
         encoding="utf-8",
     )
-    print(f"Built {len(cards)} notification cards in three layouts")
+    trap_index = {"\t".join(card): number for number, card in enumerate(trap_cards)}
+    (RUNTIME / "trap_status_sprites.lua").write_text(
+        "-- Generated by tools/build_notification_popup_atlas.py.\nreturn {\n"
+        + "".join(f"    [{json.dumps(key)}] = {value},\n"
+                  for key, value in trap_index.items())
+        + "}\n",
+        encoding="utf-8",
+    )
+    print(f"Built {len(cards)} notification and {len(trap_cards)} Trap status cards")
 
 
 if __name__ == "__main__":

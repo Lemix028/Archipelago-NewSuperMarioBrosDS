@@ -394,37 +394,34 @@ class TestIndividualStarCoinGateAccess(NSMBDSTestBase):
         ))
 
     def test_named_permits_respect_their_cumulative_tiers(self) -> None:
-        gates_by_tier = {
-            tier: next(
-                gate for gate in STAR_COIN_GATES
-                if self.world.individual_gate_tiers[gate.permit_item_name] == tier
-            )
-            for tier in (1, 2, 3)
-        }
+        # Use direct gates so another physical sign cannot raise the effective
+        # coin requirement above the gate's own randomized tier.
+        gates_by_target = {gate.target_stage_name: gate for gate in STAR_COIN_GATES}
+        gates = sorted(
+            (
+                gates_by_target["World 1 Green Toad House 1"],
+                gates_by_target["World 2 Red Toad House 1"],
+                gates_by_target["World 3-A"],
+            ),
+            key=lambda gate: self.world.individual_gate_tiers[gate.permit_item_name],
+        )
         self.collect_by_name([
             "Desert Pass", "Isle Pass", "Jungle Pass", "Glacier Pass",
             "Mountain Pass", "Cloud Pass", "Volcano Pass",
-            *(gate.permit_item_name for gate in gates_by_tier.values()),
         ])
 
-        entrances = {
-            tier: f"{gate.source_region} -> {gate.region_name}"
-            for tier, gate in gates_by_tier.items()
-        }
-        self.collect_n_by_name("Star Coin", 5)
-        self.assertTrue(self.can_reach_entrance(entrances[1]))
-        self.assertFalse(self.can_reach_entrance(entrances[2]))
-        self.assertFalse(self.can_reach_entrance(entrances[3]))
-
-        self.collect_n_by_name("Star Coin", 10)
-        self.assertTrue(self.can_reach_entrance(entrances[1]))
-        self.assertTrue(self.can_reach_entrance(entrances[2]))
-        self.assertFalse(self.can_reach_entrance(entrances[3]))
-
-        self.collect_n_by_name("Star Coin", 15)
-        self.assertTrue(self.can_reach_entrance(entrances[1]))
-        self.assertTrue(self.can_reach_entrance(entrances[2]))
-        self.assertTrue(self.can_reach_entrance(entrances[3]))
+        for gate in gates:
+            entrance = f"{gate.source_region} -> {gate.region_name}"
+            required_coins = (
+                self.world.individual_gate_tiers[gate.permit_item_name]
+                * gate.star_coin_cost
+            )
+            self.collect_n_by_name("Star Coin", required_coins - 1)
+            self.assertFalse(self.can_reach_entrance(entrance))
+            self.collect_by_name(gate.permit_item_name)
+            self.assertFalse(self.can_reach_entrance(entrance))
+            self.collect_n_by_name("Star Coin", required_coins)
+            self.assertTrue(self.can_reach_entrance(entrance))
 
     def test_world_4_orange_toad_house_requires_both_physical_signs(self) -> None:
         gates = {gate.target_stage_name: gate for gate in STAR_COIN_GATES}
