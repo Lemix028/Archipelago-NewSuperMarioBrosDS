@@ -257,6 +257,15 @@ request_handlers = {
         return res
     end,
 
+    ["NSMBDS_DIAGNOSTICS"] = function (req)
+        local runtime_version = package.loaded["nsmbds.version"]
+        return {
+            type = "NSMBDS_DIAGNOSTICS_RESPONSE",
+            bizhawk_version = tostring(bizhawk_version),
+            runtime_version = type(runtime_version) == "table" and runtime_version.VERSION_LABEL or nil,
+        }
+    end,
+
     ["NSMBDS_STAR_COIN_TRACKING"] = function (req)
         local res = {}
 

@@ -50,7 +50,7 @@ GREY = "9E9E9E"
 CYAN = "62C6E8"
 ORANGE = "FFB74D"
 RED = "FF5252"
-logger = logging.getLogger("NSMBDS")
+logger = logging.getLogger("NSMBDS.Launch")
 
 
 def request_client_shutdown(ctx) -> None:
@@ -551,6 +551,10 @@ class NSMBDSLaunchPanel(MDScrollView):
             self._set_message(launch_state.last_message)
 
         except Exception as exc:
+            logger.exception("NSMBDS BizHawk launch failed.")
+            diagnostics = getattr(self.ctx, "nsmbds_diagnostics", None)
+            if diagnostics is not None:
+                diagnostics.error("launch", exc)
             self._set_message(str(exc), error=True)
 
         self.refresh(force=True)

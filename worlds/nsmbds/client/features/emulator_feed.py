@@ -54,7 +54,8 @@ class EmulatorFeedMixin:
             or responses[0].get("type") != "NSMBDS_FEED_CONFIG_RESPONSE"
             or responses[0].get("value") is not True
         ):
-            logger.warning("BizHawk rejected the NSMBDS emulator feed settings; retrying next tick.")
+            if self._should_log_watcher_issue("emulator-feed-config-rejected"):
+                logger.warning("BizHawk rejected the NSMBDS emulator feed settings; retrying next tick.")
             return
         self._emulator_feed_config_sent = signature
 
@@ -256,15 +257,17 @@ class EmulatorFeedMixin:
             } for segments in queued]
             try:
                 responses = await send_requests(ctx.bizhawk_ctx, requests)
-            except Exception:
-                logger.debug("BizHawk feed delivery deferred until the next watcher tick.", exc_info=True)
+            except Exception as exc:
+                if self._should_log_watcher_issue(f"emulator-feed-delivery:{type(exc).__name__}"):
+                    logger.debug("BizHawk feed delivery deferred until the next watcher tick.", exc_info=True)
                 return
             if len(responses) != len(requests) or any(
                 response.get("type") != "NSMBDS_FEED_MESSAGE_RESPONSE"
                 or response.get("value") is not True
                 for response in responses
             ):
-                logger.warning("BizHawk returned an invalid NSMBDS feed response; retrying next tick.")
+                if self._should_log_watcher_issue("invalid-emulator-feed-response"):
+                    logger.warning("BizHawk returned an invalid NSMBDS feed response; retrying next tick.")
                 return
             for _ in queued:
                 self._pending_emulator_feed.popleft()

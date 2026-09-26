@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
 
 
-logger = logging.getLogger("NSMBDS")
+logger = logging.getLogger("NSMBDS.Sync")
 
 LIFE_ITEMS = {
     "1-Up Mushroom": 1,
@@ -75,7 +75,9 @@ class ItemHandlingMixin:
         pending_items = ctx.items_received[
             self._items_received_index:self._items_received_index + MAX_NEW_ITEMS_PER_POLL
         ]
-        for network_item in pending_items:
+        for offset, network_item in enumerate(pending_items):
+            item_index = start_index + offset
+            diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
             if network_item.item in RECEIVED_NOTIFICATION_ITEM_IDS:
                 self._queue_ap_notification(
                     AP_NOTIFICATION_ITEM_RECEIVED,
@@ -88,10 +90,18 @@ class ItemHandlingMixin:
                 for queued in self._deferred_item_ids
             ):
                 self._deferred_item_ids.append(network_item.item)
+                if diagnostics is not None:
+                    diagnostics.last_queued_index = item_index
+                    diagnostics.event("ITEM", "queued", f"index={item_index}")
+                logger.debug("Item queued index=%d", item_index)
                 self._items_received_index += 1
                 continue
             if missing_license is not None:
                 self._deferred_item_ids.append(network_item.item)
+                if diagnostics is not None:
+                    diagnostics.last_queued_index = item_index
+                    diagnostics.event("ITEM", "queued", f"index={item_index}")
+                logger.debug("Item queued index=%d", item_index)
                 self._log_held_powerup(network_item.item, missing_license)
                 self._items_received_index += 1
                 continue
@@ -99,16 +109,29 @@ class ItemHandlingMixin:
                 applied = await self._apply_item(ctx, network_item.item)
             except Exception:
                 logger.exception("Failed to apply received item ID %s.", network_item.item)
+                if diagnostics is not None:
+                    diagnostics.counters["item_errors"] += 1
+                    diagnostics.error("items", "item application")
                 applied = False
             if not applied:
                 # RAM can be temporarily unavailable during transitions. Keep this
                 # item for a retry, but do not starve later filler or trap items.
                 self._deferred_item_ids.append(network_item.item)
-                logger.info(
+                if diagnostics is not None:
+                    diagnostics.last_queued_index = item_index
+                    diagnostics.event("ITEM", "queued", f"index={item_index}")
+                logger.debug("Item queued index=%d", item_index)
+                logger.debug(
                     "Deferred received item %s (ID %s) after a failed RAM write.",
                     item_id_to_name.get(network_item.item, "Unknown"),
                     network_item.item,
                 )
+            elif diagnostics is not None:
+                diagnostics.last_applied_index = item_index
+                diagnostics.last_applied_item = network_item.item
+                diagnostics.counters["items_applied"] += 1
+                diagnostics.event("ITEM", "applied", f"index={item_index}")
+                logger.debug("Item applied index=%d", item_index)
             self._items_received_index += 1
 
         if self._items_received_index != start_index:
@@ -201,12 +224,21 @@ class ItemHandlingMixin:
             applied = await self._apply_item(ctx, item_id)
         except Exception:
             logger.exception("Failed to apply deferred received item ID %s.", item_id)
+            diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
+            if diagnostics is not None:
+                diagnostics.counters["item_errors"] += 1
+                diagnostics.error("items", "deferred item application")
             applied = False
         if self._deferred_item_ids is not queue or item_id not in queue:
             return  # The session was reset while the RAM request was in flight.
         self._retry_non_powerup = not applied and item_id_to_name.get(item_id) in INVENTORY_RAM_VALUES
         if applied:
             self._deferred_item_ids.remove(item_id)
+            diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
+            if diagnostics is not None:
+                diagnostics.last_applied_item = item_id
+                diagnostics.counters["items_applied"] += 1
+                diagnostics.event("ITEM", "deferred applied", item_id_to_name.get(item_id, f"id={item_id}"))
             if getattr(self, "_next_powerup_id", None) == item_id:
                 self._next_powerup_id = None
         elif item_id_to_name.get(item_id) not in INVENTORY_RAM_VALUES:

@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
 
 
-logger = logging.getLogger("NSMBDS")
+logger = logging.getLogger("NSMBDS.RedCoins")
 
 
 class RedCoinTrackingMixin:
@@ -61,7 +61,8 @@ class RedCoinTrackingMixin:
         if len(result) != len(expected_sizes) or any(
             len(value) != size for value, size in zip(result, expected_sizes)
         ):
-            logger.warning("Received an invalid Red Coin event mailbox read from BizHawk.")
+            if self._should_log_watcher_issue("invalid-red-coin-mailbox"):
+                logger.warning("Received an invalid Red Coin event mailbox read from BizHawk.")
             return
 
         (
@@ -85,7 +86,8 @@ class RedCoinTrackingMixin:
         player_x = struct.unpack("<i", player_x_raw)[0]
         counter_index = counter_raw[0]
         if event_type[0] != AP_EVENT_TYPE_RED_COIN_COMPLETE:
-            logger.warning("Discarded unknown AP Lua mailbox event type 0x%02X.", event_type[0])
+            if self._should_log_watcher_issue(f"unknown-red-coin-event:{event_type[0]}"):
+                logger.warning("Discarded unknown AP Lua mailbox event type 0x%02X.", event_type[0])
             await self._acknowledge_red_coin_event(ctx, sequence_value, guarded_write)
             return
 
@@ -112,11 +114,11 @@ class RedCoinTrackingMixin:
 
         location_id = LOCATION_TABLE[location_name]
         if location_id in self._sent_locations:
-            logger.info("Ignored already checked Red Coin Challenge: %s.", location_name)
+            logger.debug("Ignored already checked Red Coin Challenge: %s.", location_name)
             await self._acknowledge_red_coin_event(ctx, sequence_value, guarded_write)
             return
         if not self._is_location_active(ctx, location_name, location_id):
-            logger.warning(
+            logger.debug(
                 "Ignored Red Coin Challenge %r because it is not active in this seed. "
                 "Generate a new seed with red_coin_checks enabled.",
                 location_name,

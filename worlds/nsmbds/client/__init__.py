@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import logging
 import random
+import re
 from collections import deque
 from time import perf_counter
 from typing import TYPE_CHECKING, Sequence
@@ -29,6 +30,7 @@ from .features.red_coins import RedCoinTrackingMixin
 from .features.traps import TIMER_DRAIN_UNITS, TrapHandlingMixin
 from .features.tracker_sync import PopTrackerWorldSyncMixin
 from ..items import ITEM_TABLE
+from ..locations import LOCATION_TABLE
 from ..data.star_coin_gates import STAR_COIN_GATES
 from ..data.powerup_licenses import (
     BLUE_SHELL_LICENSE,
@@ -62,12 +64,18 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger("NSMBDS")
+network_logger = logger.getChild("Network")
+bridge_logger = logger.getChild("Bridge")
+sync_logger = logger.getChild("Sync")
 _dedicated_client_mode = False
-WATCHER_OPERATION_SLOW_SECONDS = 0.050
-WATCHER_TOTAL_SLOW_SECONDS = 0.150
+# The bridge answers on emulator frames. Several sequential requests routinely
+# put a complete watcher pass near 150 ms without any individual stall.
+WATCHER_OPERATION_SLOW_SECONDS = 0.200
+WATCHER_TOTAL_SLOW_SECONDS = 0.300
 MEDIUM_POLL_TICKS = 3
 SLOW_POLL_TICKS = 10
 WATCHER_SLOW_LOG_COOLDOWN_SECONDS = 5.0
+WATCHER_ISSUE_LOG_COOLDOWN_SECONDS = 30.0
 
 
 def _selected_seed_rom_matches_hash(ctx: "BizHawkClientContext") -> bool:
@@ -214,6 +222,9 @@ class NSMBDSClient(
         self._watcher_tick = 0
         self._native_block_configuration_ready = False
         self._watcher_slow_log_times: dict[str, float] = {}
+        self._watcher_issue_log_times: dict[str, float] = {}
+        self._watcher_diagnostics = None
+        self._logged_unmatched_block_events: set[tuple[int, ...]] = set()
 
     async def validate_rom(self, ctx: "BizHawkClientContext") -> bool:
         """Accept only the verified NSMBDS USA ROM header code."""
@@ -278,6 +289,7 @@ class NSMBDSClient(
 
     async def game_watcher(self, ctx: "BizHawkClientContext") -> None:
         """Poll verified game data, submit checks, and apply pending features."""
+        self._watcher_diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
         watcher_started = perf_counter()
         try:
             await self._run_game_watcher(ctx)
@@ -302,13 +314,24 @@ class NSMBDSClient(
                 elapsed * 1000,
             )
 
+    def _should_log_watcher_issue(self, issue: str) -> bool:
+        now = perf_counter()
+        previous = self._watcher_issue_log_times.get(issue, -WATCHER_ISSUE_LOG_COOLDOWN_SECONDS)
+        if now - previous < WATCHER_ISSUE_LOG_COOLDOWN_SECONDS:
+            return False
+        self._watcher_issue_log_times[issue] = now
+        return True
+
     async def _run_watcher_operation(self, operation_name: str, operation):
         """Run one watcher operation and report only meaningful stalls."""
         started = perf_counter()
         try:
             return await operation
-        except Exception:
-            logger.exception("NSMBDS %s failed; the watcher will retry next tick.", operation_name)
+        except Exception as exc:
+            if self._should_log_watcher_issue(f"operation:{operation_name}:{type(exc).__name__}"):
+                logger.exception("NSMBDS %s failed; the watcher will retry next tick.", operation_name)
+                if self._watcher_diagnostics is not None:
+                    self._watcher_diagnostics.error(operation_name, exc)
         finally:
             elapsed = perf_counter() - started
             if elapsed >= WATCHER_OPERATION_SLOW_SECONDS:
@@ -325,9 +348,20 @@ class NSMBDSClient(
         location_ids = list(dict.fromkeys(
             location_id for _kind, location_id, _sequence in pending_checks
         ))
+        diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
+        if diagnostics is not None:
+            names = {identifier: name for name, identifier in LOCATION_TABLE.items()}
+            for location_id in location_ids:
+                if location_id not in self._observed_locations:
+                    diagnostics.last_detected_location = location_id
+                    diagnostics.counters["locations_detected"] += 1
+                    diagnostics.event("LOCATION", "detected", names.get(location_id, f"id={location_id}"))
         await ctx.send_msgs([{"cmd": "LocationChecks", "locations": location_ids}])
         self._observed_locations.update(location_ids)
         self._sent_locations.update(location_ids)
+        if diagnostics is not None:
+            diagnostics.last_submitted_location = location_ids[-1]
+            diagnostics.event("LOCATION", "submitted", f"count={len(location_ids)}")
 
         from worlds._bizhawk import guarded_write
 
@@ -380,9 +414,14 @@ class NSMBDSClient(
         level_data = await self._run_watcher_operation(
             "level data read", self._read_level_data(ctx)
         )
+        diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
         if level_data is None:
+            if diagnostics is not None:
+                diagnostics.game_status("Read unavailable")
             return
         if not self._is_game_data_ready(level_data):
+            if diagnostics is not None:
+                diagnostics.game_status("Not ready")
             if not self._last_not_ready_logged:
                 header_values = tuple(
                     level_data[offset] for offset in LEVEL_DATA_WORLD_HEADER_OFFSETS
@@ -394,6 +433,8 @@ class NSMBDSClient(
                 )
                 self._last_not_ready_logged = True
             return
+        if diagnostics is not None:
+            diagnostics.game_status("Ready")
         self._last_not_ready_logged = False
         self._game_data_header_values = tuple(
             level_data[offset] for offset in LEVEL_DATA_WORLD_HEADER_OFFSETS
@@ -463,8 +504,12 @@ class NSMBDSClient(
                     (ADDR_AP_MINI_CASTLE_FLAGS_PERM, 4, MEMORY_DOMAIN),
                 ],
             )
-        except Exception:
-            logger.exception("Failed to read the NSMBDS level-data block.")
+        except Exception as exc:
+            if self._should_log_watcher_issue(f"level-read:{type(exc).__name__}"):
+                logger.exception("Failed to read the NSMBDS level-data block.")
+                diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
+                if diagnostics is not None:
+                    diagnostics.error("game data", exc)
             return None
 
         if (
@@ -473,7 +518,11 @@ class NSMBDSClient(
             or len(result[0]) != LEVEL_AND_SECRET_FLAG_READ_SIZE
             or len(result[1]) != 4
         ):
-            logger.warning("Received an invalid NSMBDS location-data snapshot from BizHawk.")
+            if self._should_log_watcher_issue("invalid-level-snapshot"):
+                logger.warning("Received an invalid NSMBDS location-data snapshot from BizHawk.")
+                diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
+                if diagnostics is not None:
+                    diagnostics.error("game data", "invalid snapshot")
             return None
         flags, sequence, source, destination = result[1]
         trace = bytes(result[1])
@@ -486,7 +535,11 @@ class NSMBDSClient(
                 )
         location_data = result[0] + result[1][:1]
         if len(location_data) != LOCATION_DATA_SNAPSHOT_SIZE:
-            logger.warning("Received an incomplete NSMBDS location-data snapshot from BizHawk.")
+            if self._should_log_watcher_issue("incomplete-level-snapshot"):
+                logger.warning("Received an incomplete NSMBDS location-data snapshot from BizHawk.")
+                diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
+                if diagnostics is not None:
+                    diagnostics.error("game data", "incomplete snapshot")
             return None
         return location_data
 
@@ -578,6 +631,18 @@ class NSMBDSClient(
             self._queue_incoming_death_link(ctx, source)
             return
         if cmd == "ReceivedItems":
+            diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
+            if diagnostics is not None:
+                start = int(args.get("index", 0))
+                for offset, item in enumerate(args.get("items", ())):
+                    index = start + offset
+                    if diagnostics.last_received_index is None or index > diagnostics.last_received_index:
+                        diagnostics.last_received_index = index
+                        diagnostics.counters["items_received"] += 1
+                        diagnostics.event("ITEM", "received", f"index={index}")
+                        sync_logger.debug("Item received index=%d item=%s", index, item.item)
+                    else:
+                        sync_logger.debug("Ignoring already observed item index=%d", index)
             self._awaiting_item_history = False
             if self._item_cursor_needs_initial_sync:
                 # CommonClient has already appended this packet before calling
@@ -634,6 +699,9 @@ class NSMBDSClient(
                 and identity != self._session_identity
             ):
                 self._reset_session_state()
+                diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
+                if diagnostics is not None:
+                    diagnostics.reset_slot()
             self._session_identity = identity
         elif self._session_identity is None:
             self._session_identity = identity
@@ -687,6 +755,7 @@ class NSMBDSClient(
 
     def _reset_session_state(self) -> None:
         """Clear local progress only after connecting to a different AP session."""
+        self._logged_unmatched_block_events.clear()
         self._observed_locations.clear()
         self._pending_emulator_feed.clear()
         self._emulator_feed_received_index = 0
@@ -822,7 +891,115 @@ def install_patch_startup_guard(bizhawk_context, configure_launch_from_args) -> 
 def main(*args: str) -> None:
     """Launch the NSMBDS BizHawk client GUI executable."""
     from worlds._bizhawk import context as bizhawk_context
+    from MultiServer import mark_raw
     from .launcher import configure_launch_from_args
+    from .diagnostics import DiagnosticState, build_diagnostic_snapshot, format_full, format_short, parse_diagnostic_mode
+
+    class NSMBDSCommandProcessor(bizhawk_context.BizHawkClientCommandProcessor):
+        @mark_raw
+        def _cmd_nsmbds_debug(self, mode: str = "") -> bool:
+            """Toggle detailed NSMBDS logging: /nsmbds_debug [on|off]"""
+            mode = mode.strip().lower()
+            if mode not in {"", "on", "off"}:
+                self.output("Usage: /nsmbds_debug [on|off]")
+                return False
+            if mode:
+                logger.setLevel(logging.DEBUG if mode == "on" else logging.INFO)
+                if mode == "on" and isinstance(self.ctx.client_handler, NSMBDSClient):
+                    self.ctx.client_handler._logged_unmatched_block_events = set()
+                logger.info("NSMBDS debug logging %s.", "enabled" if mode == "on" else "disabled")
+            self.output("NSMBDS debug logging: " + ("on" if logger.isEnabledFor(logging.DEBUG) else "off"))
+            return True
+
+        @mark_raw
+        def _cmd_nsmbds_diag(self, mode: str = "") -> bool:
+            """Show NSMBDS support diagnostics: /nsmbds_diag [short|full]"""
+            mode = parse_diagnostic_mode(mode)
+            if mode is None:
+                self.output("Usage: /nsmbds_diag [short|full]")
+                return False
+            snapshot = build_diagnostic_snapshot(self.ctx)
+            logger.getChild("Diag").debug("Generated %s diagnostic snapshot", mode)
+            self.output(format_full(snapshot) if mode == "full" else format_short(snapshot))
+            return True
+
+    class NSMBDSContext(bizhawk_context.BizHawkClientContext):
+        command_processor = NSMBDSCommandProcessor
+
+        def __init__(self, server_address, password):
+            super().__init__(server_address, password)
+            self.nsmbds_diagnostics = DiagnosticState()
+            logger.info("NSMBDS client started; version %s; session %s.",
+                        DISPLAY_VERSION, self.nsmbds_diagnostics.session_id)
+            self.nsmbds_diagnostics.event("CLIENT", "started")
+
+        def on_package(self, cmd, args):
+            if cmd == "Connected":
+                history = self.nsmbds_diagnostics.network
+                if history.change(True):
+                    network_logger.info("%s to Archipelago.", "Reconnected" if history.reconnect_count else "Connected")
+                    self.nsmbds_diagnostics.event("NETWORK", "connected")
+            super().on_package(cmd, args)
+
+        async def disconnect(self, allow_autoreconnect=False):
+            await super().disconnect(allow_autoreconnect)
+            self.observe_network()
+
+        def observe_network(self):
+            server = getattr(self, "server", None)
+            socket = getattr(server, "socket", None)
+            connected = socket is not None and not getattr(socket, "closed", True)
+            history = self.nsmbds_diagnostics.network
+            if history.change(connected) and not connected:
+                network_logger.info("Archipelago connection lost.")
+                self.nsmbds_diagnostics.event("NETWORK", "disconnected")
+
+        async def observe_bridge_handshake(self, script_version: int):
+            """Cache connector metadata once per connection, never during diagnostics."""
+            from worlds._bizhawk import send_requests
+
+            diagnostics = self.nsmbds_diagnostics
+            diagnostics.connector_script_version = script_version
+            diagnostics.bizhawk_version = None
+            diagnostics.lua_runtime_version = None
+            try:
+                replies = await send_requests(self.bizhawk_ctx, [{"type": "NSMBDS_DIAGNOSTICS"}])
+            except Exception:
+                bridge_logger.debug("BizHawk connector does not provide version metadata.", exc_info=True)
+                return
+            if len(replies) != 1 or replies[0].get("type") != "NSMBDS_DIAGNOSTICS_RESPONSE":
+                return
+            reply = replies[0]
+            version = re.search(r"\d+\.\d+(?:\.\d+)?", str(reply.get("bizhawk_version", "")))
+            if version:
+                diagnostics.bizhawk_version = version.group(0)
+            runtime = str(reply.get("runtime_version") or "")
+            if re.fullmatch(r"v?\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?", runtime):
+                diagnostics.lua_runtime_version = runtime
+
+        def observe_bridge(self, state: str, reason: str | None = None, error_type: str | None = None):
+            diagnostics = self.nsmbds_diagnostics
+            previous = diagnostics.bridge_state
+            if previous == state:
+                return
+            diagnostics.bridge_state = state
+            if state != "READY":
+                diagnostics.game_data_status = "Not read"
+                diagnostics.last_ready_at = None
+            bridge_logger.debug("%s -> %s", previous, state)
+            diagnostics.event("BRIDGE", state.lower())
+            if state == "ERROR":
+                diagnostics.error("bridge", error_type or "RequestFailedError")
+            history = diagnostics.bridge
+            connected = state == "READY"
+            safe_reason = reason if reason in {"Connection closed", "Connection timed out", "Connection reset"} else None
+            if history.change(connected, safe_reason):
+                if connected:
+                    bridge_logger.info("BizHawk %s.", "reconnected" if history.reconnect_count else "connected")
+                else:
+                    bridge_logger.info("BizHawk connection lost%s.", f": {safe_reason}" if safe_reason else "")
+
+    from ..version import DISPLAY_VERSION
 
     # Do not publish the expected output path until patching has succeeded.
     configure_launch_from_args(())
@@ -831,7 +1008,8 @@ def main(*args: str) -> None:
 
     # This subprocess is dedicated to NSMBDS, so replacing the generic context
     # factory here cannot affect other BizHawk clients in the launcher process.
-    bizhawk_context.BizHawkClientContext.make_gui = _make_tracker_gui_after_patching
+    NSMBDSContext.make_gui = _make_tracker_gui_after_patching
+    bizhawk_context.BizHawkClientContext = NSMBDSContext
 
     # The core launcher would otherwise start BizHawk with only Archipelago's
     # generic connector. NSMBDS needs its bootstrap and side-loading runtime, so

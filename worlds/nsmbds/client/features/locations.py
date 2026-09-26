@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
 
 
-logger = logging.getLogger("NSMBDS")
+logger = logging.getLogger("NSMBDS.Sync")
 
 STAR_COIN_LOCATION_IDS = frozenset(
     location_id for name, location_id in LOCATION_TABLE.items() if "Star Coin" in name
@@ -59,7 +59,8 @@ class LocationTrackingMixin:
             or responses[0].get("type") != "NSMBDS_STAR_COIN_TRACKING_RESPONSE"
             or responses[0].get("value") is not True
         ):
-            logger.warning("BizHawk rejected the Star Coin tracking mode; retrying next tick.")
+            if self._should_log_watcher_issue("star-coin-tracking-rejected"):
+                logger.warning("BizHawk rejected the Star Coin tracking mode; retrying next tick.")
             return
         self._star_coin_tracking_mode_sent = mode
 
@@ -160,6 +161,13 @@ class LocationTrackingMixin:
             ):
                 continue
 
+            if location_id not in self._observed_locations:
+                diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
+                if diagnostics is not None:
+                    diagnostics.last_detected_location = location_id
+                    diagnostics.counters["locations_detected"] += 1
+                    diagnostics.event("LOCATION", "detected", location_name)
+                logger.debug("Location detected: %s", location_name)
             self._observed_locations.add(location_id)
             if (
                 location_id not in self._sent_locations
@@ -170,12 +178,22 @@ class LocationTrackingMixin:
         if not new_checks:
             return
 
+        logger.debug("Submitting %d location(s)", len(new_checks))
         try:
             await ctx.send_msgs([{"cmd": "LocationChecks", "locations": new_checks}])
         except Exception:
             logger.exception("Failed to submit %d NSMBDS location check(s).", len(new_checks))
+            diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
+            if diagnostics is not None:
+                diagnostics.counters["location_errors"] += 1
+                diagnostics.error("locations", "location submission")
             return
         self._sent_locations.update(new_checks)
+        diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
+        if diagnostics is not None:
+            diagnostics.last_submitted_location = new_checks[-1]
+            diagnostics.event("LOCATION", "submitted", f"count={len(new_checks)}")
+        logger.debug("Location submission completed count=%d", len(new_checks))
 
     def _gate_purchase_storage_key(self) -> str | None:
         identity = getattr(self, "_session_identity", None)

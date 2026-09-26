@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import struct
 import time
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from ...data.ram_addresses import (
@@ -98,6 +99,10 @@ class DeathLinkMixin:
 
     def _queue_incoming_death_link(self, ctx: BizHawkClientContext, source: str | None) -> None:
         """Apply receive-time cooldown/grace rules and retain one accepted effect."""
+        diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
+        if diagnostics is not None:
+            diagnostics.last_deathlink_received = datetime.now()
+            diagnostics.event("DEATHLINK", "received")
         slot_data = ctx.slot_data or {}
         if not slot_data.get("death_link", False):
             return
@@ -294,20 +299,20 @@ class DeathLinkMixin:
             return
         if self._return_to_map_pending:
             self._return_to_map_pending = False
-            logger.info("Ignored life loss caused by Return to Map.")
+            logger.debug("Ignored life loss caused by Return to Map.")
             return
         if self._suppress_next_local_death:
             self._suppress_next_local_death = False
-            logger.info("Suppressed outgoing Death Link caused by an incoming Death Link.")
+            logger.debug("Suppressed outgoing Death Link caused by an incoming Death Link.")
             return
         if not self._in_level_grace_polls:
-            logger.info("Ignored life loss outside a recently active level timer.")
+            logger.debug("Ignored life loss outside a recently active level timer.")
             return
 
         amnesty = max(1, min(30, int((ctx.slot_data or {}).get("death_link_amnesty", 1))))
         self._death_link_amnesty_count += 1
         if self._death_link_amnesty_count < amnesty:
-            logger.info(
+            logger.debug(
                 "Death Link amnesty: counted eligible local death %d of %d.",
                 self._death_link_amnesty_count,
                 amnesty,
@@ -316,4 +321,8 @@ class DeathLinkMixin:
 
         self._death_link_amnesty_count = 0
         await ctx.send_death("Mario died.")
+        diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
+        if diagnostics is not None:
+            diagnostics.last_deathlink_sent = datetime.now()
+            diagnostics.event("DEATHLINK", "sent")
         logger.info("Sent Death Link for a local Mario death.")

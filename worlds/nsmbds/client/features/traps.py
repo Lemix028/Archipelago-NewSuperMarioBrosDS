@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
 
 
-logger = logging.getLogger("NSMBDS")
+logger = logging.getLogger("NSMBDS.Trap")
 
 TIMER_DRAIN_SECONDS = 50
 TIMER_DRAIN_UNITS = TIMER_DRAIN_SECONDS * TIMER_UNITS_PER_SECOND
@@ -56,7 +56,8 @@ class TrapHandlingMixin:
             self._game_data_guards(),
         )
         if current_result is None or len(current_result) != 1 or len(current_result[0]) != 4:
-            logger.debug("Deferred Timer Drain until the level timer can be read safely.")
+            if self._should_log_watcher_issue("timer-drain-read-deferred"):
+                logger.debug("Deferred Timer Drain until the level timer can be read safely.")
             return
 
         current_timer = struct.unpack("<I", current_result[0])[0]
@@ -67,7 +68,8 @@ class TrapHandlingMixin:
             self._game_data_guards(),
         )
         if not applied:
-            logger.debug("Deferred Timer Drain until the timer write succeeds.")
+            if self._should_log_watcher_issue("timer-drain-write-deferred"):
+                logger.debug("Deferred Timer Drain until the timer write succeeds.")
             return
 
         self._pending_timer_drains -= 1

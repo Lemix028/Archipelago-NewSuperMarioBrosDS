@@ -807,6 +807,18 @@ def test_launcher_starts_bizhawk_with_bootstrap() -> None:
 
             launcher_module.subprocess.Popen = fake_popen
             launcher_module.launch_game()
+            launcher_module.launch_state.process = None
+
+            def failed_persistence(_path):
+                raise FileNotFoundError("stale optional ROM setting")
+
+            launcher_module._remember_rom = failed_persistence
+            previous_log_disable = logging.root.manager.disable
+            logging.disable(logging.CRITICAL)
+            try:
+                launched_despite_settings_error = launcher_module.launch_game()
+            finally:
+                logging.disable(previous_log_disable)
     finally:
         launcher_module.find_emuhawk = original_find
         launcher_module.configured_rom_path = original_rom
@@ -824,6 +836,10 @@ def test_launcher_starts_bizhawk_with_bootstrap() -> None:
         and captured["kwargs"]["cwd"] == str(emuhawk.parent)
         and captured["kwargs"]["env"]["NSMBDS_AP_LUA_DIR"].endswith(os.path.join("data", "lua")),
         "Launcher starts BizHawk with the patched ROM, bundled bootstrap, and AP Lua path",
+    )
+    check(
+        isinstance(launched_despite_settings_error, FakeProcess),
+        "A ROM-path persistence failure does not turn a successful BizHawk launch into an error",
     )
 
 
@@ -886,6 +902,43 @@ def test_launcher_accepts_empty_optional_rom_setting() -> None:
     check(
         configured_rom is None,
         "Launcher treats an empty optional seed-ROM setting as unconfigured",
+    )
+
+
+def test_launcher_replaces_stale_rom_setting_without_reading_it() -> None:
+    class StaleRomOptions:
+        class LastPatchedRom(str):
+            pass
+
+        @property
+        def last_patched_rom(self):
+            raise FileNotFoundError("old empty ROM setting resolves to a directory")
+
+        @last_patched_rom.setter
+        def last_patched_rom(self, value):
+            self.stored_rom = value
+
+    class FakeSettings:
+        def __init__(self):
+            self.nsmbds_options = StaleRomOptions()
+            self.save_count = 0
+
+        def save(self):
+            self.save_count += 1
+
+    settings = FakeSettings()
+    original_settings = launcher_module._settings
+    try:
+        launcher_module._settings = lambda: settings
+        launcher_module._remember_rom(Path("seed.nds").resolve())
+    finally:
+        launcher_module._settings = original_settings
+
+    check(
+        isinstance(settings.nsmbds_options.stored_rom, StaleRomOptions.LastPatchedRom)
+        and settings.nsmbds_options.stored_rom.endswith("seed.nds")
+        and settings.save_count == 1,
+        "Launcher replaces a stale optional ROM setting without validating its old value",
     )
 
 

@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
 
 
-logger = logging.getLogger("NSMBDS")
+logger = logging.getLogger("NSMBDS.Blocks")
 
 
 class BlockCheckTrackingMixin:
@@ -97,7 +97,8 @@ class BlockCheckTrackingMixin:
             ],
         )
         if len(result) != len(sizes) or any(len(value) != size for value, size in zip(result, sizes)):
-            logger.warning("Received an invalid block mailbox read from BizHawk.")
+            if self._should_log_watcher_issue("invalid-block-mailbox"):
+                logger.warning("Received an invalid block mailbox read from BizHawk.")
             return
 
         sequence, event_type, world_raw, level_raw, area_raw, x_raw, y_raw, acknowledged, sequence_after = result
@@ -110,7 +111,8 @@ class BlockCheckTrackingMixin:
             AP_EVENT_TYPE_BLOCK_GROUND_POUND,
             AP_EVENT_TYPE_MOVING_BLOCK_OPEN,
         ):
-            logger.warning("Discarded unknown block mailbox event type 0x%02X.", event_type[0])
+            if self._should_log_watcher_issue(f"unknown-block-event:{event_type[0]}"):
+                logger.warning("Discarded unknown block mailbox event type 0x%02X.", event_type[0])
             await self._acknowledge_block_event(ctx, sequence_value, guarded_write)
             return
 
@@ -126,29 +128,28 @@ class BlockCheckTrackingMixin:
             event_type[0],
         )
         if location_name is None:
-            unmatched_key = (event_type[0], *runtime_key)
-            logged_unmatched = getattr(self, "_logged_unmatched_block_events", set())
-            if unmatched_key not in logged_unmatched and len(logged_unmatched) < 25:
-                logged_unmatched.add(unmatched_key)
-                self._logged_unmatched_block_events = logged_unmatched
-                logger.warning(
-                    "Unmatched block event type=0x%02X "
-                    "(world=%d, level=0x%X, area=%d, tile=(%d,%d)).",
-                    event_type[0], world, level, area, tile_x, tile_y,
-                )
-            else:
-                logger.debug("Ignored ordinary unmatched block event %r.", unmatched_key)
+            if logger.isEnabledFor(logging.DEBUG):
+                unmatched_key = (event_type[0], *runtime_key)
+                logged_unmatched = getattr(self, "_logged_unmatched_block_events", set())
+                if unmatched_key not in logged_unmatched and len(logged_unmatched) < 25:
+                    logged_unmatched.add(unmatched_key)
+                    self._logged_unmatched_block_events = logged_unmatched
+                    logger.debug(
+                        "Unmatched block event type=0x%02X "
+                        "(world=%d, level=0x%X, area=%d, tile=(%d,%d)).",
+                        event_type[0], world, level, area, tile_x, tile_y,
+                    )
             await self._acknowledge_block_event(ctx, sequence_value, guarded_write)
             return
 
         location_id = LOCATION_TABLE[location_name]
         category = "Blocksanity" if location_id in BLOCKSANITY_LOCATION_IDS else "1-Up Block"
         if location_id in self._sent_locations:
-            logger.info("Ignored already checked %s: %s.", category, location_name)
+            logger.debug("Ignored already checked %s: %s.", category, location_name)
             await self._acknowledge_block_event(ctx, sequence_value, guarded_write)
             return
         if not self._is_location_active(ctx, location_name, location_id):
-            logger.warning("Ignored %s %r because it is not active in this seed.", category, location_name)
+            logger.debug("Ignored %s %r because it is not active in this seed.", category, location_name)
             await self._acknowledge_block_event(ctx, sequence_value, guarded_write)
             return
 

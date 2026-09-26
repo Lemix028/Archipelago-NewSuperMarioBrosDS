@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.resources
+import logging
 import os
 import subprocess
 import sys
@@ -12,6 +13,8 @@ from typing import Iterable
 
 from ..version import DISPLAY_VERSION
 from ..data.patch_protocol import PATCH_MARKER, PATCH_MARKER_ROM_OFFSET as PATCH_MARKER_OFFSET
+
+logger = logging.getLogger("NSMBDS.Launch")
 
 
 PATCH_SUFFIX = ".apnsmbds"
@@ -202,7 +205,14 @@ def browse_for_emuhawk() -> Path | None:
 
 
 def _remember_rom(path: Path) -> None:
-    _set_nsmbds_value("last_patched_rom", str(path))
+    # Reading the previous OptionalUserFilePath through Group.__getattribute__
+    # validates it. An empty or stale value can resolve to the working directory
+    # and raise before the new, already validated ROM can be stored.
+    settings = _settings()
+    options = settings.nsmbds_options
+    path_type = getattr(type(options), "LastPatchedRom", str)
+    options.last_patched_rom = path_type(str(path))
+    settings.save()
 
 
 def _last_patched_rom_value() -> object:
@@ -348,14 +358,18 @@ def launch_game() -> subprocess.Popen:
 
     if launch_state.process is not None and launch_state.process.poll() is None:
         raise RuntimeError("BizHawk was already started from this client.")
+    logger.debug("Finding BizHawk launcher")
     emuhawk = find_emuhawk()
     launcher_error = emuhawk_launcher_error(emuhawk)
     if launcher_error:
+        logger.error("BizHawk launcher validation failed: %s", launcher_error)
         if emuhawk is None or not emuhawk.is_file():
             raise FileNotFoundError(launcher_error)
         if sys.platform != "win32" and not os.access(emuhawk, os.X_OK):
             raise PermissionError(launcher_error)
         raise ValueError(launcher_error)
+    logger.debug("BizHawk launcher found: %s", emuhawk)
+    logger.debug("Preparing ROM launch")
     rom = configured_rom_path()
     if not rom:
         raise FileNotFoundError("No patched NSMBDS seed ROM is selected.")
@@ -363,11 +377,14 @@ def launch_game() -> subprocess.Popen:
     # Status checks may reuse the path, but a fresh emulator process must load
     # the current Lua sources, including edits made during this client session.
     _materialized_bootstrap = None
+    logger.debug("Checking Lua bootstrap")
     bootstrap = materialize_lua_runtime()
+    logger.debug("Lua bootstrap ready: %s", bootstrap)
     from Utils import local_path
 
     environment = os.environ.copy()
     environment["NSMBDS_AP_LUA_DIR"] = str(Path(local_path("data", "lua")).resolve())
+    logger.info("Starting BizHawk")
     process = subprocess.Popen(
         [str(emuhawk), f"--lua={bootstrap}", str(rom)],
         cwd=str(emuhawk.parent),
@@ -380,5 +397,10 @@ def launch_game() -> subprocess.Popen:
     launch_state.launched = True
     launch_state.process = process
     launch_state.last_message = "BizHawk started. Waiting for the Lua connection."
-    _remember_rom(rom)
+    try:
+        _remember_rom(rom)
+    except Exception:
+        # Persistence is ancillary once Popen has succeeded. Report the
+        # setting failure without telling the UI that BizHawk did not launch.
+        logger.exception("BizHawk started, but its ROM path could not be saved.")
     return process

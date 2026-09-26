@@ -215,14 +215,22 @@ async def _game_watcher(ctx: BizHawkClientContext):
             pass
 
         ctx.watcher_event.clear()
+        observe_network = getattr(ctx, "observe_network", None)
+        if observe_network is not None:
+            observe_network()
+        observe_bridge = getattr(ctx, "observe_bridge", None)
 
         try:
             if ctx.bizhawk_ctx.connection_status == ConnectionStatus.NOT_CONNECTED:
+                if observe_bridge is not None and getattr(getattr(ctx, "nsmbds_diagnostics", None), "bridge_state", None) in {"READY", "HANDSHAKE", "ERROR"}:
+                    observe_bridge("DISCONNECTED")
                 showed_connected_message = False
 
                 if not showed_connecting_message:
                     logger.info("Waiting to connect to BizHawk...")
                     showed_connecting_message = True
+                if observe_bridge is not None:
+                    observe_bridge("CONNECTING")
 
                 # Since a call to `connect` can take a while to return, this will cancel connecting
                 # if the user has decided to close the client.
@@ -237,6 +245,8 @@ async def _game_watcher(ctx: BizHawkClientContext):
                 if not connect_task.result():
                     # Failed to connect
                     continue
+                if observe_bridge is not None:
+                    observe_bridge("HANDSHAKE")
 
                 showed_no_handler_message = False
 
@@ -248,6 +258,10 @@ async def _game_watcher(ctx: BizHawkClientContext):
                     disconnect(ctx.bizhawk_ctx)
                     continue
 
+                observe_handshake = getattr(ctx, "observe_bridge_handshake", None)
+                if observe_handshake is not None:
+                    await observe_handshake(script_version)
+
             showed_connecting_message = False
 
             await ping(ctx.bizhawk_ctx)
@@ -255,6 +269,8 @@ async def _game_watcher(ctx: BizHawkClientContext):
             if not showed_connected_message:
                 showed_connected_message = True
                 logger.info("Connected to BizHawk")
+            if observe_bridge is not None:
+                observe_bridge("READY")
 
             rom_hash = await get_hash(ctx.bizhawk_ctx)
             if ctx.rom_hash is not None and ctx.rom_hash != rom_hash:
@@ -283,9 +299,13 @@ async def _game_watcher(ctx: BizHawkClientContext):
                     logger.info(f"Running handler for {ctx.client_handler.game}")
 
         except RequestFailedError as exc:
+            if observe_bridge is not None:
+                observe_bridge("ERROR", str(exc), type(exc).__name__)
             logger.info(f"Lost connection to BizHawk: {exc.args[0]}")
             continue
         except NotConnectedError:
+            if observe_bridge is not None:
+                observe_bridge("DISCONNECTED")
             continue
 
         # Server auth
