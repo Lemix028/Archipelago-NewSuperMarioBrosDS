@@ -9,6 +9,7 @@ local constants = require("nsmbds.constants")
 local addresses = require("nsmbds.addresses")
 local state = require("nsmbds.state")
 local native_blocks = require("nsmbds.native_blocks")
+local red_coins = require("nsmbds.red_coins")
 local blocksanity = require("nsmbds.blocksanity")
 local context = state.context
 local incompatible_rom_reported = false
@@ -23,6 +24,7 @@ function M.ensure_initialized()
         context.initialized_rom_hash = rom_hash
         context.gameplay_gate_frame = nil
         context.native_head_bonk_last_sequence = nil
+        context.red_coin_native_error_reported = false
         incompatible_rom_reported = false
     end
     if context.is_initialized then return true end
@@ -40,17 +42,19 @@ function M.ensure_initialized()
         end
         return false
     end
+    if not red_coins.is_native_ready() then
+        if not incompatible_rom_reported then
+            print("NSMBDS: Native Red Coin hook missing. Regenerate the seed patch with the current APWorld and cold-boot the new ROM; do not load an old savestate.")
+            incompatible_rom_reported = true
+        end
+        return false
+    end
     incompatible_rom_reported = false
     blocksanity.initialize_delivery()
 
     pcall(_G.memory.writebyte, addresses.ADDR_AP_TRAP_TRIGGER, 0)
     if gui and gui.clearGraphics then gui.clearGraphics() end
     print("NSMBDS sideloading " .. constants.VERSION_LABEL .. " domain=" .. tostring(memory.domain))
-
-    for index, counter_address in ipairs(addresses.ADDR_RED_COIN_COUNTERS) do
-        local ok_count, count = pcall(_G.memory.readbyte, counter_address)
-        context.red_coin_peak_latched[index] = ok_count and count ~= nil and count >= 8
-    end
 
     context.is_initialized = true
     return true

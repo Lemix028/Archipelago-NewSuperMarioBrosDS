@@ -32,10 +32,6 @@ function M.resolve()
     state.notification_state.addr.detail = memory.to_domain_addr(state.notification_state.sys.detail)
     state.notification_state.addr.acknowledged = memory.to_domain_addr(state.notification_state.sys.acknowledged)
 
-    M.ADDR_RED_COIN_COUNTERS = {
-        memory.to_domain_addr(constants.SYS_RED_COIN_COUNTERS[1]),
-        memory.to_domain_addr(constants.SYS_RED_COIN_COUNTERS[2]),
-    }
     M.ADDR_STAGE_FREEZE_FLAG = memory.to_domain_addr(constants.SYS_STAGE_FREEZE_FLAG)
     M.ADDR_STAGE_MENU_OPEN = memory.to_domain_addr(constants.SYS_STAGE_MENU_OPEN)
     M.ADDR_STAGE_EXIT_FLAGS = memory.to_domain_addr(constants.SYS_STAGE_EXIT_FLAGS)

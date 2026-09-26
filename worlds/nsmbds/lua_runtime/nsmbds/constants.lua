@@ -26,6 +26,8 @@ M.SYS_AP_TRAP_SHIELD_COUNT = 0x02002FEA
 M.SYS_AP_LIFE_INSURANCE_COUNT = 0x02002FEB
 M.SYS_AP_INSURED_DEATH_SEQUENCE = 0x02002FEC
 M.SYS_AP_RETURN_TO_MAP_DEATH_SEQUENCE = 0x02002FF7
+-- Vanilla player-slot counters, retained for diagnostics. Completion comes
+-- from the Overlay 54 native hook, not frame-end polling of these bytes.
 M.SYS_RED_COIN_COUNTERS = { 0x020CA2D4, 0x020CA2D5 }
 -- Stage::freezeFlag covers stage-controlled freezes. The vanilla in-level
 -- pause menu has its own flag and does not reliably set freezeFlag.
@@ -60,6 +62,14 @@ M.NATIVE_BLOCK_MAGIC = 0x48425041 -- "APBH"
 M.NATIVE_BLOCK_VERSION = 1
 M.NATIVE_BLOCK_CAPACITY = 256
 M.NATIVE_BLOCK_RECORD_SIZE = 16
+-- Overlay 54's collection wrapper writes a separate ROM-owned event queue.
+M.SYS_NATIVE_RED_COIN_PRODUCER = 0x02002DE0
+M.SYS_NATIVE_RED_COIN_CONSUMER = 0x02002E00
+M.SYS_NATIVE_RED_COIN_RECORDS = 0x02002E20
+M.NATIVE_RED_COIN_MAGIC = 0x43525041 -- "APRC"
+M.NATIVE_RED_COIN_VERSION = 1
+M.NATIVE_RED_COIN_CAPACITY = 8
+M.NATIVE_RED_COIN_RECORD_SIZE = 16
 
 M.OBJECT_NODE_OFFSET = 0x38
 M.OBJECT_CLASS_ID_OFFSET = 0x0C

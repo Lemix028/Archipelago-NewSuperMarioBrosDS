@@ -22,10 +22,11 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def arm_branch(source: int, target: int) -> bytes:
+def arm_branch(source: int, target: int, *, link: bool = False) -> bytes:
     displacement = target - (source + 8)
     assert displacement % 4 == 0
-    return struct.pack("<I", 0xEA000000 | ((displacement // 4) & 0xFFFFFF))
+    return struct.pack("<I", (0xEB000000 if link else 0xEA000000)
+                       | ((displacement // 4) & 0xFFFFFF))
 
 
 def check(data: bytes, base: int, address: int, expected: bytes, label: str) -> None:
@@ -58,6 +59,7 @@ def main() -> None:
     arm9 = ndspy.codeCompression.decompress(rom.arm9)
     head = runpy.run_path(HOOKS / "head_bonk_hook.py")
     inputs = runpy.run_path(HOOKS / "input_trap_hook.py")
+    red_coin = runpy.run_path(HOOKS / "red_coin_hook.py")
     block = runpy.run_path(HOOKS / "block_hit_hook.py")
     block_payload = bytearray(block["BLOCK_HIT_HOOK_BYTES"])
     head_offset = head["HOOK_CAVE"] - block["BLOCK_HIT_HOOK_CAVE"]
@@ -66,6 +68,8 @@ def main() -> None:
     check(arm9, rom.arm9RamAddress, head["HOOK_CAVE"], head["HOOK_BYTES"], "Head Bonk payload")
     check(arm9, rom.arm9RamAddress, inputs["CONTROL"], inputs["DEFAULT_CONTROL_AND_STATE"], "APIT mailbox")
     check(arm9, rom.arm9RamAddress, inputs["HOOK_CAVE"], inputs["HOOK_BYTES"], "input payload")
+    check(arm9, rom.arm9RamAddress, red_coin["HOOK_CAVE"], red_coin["HOOK_BYTES"], "Red Coin hook")
+    check(arm9, rom.arm9RamAddress, red_coin["PRODUCER"], red_coin["DEFAULT_QUEUE"], "Red Coin queue")
     for site, entry, label in (
         (inputs["GENERAL_SITE"], inputs["GENERAL_ENTRY"], "general input branch"),
         (inputs["BUTTONS_SITE"], inputs["BUTTONS_ENTRY"], "button input branch"),
@@ -75,7 +79,11 @@ def main() -> None:
     overlay = rom.loadArm9Overlays()[block["BLOCK_HIT_OVERLAY_ID"]]
     check(overlay.data, overlay.ramAddress, head["HOOK_SITE"],
           arm_branch(head["HOOK_SITE"], head["HOOK_CAVE"]), "Head Bonk entry branch")
-    print("Native patch: bsdiff round-trip, ROM hash, hook bytes, APIT mailbox, and branches OK")
+    red_overlay = rom.loadArm9Overlays()[red_coin["OVERLAY_ID"]]
+    check(red_overlay.data, red_overlay.ramAddress, red_coin["HOOK_SITE"],
+          arm_branch(red_coin["HOOK_SITE"], red_coin["HOOK_CAVE"], link=True),
+          "Red Coin collection branch")
+    print("Native patch: bsdiff round-trip, ROM hash, hook bytes, mailboxes, and branches OK")
 
 
 if __name__ == "__main__":

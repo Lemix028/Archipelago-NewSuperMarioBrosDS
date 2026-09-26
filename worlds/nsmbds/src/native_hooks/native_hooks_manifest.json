@@ -5,6 +5,7 @@
   "block_hit_hook_sha256": "6280f6c44b66e298c61f583c8d6d3f346f410cb46797de0bf39d14e0aec5d690",
   "head_bonk_hook_sha256": "e2850fdd290105d85ccc01d8700b6a95f08baa645b31ef2d878612fa41bfd82d",
   "input_trap_hook_sha256": "d750385e6950dc2f785016f77858a3371cb091e7f7d12f3b9f7bc31de9f24801",
-  "native_hooks_bsdiff4_sha256": "14204c57256d42e57ee4a03b20c3a0e739ea21bbf4740e300ebd1c45b4052b00",
-  "patched_rom_sha256": "a9079f90e1b65ba33cc32ec031f1040e25724438cafa250ab183df3f7d0d59e1"
+  "red_coin_hook_sha256": "2fb05cac572a0cbbb8622da95ce6330ee126c443bbc3beebdf6d0b165e211614",
+  "native_hooks_bsdiff4_sha256": "e6dc403e536c8e98ea636f1bc9d7edc3061d71da79ec473cb161bb159edb7e67",
+  "patched_rom_sha256": "190ccacbd26ed31946142740ed558d2a467aa6597c85166edda8e6c24673a3b6"
 }

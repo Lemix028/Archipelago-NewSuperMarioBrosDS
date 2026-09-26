@@ -96,11 +96,6 @@ traps.disable_native_input()
 
 -- Remove hooks that are only needed during gameplay.
 local function disable_gameplay_observer_hooks()
-    if event and event.unregisterbyname then
-        pcall(event.unregisterbyname, "NSMBDS Red Coin Counter 1")
-        pcall(event.unregisterbyname, "NSMBDS Red Coin Counter 2")
-    end
-    context.red_coin_write_hook_initialized = false
     context.last_observed_lives = nil
 end
 
@@ -134,13 +129,21 @@ local function sideloading_tick()
     pcall(red_coins.clear_invalid_pending_red_coin_event)
     pcall(blocksanity.clear_invalid_pending_block_event)
 
-    for index, counter_address in ipairs(addresses.ADDR_RED_COIN_COUNTERS) do
-        local ok_red_coin, red_coin_count = pcall(_G.memory.readbyte, counter_address)
-        if ok_red_coin and red_coin_count ~= nil then
-            red_coins.observe_red_coin_counter(index, red_coin_count)
+    -- Drain events captured inside vanilla's collection call. Its counter can
+    -- reach eight and reset before this frame's Lua callback runs.
+    local red_ok, red_ready = pcall(red_coins.poll_native_red_coin_completion)
+    if not red_ok or not red_ready then
+        if not context.red_coin_native_error_reported then
+            print("NSMBDS: Native Red Coin delivery failed: " .. tostring(red_ready)
+                .. ". Regenerate the seed patch and cold-boot the new ROM.")
+            context.red_coin_native_error_reported = true
         end
+        disable_all_hooks()
+        context.is_initialized = false
+        if profiling_enabled then profiler.end_frame() end
+        return
     end
-    pcall(red_coins.publish_pending_red_coin_completion)
+    context.red_coin_native_error_reported = false
 
     -- Check for a lost life before refreshing the player state.
     pcall(protection.poll_life_insurance)
@@ -213,7 +216,6 @@ local function sideloading_tick()
         if profiling_enabled then
             profiler.finish_section("star_coin_persistence", star_coin_profile)
         end
-        red_coins.ensure_red_coin_write_hook()
         local blocksanity_profile = profiling_enabled and profiler.start_section() or nil
         pcall(blocksanity.observe_ground_pound_blocks, player)
         pcall(blocksanity.observe_block_bumps, objects)

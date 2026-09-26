@@ -75,6 +75,7 @@ def build_patched_rom(base_bytes: bytes) -> bytes:
     powerup = runpy.run_path(METADATA_ROOT / "powerup_license_hook.py")
     block = runpy.run_path(METADATA_ROOT / "block_hit_hook.py")
     head_bonk = runpy.run_path(METADATA_ROOT / "head_bonk_hook.py")
+    red_coin = runpy.run_path(METADATA_ROOT / "red_coin_hook.py")
     input_trap = runpy.run_path(METADATA_ROOT / "input_trap_hook.py")
     save_menu = runpy.run_path(METADATA_ROOT / "native_save_menu.py")
     rom = ndspy.rom.NintendoDSRom(base_bytes)
@@ -113,11 +114,18 @@ def build_patched_rom(base_bytes: bytes) -> bytes:
             or input_trap["HOOK_CAVE"] + len(input_payload)
             > input_trap["HOOK_CAVE_END"]):
         raise ValueError("Native input code or state overlaps an allocated ARM9 region.")
+    if (red_coin["HOOK_CAVE"] != input_trap["STATE_END"]
+            or red_coin["HOOK_CAVE"] + len(red_coin["HOOK_BYTES"]) > red_coin["PRODUCER"]
+            or red_coin["END"] > star["CURRENCY_GETTER_CAVE"]
+            or len(red_coin["DEFAULT_QUEUE"]) != red_coin["END"] - red_coin["PRODUCER"]):
+        raise ValueError("Native Red Coin code or queue overlaps an allocated ARM9 region.")
     for address, payload, label in (
         (block["BLOCK_HIT_HOOK_CAVE"], block_payload, "Block-hit code and ring cave"),
         (head_bonk["HOOK_CAVE"], head_bonk["HOOK_BYTES"], "Head Bonk hook cave"),
         (input_trap["CONTROL"], input_trap["DEFAULT_CONTROL_AND_STATE"], "Native input control and state"),
         (input_trap["HOOK_CAVE"], input_payload, "Native input code cave"),
+        (red_coin["HOOK_CAVE"], red_coin["HOOK_BYTES"], "Red Coin hook cave"),
+        (red_coin["PRODUCER"], red_coin["DEFAULT_QUEUE"], "Red Coin native queue"),
         (star["CURRENCY_GETTER_CAVE"], star["STAR_COIN_CURRENCY_HOOK_BYTES"], "Star-Coin currency cave"),
         (powerup["POWERUP_HOOK_CAVE"], powerup["POWERUP_LICENSE_HOOK_BYTES"], "Power-Up License cave"),
     ):
@@ -239,7 +247,15 @@ def build_patched_rom(base_bytes: bytes) -> bytes:
         "Power-Up pickup hook",
     )
 
-    for overlay_id in (powerup["POWERUP_OVERLAY_ID"], star["OVERLAY_ID"], powerup["POWERUP_PICKUP_OVERLAY_ID"]):
+    red_coin_overlay = overlays[red_coin["OVERLAY_ID"]]
+    patch_overlay_word(
+        red_coin_overlay, red_coin["HOOK_SITE"], red_coin["ORIGINAL_WORD"],
+        arm_branch(red_coin["HOOK_SITE"], red_coin["HOOK_CAVE"], link=True),
+        "Red Coin collection call",
+    )
+
+    for overlay_id in (powerup["POWERUP_OVERLAY_ID"], star["OVERLAY_ID"],
+                       powerup["POWERUP_PICKUP_OVERLAY_ID"], red_coin["OVERLAY_ID"]):
         overlay = overlays[overlay_id]
         # Modified overlays no longer match the retail hash table. The runtime
         # patch has always cleared this verification flag for those overlays.

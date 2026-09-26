@@ -52,6 +52,8 @@ Build-ArmBinary -Name 'star_coin_currency_hook' -LinkAddress '0x02002EC0'
 Build-ArmBinary -Name 'mini_castle_hook' -LinkAddress '0x020EDC80'
 Build-ArmBinary -Name 'powerup_license_hook' -LinkAddress '0x02002F00'
 Build-ArmBinary -Name 'block_hit_hook' -LinkAddress '0x02001A00'
+& $Python (Join-Path $PSScriptRoot 'assemble_red_coin_hook.py') --output (Join-Path $resolvedOutput 'red_coin_hook.bin')
+if ($LASTEXITCODE -ne 0) { throw 'Red Coin hook build failed.' }
 
 & (Join-Path $PSScriptRoot 'build_marker.ps1') -DevkitArm $DevkitArm -OutputDirectory $resolvedOutput
 if ($LASTEXITCODE -ne 0) { throw 'Patch marker build failed.' }

@@ -25,6 +25,7 @@ def load_checked_in_hooks() -> dict[str, bytes]:
     block_metadata = runpy.run_path(METADATA_ROOT / "block_hit_hook.py")
     head_bonk_metadata = runpy.run_path(METADATA_ROOT / "head_bonk_hook.py")
     input_metadata = runpy.run_path(METADATA_ROOT / "input_trap_hook.py")
+    red_coin_metadata = runpy.run_path(METADATA_ROOT / "red_coin_hook.py")
     return {
         "star_coin_gate_hook": star_metadata["STAR_COIN_GATE_HOOK_BYTES"],
         "star_coin_currency_hook": star_metadata["STAR_COIN_CURRENCY_HOOK_BYTES"],
@@ -33,6 +34,7 @@ def load_checked_in_hooks() -> dict[str, bytes]:
         "block_hit_hook": block_metadata["BLOCK_HIT_HOOK_BYTES"],
         "head_bonk_hook": head_bonk_metadata["HOOK_BYTES"],
         "input_trap_hook": input_metadata["HOOK_BYTES"],
+        "red_coin_hook": red_coin_metadata["HOOK_BYTES"],
     }
 
 
@@ -52,6 +54,7 @@ def verify(build_directory: Path | None = None) -> list[str]:
         "block_hit_hook_sha256": sha256(hooks["block_hit_hook"]),
         "head_bonk_hook_sha256": sha256(hooks["head_bonk_hook"]),
         "input_trap_hook_sha256": sha256(hooks["input_trap_hook"]),
+        "red_coin_hook_sha256": sha256(hooks["red_coin_hook"]),
         "native_hooks_bsdiff4_sha256": sha256(
             (WORLD_ROOT / "rom" / "native_hooks.bsdiff4").read_bytes()
         ),
