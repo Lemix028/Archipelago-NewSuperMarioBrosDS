@@ -147,6 +147,8 @@ class NSMBDSClient(
         self._active_locations: set[int] = set()
         self._active_location_set_known = False
         self._items_received_index = 0
+        self._pending_item_transaction = None
+        self._item_transaction_owner = "network"
         self._next_powerup_id: int | None = None
         self._item_cursor_loaded = False
         self._item_cursor_needs_initial_sync = False
@@ -289,10 +291,19 @@ class NSMBDSClient(
 
     async def game_watcher(self, ctx: "BizHawkClientContext") -> None:
         """Poll verified game data, submit checks, and apply pending features."""
+        from worlds._bizhawk import NotConnectedError, RequestFailedError
+
         self._watcher_diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
         watcher_started = perf_counter()
         try:
             await self._run_game_watcher(ctx)
+        except (RequestFailedError, NotConnectedError) as exc:
+            observe_bridge = getattr(ctx, "observe_bridge", None)
+            if observe_bridge is not None:
+                state = "DISCONNECTED" if isinstance(exc, NotConnectedError) else "ERROR"
+                observe_bridge(state, str(exc), type(exc).__name__)
+            if self._should_log_watcher_issue("bridge:connection"):
+                bridge_logger.info("BizHawk connection lost; retrying on the next watcher tick: %s", exc)
         finally:
             elapsed = perf_counter() - watcher_started
             if elapsed >= WATCHER_TOTAL_SLOW_SECONDS:
@@ -615,6 +626,7 @@ class NSMBDSClient(
                 if hints_key in args.get("keys", {}):
                     self._awaiting_item_history = False
                     self._items_received_index = 0
+                    self._pending_item_transaction = None
                     self._deferred_item_ids.clear()
                     self._next_powerup_id = None
                     self._item_cursor_loaded = True
@@ -660,6 +672,12 @@ class NSMBDSClient(
                 )
             elif int(args.get("index", 0)) == 0:
                 packet_end = len(args.get("items", ()))
+                pending_transaction = self._pending_item_transaction
+                if pending_transaction is not None and pending_transaction["owner"] == "network" and (
+                    self._items_received_index >= packet_end
+                    or ctx.items_received[self._items_received_index].item != pending_transaction["item_id"]
+                ):
+                    self._pending_item_transaction = None
                 # ReceivedItems index 0 is the authoritative history boundary.
                 # Only this packet may shorten the emulator-feed cursor. The
                 # transport clears ctx.items_received briefly during every
@@ -671,6 +689,7 @@ class NSMBDSClient(
                 if self._items_received_index > packet_end:
                     stale_deferred_count = len(self._deferred_item_ids)
                     self._items_received_index = packet_end
+                    self._pending_item_transaction = None
                     # A shorter authoritative history means the room was
                     # rolled back or replaced. Deferred consumables from the
                     # discarded tail no longer belong to this server state.
@@ -766,6 +785,7 @@ class NSMBDSClient(
         self._active_locations.clear()
         self._active_location_set_known = False
         self._items_received_index = 0
+        self._pending_item_transaction = None
         self._item_cursor_loaded = False
         self._item_cursor_needs_initial_sync = False
         self._deferred_item_ids.clear()
@@ -894,6 +914,7 @@ def main(*args: str) -> None:
     from MultiServer import mark_raw
     from .launcher import configure_launch_from_args
     from .diagnostics import DiagnosticState, build_diagnostic_snapshot, format_full, format_short, parse_diagnostic_mode
+    from .transport import NSMBDSBizHawkContext
 
     class NSMBDSCommandProcessor(bizhawk_context.BizHawkClientCommandProcessor):
         @mark_raw
@@ -928,6 +949,7 @@ def main(*args: str) -> None:
 
         def __init__(self, server_address, password):
             super().__init__(server_address, password)
+            self.bizhawk_ctx = NSMBDSBizHawkContext()
             self.nsmbds_diagnostics = DiagnosticState()
             logger.info("NSMBDS client started; version %s; session %s.",
                         DISPLAY_VERSION, self.nsmbds_diagnostics.session_id)

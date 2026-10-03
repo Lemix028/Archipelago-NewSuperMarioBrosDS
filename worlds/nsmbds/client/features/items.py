@@ -6,6 +6,8 @@ import logging
 import hashlib
 from typing import TYPE_CHECKING
 
+from .item_transactions import ItemTransactionMixin, ItemTransactionPending
+
 from ...items import (
     BASE_ID,
     INVENTORY_RAM_VALUES,
@@ -62,29 +64,32 @@ RECEIVED_NOTIFICATION_ITEM_IDS = frozenset(
 )
 
 
-class ItemHandlingMixin:
+class ItemHandlingMixin(ItemTransactionMixin):
     """Apply received inventory, life, filler, and verified trap items."""
 
+    def _queue_item_receipt(self, item_id):
+        if item_id in RECEIVED_NOTIFICATION_ITEM_IDS:
+            self._queue_ap_notification(AP_NOTIFICATION_ITEM_RECEIVED, item_id - BASE_ID)
+
     async def _apply_pending_items(self, ctx: "BizHawkClientContext") -> None:
-        """Apply pending items without letting one failed RAM write block the queue."""
+        """Apply pending items, resolving uncertain writes before later items."""
         if self._awaiting_item_history or self._item_cursor_needs_initial_sync:
             return
         await self._retry_one_deferred_item(ctx)
+        if self._pending_item_transaction is not None and self._pending_item_transaction["owner"] == "deferred":
+            return
 
         start_index = self._items_received_index
+        session_identity = self._session_identity
         pending_items = ctx.items_received[
             self._items_received_index:self._items_received_index + MAX_NEW_ITEMS_PER_POLL
         ]
         for offset, network_item in enumerate(pending_items):
             item_index = start_index + offset
             diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
-            if network_item.item in RECEIVED_NOTIFICATION_ITEM_IDS:
-                self._queue_ap_notification(
-                    AP_NOTIFICATION_ITEM_RECEIVED,
-                    network_item.item - BASE_ID,
-                )
+            resuming_transaction = self._pending_item_transaction is not None
             missing_license = self._missing_powerup_license(ctx, network_item.item)
-            if item_id_to_name.get(network_item.item) in INVENTORY_RAM_VALUES and any(
+            if not resuming_transaction and item_id_to_name.get(network_item.item) in INVENTORY_RAM_VALUES and any(
                 item_id_to_name.get(queued) in INVENTORY_RAM_VALUES
                 and self._missing_powerup_license(ctx, queued) is None
                 for queued in self._deferred_item_ids
@@ -94,18 +99,21 @@ class ItemHandlingMixin:
                     diagnostics.last_queued_index = item_index
                     diagnostics.event("ITEM", "queued", f"index={item_index}")
                 logger.debug("Item queued index=%d", item_index)
+                self._queue_item_receipt(network_item.item)
                 self._items_received_index += 1
                 continue
-            if missing_license is not None:
+            if not resuming_transaction and missing_license is not None:
                 self._deferred_item_ids.append(network_item.item)
                 if diagnostics is not None:
                     diagnostics.last_queued_index = item_index
                     diagnostics.event("ITEM", "queued", f"index={item_index}")
                 logger.debug("Item queued index=%d", item_index)
                 self._log_held_powerup(network_item.item, missing_license)
+                self._queue_item_receipt(network_item.item)
                 self._items_received_index += 1
                 continue
             try:
+                self._item_transaction_owner = "network"
                 applied = await self._apply_item(ctx, network_item.item)
             except Exception:
                 logger.exception("Failed to apply received item ID %s.", network_item.item)
@@ -113,6 +121,14 @@ class ItemHandlingMixin:
                     diagnostics.counters["item_errors"] += 1
                     diagnostics.error("items", "item application")
                 applied = False
+                if self._session_identity != session_identity:
+                    return
+                if self._pending_item_transaction is not None:
+                    self._persist_item_cursor()
+                    return  # Retry this exact transaction before consuming another item.
+            if self._session_identity != session_identity:
+                return
+            self._pending_item_transaction = None
             if not applied:
                 # RAM can be temporarily unavailable during transitions. Keep this
                 # item for a retry, but do not starve later filler or trap items.
@@ -132,6 +148,7 @@ class ItemHandlingMixin:
                 diagnostics.counters["items_applied"] += 1
                 diagnostics.event("ITEM", "applied", f"index={item_index}")
                 logger.debug("Item applied index=%d", item_index)
+            self._queue_item_receipt(network_item.item)
             self._items_received_index += 1
 
         if self._items_received_index != start_index:
@@ -175,19 +192,25 @@ class ItemHandlingMixin:
                     )
                     restored_deferred.clear()
                 self._deferred_item_ids = restored_deferred
+                pending = value.get("pending_transaction")
+                self._pending_item_transaction = self._validate_item_transaction(pending)
+                if self._pending_item_transaction is not None and self._pending_item_transaction["owner"] == "deferred":
+                    pending_id = self._pending_item_transaction["item_id"]
+                    if pending_id not in restored_deferred:
+                        restored_deferred.append(pending_id)
                 selected = value.get("next_powerup")
                 self._next_powerup_id = selected if selected in restored_deferred else None
                 return cursor
             return max(0, int(value)) if value is not None else None
-        except (ImportError, OSError, TypeError, ValueError):
+        except (ImportError, OSError, KeyError, TypeError, ValueError):
             logger.debug("Could not load the persistent NSMBDS item cursor.", exc_info=True)
             return None
 
-    def _persist_item_cursor(self) -> None:
+    def _persist_item_cursor(self) -> bool:
         """Persist consumed items so emulator/client restarts cannot replay them."""
         key = self._item_cursor_storage_key()
         if key is None:
-            return
+            return True
         try:
             import Utils
             inventory_item_ids = {
@@ -205,22 +228,33 @@ class ItemHandlingMixin:
                         item_id for item_id in self._deferred_item_ids
                         if item_id in inventory_item_ids
                     ],
+                    "pending_transaction": self._pending_item_transaction,
                 },
+                # persistent_store updates its cache before writing the file.
+                # After an I/O failure, cached equality must not skip the retry.
+                **({"force_store": True} if self._pending_item_transaction is not None else {}),
             )
+            return True
         except (ImportError, OSError, TypeError, ValueError):
             logger.debug("Could not persist the NSMBDS item cursor.", exc_info=True)
+            return False
 
     async def _retry_one_deferred_item(self, ctx: "BizHawkClientContext") -> None:
         """Retry one queued item per poll so BizHawk cannot be flooded with RAM calls."""
         if not self._deferred_item_ids:
             return
 
-        item_id = self.next_backlog_item(ctx)
+        pending = self._pending_item_transaction
+        if pending is not None and pending["owner"] == "network":
+            return
+
+        item_id = pending["item_id"] if pending is not None else self.next_backlog_item(ctx)
         if item_id is None:
             return
         queue = self._deferred_item_ids
 
         try:
+            self._item_transaction_owner = "deferred"
             applied = await self._apply_item(ctx, item_id)
         except Exception:
             logger.exception("Failed to apply deferred received item ID %s.", item_id)
@@ -229,8 +263,12 @@ class ItemHandlingMixin:
                 diagnostics.counters["item_errors"] += 1
                 diagnostics.error("items", "deferred item application")
             applied = False
+            if self._pending_item_transaction is not None:
+                self._persist_item_cursor()
+                return
         if self._deferred_item_ids is not queue or item_id not in queue:
             return  # The session was reset while the RAM request was in flight.
+        self._pending_item_transaction = None
         self._retry_non_powerup = not applied and item_id_to_name.get(item_id) in INVENTORY_RAM_VALUES
         if applied:
             self._deferred_item_ids.remove(item_id)
@@ -308,6 +346,11 @@ class ItemHandlingMixin:
         """Apply one received item and return whether it is safe to advance the cursor."""
         from worlds._bizhawk import guarded_read, guarded_write
 
+        if self._pending_item_transaction is not None:
+            if self._pending_item_transaction["item_id"] != item_id:
+                raise ItemTransactionPending("Another consumable transaction is still pending")
+            return await self._send_pending_item_transaction(ctx)
+
         item_name = item_id_to_name.get(item_id)
         if item_name is None:
             logger.warning("Ignoring unknown NSMBDS item ID %s.", item_id)
@@ -339,8 +382,8 @@ class ItemHandlingMixin:
                     )
                     self._held_powerup_log_key = diagnostic
                 return False
-            applied = await guarded_write(
-                ctx.bizhawk_ctx,
+            applied = await self._write_item_transaction(
+                ctx, item_id,
                 [(ADDR_INVENTORY_ITEM, [INVENTORY_RAM_VALUES[item_name]], MEMORY_DOMAIN)],
                 [
                     *self._game_data_guards(),
@@ -352,10 +395,10 @@ class ItemHandlingMixin:
             return applied
 
         if item_name in LIFE_ITEMS:
-            return await self._adjust_byte(ctx, ADDR_LIVES, LIFE_ITEMS[item_name], 99)
+            return await self._adjust_byte(ctx, ADDR_LIVES, LIFE_ITEMS[item_name], 99, item_id)
 
         if item_name in COIN_ITEMS:
-            return await self._adjust_byte(ctx, ADDR_COINS, COIN_ITEMS[item_name], 99)
+            return await self._adjust_byte(ctx, ADDR_COINS, COIN_ITEMS[item_name], 99, item_id)
 
         if item_name in ("Nothing", "Star Coin"):
             # Star Coin currency is reconciled from the complete server item
@@ -511,7 +554,7 @@ class ItemHandlingMixin:
         return True
 
     async def _adjust_byte(
-        self, ctx: "BizHawkClientContext", address: int, delta: int, upper_bound: int
+        self, ctx: "BizHawkClientContext", address: int, delta: int, upper_bound: int, item_id: int | None = None
     ) -> bool:
         """Read, clamp, and guarded-write a one-byte game value."""
         from worlds._bizhawk import guarded_read, guarded_write
@@ -524,6 +567,11 @@ class ItemHandlingMixin:
         if current_result is None:
             return False
         new_value = max(0, min(upper_bound, current_result[0][0] + delta))
+        if item_id is not None:
+            return await self._write_item_transaction(
+                ctx, item_id, [(address, [new_value], MEMORY_DOMAIN)],
+                [*self._game_data_guards(), (address, list(current_result[0]), MEMORY_DOMAIN)],
+            )
         return await guarded_write(
             ctx.bizhawk_ctx,
             [(address, [new_value], MEMORY_DOMAIN)],

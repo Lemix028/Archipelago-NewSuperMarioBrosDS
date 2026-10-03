@@ -72,6 +72,9 @@ ADDR_AP_INSURED_DEATH_SEQUENCE = 0x00002FEC  # system 0x02002FEC, 1 byte
 # life counter. It remains observable after the game's transient exit bit has
 # disappeared and after Overlay 8 replaces the active course overlay.
 ADDR_AP_RETURN_TO_MAP_DEATH_SEQUENCE = 0x00002FF7  # system 0x02002FF7, 1 byte
+# Last committed consumable transaction, in the remaining permanent ARM9
+# padding immediately before code at 0x02003000. Survives Lua/client reconnects.
+ADDR_AP_ITEM_TRANSACTION = 0x00002FF8  # 8 bytes; system 0x02002FF8..0x02002FFF
 
 # Protection HUD readiness and the client-to-Lua notification mailbox. Two
 # magic bytes prevent uninitialized high-RAM contents from appearing as valid

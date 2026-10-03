@@ -63,50 +63,54 @@ local client_socket = nil
 
 local current_state = STATE_NOT_CONNECTED
 
-local timeout_timer = 0
+local timeout_deadline = 0
 local message_timer = 0
 local message_interval = 0
 local prev_time = 0
 local current_time = 0
 
 local locked = false
+local receive_buffer = ""
+local pending_response = nil
+local send_offset = 1
+local stopped = false
 
 local rom_hash = nil
 
-function queue_push (self, value)
+local function queue_push (self, value)
     self[self.right] = value
     self.right = self.right + 1
 end
 
-function queue_is_empty (self)
+local function queue_is_empty (self)
     return self.right == self.left
 end
 
-function queue_shift (self)
-    value = self[self.left]
+local function queue_shift (self)
+    local value = self[self.left]
     self[self.left] = nil
     self.left = self.left + 1
     return value
 end
 
-function new_queue ()
+local function new_queue ()
     local queue = {left = 1, right = 1}
     return setmetatable(queue, {__index = {is_empty = queue_is_empty, push = queue_push, shift = queue_shift}})
 end
 
 local message_queue = new_queue()
 
-function lock ()
+local function lock ()
     locked = true
     client_socket:settimeout(2)
 end
 
-function unlock ()
+local function unlock ()
     locked = false
-    client_socket:settimeout(0)
+    if client_socket ~= nil then client_socket:settimeout(0) end
 end
 
-request_handlers = {
+local request_handlers = {
     ["PING"] = function (req)
         local res = {}
 
@@ -257,6 +261,47 @@ request_handlers = {
         return res
     end,
 
+    ["NSMBDS_ITEM_WRITE"] = function (req)
+        local marker_address = 0x00002FF8
+        local domain = "Main RAM"
+        local token = base64.decode(req["token"])
+        assert(#token == 8, "Invalid item transaction token")
+        local nonzero = false
+        for _, byte in ipairs(token) do nonzero = nonzero or byte ~= 0 end
+        assert(nonzero and base64.encode(token) == req["token"], "Invalid item transaction token")
+        assert(type(req["writes"]) == "table" and #req["writes"] == 1, "Invalid item transaction writes")
+        assert(type(req["guards"]) == "table", "Invalid item transaction guards")
+        local write = req["writes"][1]
+        local value = base64.decode(write["value"])
+        assert(write["domain"] == domain and #value == 1 and (
+            write["address"] == 0x0008B32C or write["address"] == 0x0008B364 or write["address"] == 0x0008B37C
+        ), "Invalid item transaction target")
+        local guards = {}
+        for i, guard in ipairs(req["guards"]) do
+            local expected = base64.decode(guard["expected_data"])
+            assert(guard["domain"] == domain and type(guard["address"]) == "number" and (
+                guard["address"] >= 0 and guard["address"] + #expected <= 0x400000
+            ), "Invalid item transaction guard")
+            guards[i] = {address = guard["address"], expected = expected}
+        end
+        local res = {type = "NSMBDS_ITEM_WRITE_RESPONSE", value = true}
+        if base64.encode(memory.read_bytes_as_array(marker_address, 8, domain)) == req["token"] then
+            return res -- The write committed, but its acknowledgement was lost.
+        end
+        for _, guard in ipairs(guards) do
+            local actual = memory.read_bytes_as_array(guard.address, #guard.expected, domain)
+            if #actual ~= #guard.expected then res.value = false; return res end
+            for i, byte in ipairs(guard.expected) do
+                if actual[i] ~= byte then res.value = false; return res end
+            end
+        end
+        -- Both writes execute inside one frame callback. No emulation frame can
+        -- run between the consumable change and its committed transaction marker.
+        memory.write_bytes_as_array(write["address"], value, domain)
+        memory.write_bytes_as_array(marker_address, token, domain)
+        return res
+    end,
+
     ["NSMBDS_DIAGNOSTICS"] = function (req)
         local runtime_version = package.loaded["nsmbds.version"]
         return {
@@ -289,7 +334,7 @@ request_handlers = {
     end,
 }
 
-function process_request (req)
+local function process_request (req)
     if request_handlers[req["type"]] then
         return request_handlers[req["type"]](req)
     else
@@ -304,39 +349,57 @@ local function push_nsmbds_connection_status(text, color)
     })
 end
 
--- Receive data from AP client and send message back
-function send_receive ()
-    local message, err = client_socket:receive()
-
-    -- Handle errors
-    if err == "closed" then
-        if current_state == STATE_CONNECTED then
-            print("Connection to client closed")
-            push_nsmbds_connection_status(
-                "NSMBDS Client disconnected from BizHawk.",
-                "warning"
-            )
-        end
-        current_state = STATE_NOT_CONNECTED
-        return
-    elseif err == "timeout" then
-        unlock()
-        return
-    elseif err ~= nil then
-        print(err)
-        if current_state == STATE_CONNECTED then
-            push_nsmbds_connection_status(
-                "NSMBDS Client disconnected from BizHawk.",
-                "warning"
-            )
-        end
-        current_state = STATE_NOT_CONNECTED
-        unlock()
-        return
+local function disconnect_client(reason)
+    if current_state == STATE_CONNECTED then
+        print(reason or "Connection to client closed")
+        push_nsmbds_connection_status("NSMBDS Client disconnected from BizHawk.", "warning")
     end
+    if client_socket ~= nil then pcall(function () client_socket:close() end) end
+    client_socket = nil
+    current_state = STATE_NOT_CONNECTED
+    locked = false
+    receive_buffer = ""
+    pending_response = nil
+    send_offset = 1
+    timeout_deadline = 0
+end
 
-    -- Reset timeout timer
-    timeout_timer = 5
+local function flush_response()
+    local sent, err, partial = client_socket:send(pending_response, send_offset)
+    -- LuaSocket returns the last byte index, including on a partial send.
+    send_offset = (sent or partial or (send_offset - 1)) + 1
+    if err ~= nil and err ~= "timeout" then
+        disconnect_client("Connection to client failed: " .. tostring(err))
+        return false
+    end
+    if send_offset <= #pending_response then
+        -- A locked transaction must not silently continue on another emulation frame.
+        -- The existing two-second blocking socket timeout bounds this failure.
+        if locked then disconnect_client("Client stalled while locked") end
+        return false
+    end
+    pending_response = nil
+    send_offset = 1
+    return true
+end
+
+-- Receive complete lines and retry incomplete writes before reading another request.
+local function send_receive ()
+    if client_socket == nil then return false end
+    if pending_response ~= nil then return flush_response() end
+    local message, err, partial = client_socket:receive("*l", receive_buffer)
+    if err == "timeout" then
+        receive_buffer = partial or receive_buffer
+        unlock()
+        return false
+    elseif err ~= nil then
+        disconnect_client("Connection to client failed: " .. tostring(err))
+        return false
+    end
+    receive_buffer = ""
+
+    -- Measure from the actual receive time, including time spent in a LOCK.
+    timeout_deadline = socket.socket.gettime() + 5
 
     -- Process received data
     if DEBUG then
@@ -344,10 +407,20 @@ function send_receive ()
     end
 
     if message == "VERSION" then
-        client_socket:send(tostring(SCRIPT_VERSION).."\n")
+        pending_response = tostring(SCRIPT_VERSION).."\n"
     else
         local res = {}
-        local data = json.decode(message)
+        local decoded, data = pcall(json.decode, message)
+        if not decoded or type(data) ~= "table" or not message:match("^%s*%[") then
+            disconnect_client("Invalid client request; closing connection")
+            return false
+        end
+        for _, req in ipairs(data) do
+            if type(req) ~= "table" or type(req["type"]) ~= "string" then
+                disconnect_client("Invalid client request; closing connection")
+                return false
+            end
+        end
         local failed_guard_response = nil
         for i, req in ipairs(data) do
             if failed_guard_response ~= nil then
@@ -369,20 +442,24 @@ function send_receive ()
             end
         end
 
-        client_socket:send(json.encode(res).."\n")
+        pending_response = json.encode(res).."\n"
     end
+    return flush_response()
 end
 
-function initialize_server ()
+local function initialize_server ()
     local err
     local port = SOCKET_PORT_FIRST
     local res = nil
 
     server, err = socket.socket.tcp4()
+    if server == nil then print(err); return end
     while res == nil and port <= SOCKET_PORT_LAST do
         res, err = server:bind("localhost", port)
         if res == nil and err ~= "address already in use" then
             print(err)
+            server:close()
+            server = nil
             return
         end
 
@@ -393,6 +470,8 @@ function initialize_server ()
 
     if port > SOCKET_PORT_LAST then
         print("Too many instances of connector script already running. Exiting.")
+        server:close()
+        server = nil
         return
     end
 
@@ -400,20 +479,21 @@ function initialize_server ()
 
     if err ~= nil then
         print(err)
+        server:close()
+        server = nil
         return
     end
 
     server:settimeout(0)
 end
 
-function main ()
+local function main ()
     while true do
-        if server == nil then
+        if server == nil and current_state == STATE_NOT_CONNECTED then
             initialize_server()
         end
 
         current_time = socket.socket.gettime()
-        timeout_timer = timeout_timer - (current_time - prev_time)
         message_timer = message_timer - (current_time - prev_time)
         prev_time = current_time
 
@@ -423,7 +503,7 @@ function main ()
         end
 
         if current_state == STATE_NOT_CONNECTED then
-            if emu.framecount() % 30 == 0 then
+            if server ~= nil and emu.framecount() % 30 == 0 then
                 print("Looking for client...")
                 local client, timeout = server:accept()
                 if timeout == nil then
@@ -433,7 +513,11 @@ function main ()
                     server:close()
                     server = nil
                     client_socket:settimeout(0)
-                    timeout_timer = 5
+                    timeout_deadline = socket.socket.gettime() + 5
+                    receive_buffer = ""
+                    pending_response = nil
+                    send_offset = 1
+                    locked = false
                     push_nsmbds_connection_status(
                         "NSMBDS Client connected to BizHawk.",
                         "success"
@@ -442,21 +526,12 @@ function main ()
             end
         else
             repeat
-                send_receive()
+                local progressed = send_receive()
+                if not progressed then break end
             until not locked
 
-            if timeout_timer <= 0 then
-                print("Client timed out; closing stale socket")
-                push_nsmbds_connection_status(
-                    "NSMBDS Client disconnected from BizHawk.",
-                    "warning"
-                )
-                if client_socket ~= nil then
-                    pcall(function () client_socket:close() end)
-                    client_socket = nil
-                end
-                locked = false
-                current_state = STATE_NOT_CONNECTED
+            if current_state == STATE_CONNECTED and socket.socket.gettime() >= timeout_deadline then
+                disconnect_client("Client timed out; closing stale socket")
             end
         end
 
@@ -465,14 +540,13 @@ function main ()
 end
 
 event.onexit(function ()
+    stopped = true
     print("\n-- Restarting Script --\n")
     if server ~= nil then
-        server:close()
+        pcall(function () server:close() end)
+        server = nil
     end
-    if client_socket ~= nil then
-        pcall(function () client_socket:close() end)
-        client_socket = nil
-    end
+    disconnect_client()
 end)
 
 if bizhawk_major < 2 or (bizhawk_major == 2 and bizhawk_minor < 7) then
@@ -494,7 +568,8 @@ else
     print("Waiting for client to connect. This may take longer the more instances of this script you have open at once.\n")
 
     local co = coroutine.create(main)
-    function tick ()
+    local function tick ()
+        if stopped then return end
         local status, err = coroutine.resume(co)
 
         if not status and err ~= "cannot resume dead coroutine" then
@@ -502,9 +577,10 @@ else
             print("Consider reporting this crash.\n")
 
             if server ~= nil then
-                server:close()
+                pcall(function () server:close() end)
+                server = nil
             end
-
+            disconnect_client("Connector restarting after an error")
             co = coroutine.create(main)
         end
     end
