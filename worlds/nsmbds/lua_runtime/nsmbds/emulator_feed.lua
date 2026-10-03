@@ -12,7 +12,11 @@ local MAX_WIDTH = 1200
 local FRAMES_PER_SECOND = 60
 
 local messages = {}
+local message_first = 1
+local message_last = 0
 local entries = {}
+local entry_first = 1
+local entry_last = 0
 local visible = true
 local feed_width = DEFAULT_WIDTH
 local feed_position = "bottom_left"
@@ -61,7 +65,12 @@ local function wrap_columns()
     return math.max(12, math.floor(feed_width / CHARACTER_WIDTH))
 end
 
+local function entry_count()
+    return entry_last - entry_first + 1
+end
+
 local function append_wrapped(message)
+    local previous_last = entry_last
     local text = ""
     local ranges = {}
     for _, segment in ipairs(message.segments) do
@@ -95,19 +104,23 @@ local function append_wrapped(message)
                 }
             end
         end
-        entries[#entries + 1] = {
+        entry_last = entry_last + 1
+        entries[entry_last] = {
             segments = line_segments,
             created_frame = message.created_frame,
         }
         line_start = line_end + 1
         while text:sub(line_start, line_start) == " " do line_start = line_start + 1 end
     end
+    message.line_count = entry_last - previous_last
 end
 
 local function rebuild_entries()
     entries = {}
-    for _, message in ipairs(messages) do append_wrapped(message) end
-    scroll_offset = math.min(scroll_offset, math.max(0, #entries - 1))
+    entry_first = 1
+    entry_last = 0
+    for index = message_first, message_last do append_wrapped(messages[index]) end
+    scroll_offset = math.min(scroll_offset, math.max(0, entry_count() - 1))
 end
 
 function M.push(message)
@@ -120,19 +133,31 @@ function M.push(message)
     end
     if #segments == 0 then return false end
 
-    local previous_count = #entries
     local feed_message = {
         segments = segments,
         created_frame = frame_count(),
     }
-    messages[#messages + 1] = feed_message
+    message_last = message_last + 1
+    messages[message_last] = feed_message
     append_wrapped(feed_message)
-    if #messages > MAX_MESSAGES then
-        table.remove(messages, 1)
-        rebuild_entries()
-    elseif browsing_history then
+
+    -- Advance queue heads instead of shifting tables or rewrapping retained
+    -- messages. Clear discarded references so both queues stay bounded.
+    if message_last - message_first + 1 > MAX_MESSAGES then
+        local discarded = messages[message_first]
+        messages[message_first] = nil
+        message_first = message_first + 1
+        for _ = 1, discarded.line_count do
+            entries[entry_first] = nil
+            entry_first = entry_first + 1
+        end
+    end
+    if browsing_history then
         -- Keep the same historical lines in view while the user is scrolled up.
-        scroll_offset = scroll_offset + (#entries - previous_count)
+        scroll_offset = math.min(
+            scroll_offset + feed_message.line_count,
+            math.max(0, entry_count() - 1)
+        )
     end
     return true
 end
@@ -186,7 +211,7 @@ local function poll_scroll(max_visible_lines)
     last_mouse_wheel = wheel
     if wheel_delta == 0 then return end
 
-    local maximum = math.max(0, #entries - max_visible_lines)
+    local maximum = math.max(0, entry_count() - max_visible_lines)
     if fade_seconds > 0 and wheel_delta > 0 and not browsing_history then
         -- Fade mode can show fewer than a full page. Enter history at the
         -- current end first instead of jumping past the newest messages.
@@ -227,13 +252,13 @@ end
 local function visible_entry_indices(max_visible_lines, now)
     local indices = {}
     if browsing_history then
-        local last = math.max(0, #entries - scroll_offset)
-        local first = math.max(1, last - max_visible_lines + 1)
+        local last = math.max(entry_first - 1, entry_last - scroll_offset)
+        local first = math.max(entry_first, last - max_visible_lines + 1)
         for index = first, last do indices[#indices + 1] = index end
         return indices
     end
 
-    for index = #entries, 1, -1 do
+    for index = entry_last, entry_first, -1 do
         if entry_alpha(entries[index], now) > 0 then
             table.insert(indices, 1, index)
             if #indices >= max_visible_lines then break end
@@ -259,7 +284,7 @@ function M.draw()
     local height = screen_dimension("screenheight", screen_dimension("bufferheight", 384))
     local max_visible_lines = math.max(1, math.floor((height * 0.35) / LINE_HEIGHT))
     poll_scroll(max_visible_lines)
-    scroll_offset = math.min(scroll_offset, math.max(0, #entries - max_visible_lines))
+    scroll_offset = math.min(scroll_offset, math.max(0, entry_count() - max_visible_lines))
 
     local now = frame_count()
     local indices = visible_entry_indices(max_visible_lines, now)
