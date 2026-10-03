@@ -8,6 +8,7 @@ import struct
 from typing import Any, Mapping
 
 from ..data.music import (
+    BAH_SEQUENCE_IDS,
     LEVEL_CONTEXT_BY_NAME,
     MUSIC_MAPPING_VERSION,
     MUSIC_RANDOMIZATION_OFF,
@@ -93,7 +94,7 @@ def _nitrofs_paths(rom: bytes) -> dict[str, int]:
 
 
 def patch_course_music_data(course_data: bytes, replacement_sequence_id: int) -> tuple[bytes, int]:
-    """Replace safe BGM bytes in block 7 views without changing file size."""
+    """Replace compatible BGM bytes in block 7 views without changing file size."""
     if replacement_sequence_id not in SAFE_MIXED_LEVEL_SEQUENCE_IDS:
         raise ValueError(f"Sequence {replacement_sequence_id} is not safe for levels.")
     if len(course_data) < 14 * 8:
@@ -106,7 +107,11 @@ def patch_course_music_data(course_data: bytes, replacement_sequence_id: int) ->
     replaced = 0
     for view_offset_in_file in range(view_offset, view_offset + view_size, 16):
         music_offset = view_offset_in_file + 10
-        if patched[music_offset] in SAFE_LEVEL_SEQUENCE_IDS:
+        if (
+            patched[music_offset] in SAFE_LEVEL_SEQUENCE_IDS
+            and (patched[music_offset] in BAH_SEQUENCE_IDS)
+            == (replacement_sequence_id in BAH_SEQUENCE_IDS)
+        ):
             patched[music_offset] = replacement_sequence_id
             replaced += 1
     return bytes(patched), replaced

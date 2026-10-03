@@ -235,6 +235,7 @@ class TestMusicProcedurePatch(NSMBDSTestBase):
             levels = patch_config["level_music_mapping"]
             maps = patch_config["world_map_music_mapping"]
             self.assertEqual(patch_config["options"]["music_randomization"], 3)
+            self.assertEqual(patch_config["music_mapping_version"], 2)
             self.assertEqual(len(levels), 80)
             self.assertEqual(len(maps), 8)
             self.assertEqual(len(set(levels.values())), 19)

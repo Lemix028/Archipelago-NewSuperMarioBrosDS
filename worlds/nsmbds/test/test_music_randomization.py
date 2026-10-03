@@ -8,6 +8,7 @@ from random import Random
 from unittest import TestCase
 
 from ..data.music import (
+    BAH_SEQUENCE_IDS,
     LEVEL_MUSIC_CONTEXTS,
     LEVEL_TRACKS,
     MIXED_LEVEL_TRACKS,
@@ -49,12 +50,27 @@ class TestMusicMapping(TestCase):
         self.assertFalse(maps)
         self.assertEqual(set(levels), {context.name for context in LEVEL_MUSIC_CONTEXTS})
         self.assertEqual(len(levels), 80)
-        self.assertLessEqual(max(Counter(levels.values()).values()) - min(Counter(levels.values()).values()), 1)
+        for has_bah in (True, False):
+            counts = Counter(
+                value for value in levels.values()
+                if (value in BAH_SEQUENCE_IDS) == has_bah
+            )
+            self.assertLessEqual(max(counts.values()) - min(counts.values()), 1)
+        self.assertEqual(
+            {name for name, value in levels.items() if value in BAH_SEQUENCE_IDS},
+            {context.name for context in LEVEL_MUSIC_CONTEXTS
+             if context.original_sequence_id in BAH_SEQUENCE_IDS},
+        )
         self.assertTrue(set(levels.values()) <= SAFE_LEVEL_SEQUENCE_IDS)
         self.assertTrue(set(levels.values()) <= set(TRACK_BY_ID))
         self.assertTrue(set(levels.values()).isdisjoint(SAFE_WORLD_MAP_SEQUENCE_IDS))
         self.assertTrue(all(TRACK_BY_ID[value].category is MusicCategory.LEVEL for value in levels.values()))
         validate_music_mapping(MUSIC_RANDOMIZATION_LEVELS, levels, maps)
+        self.assertIn(levels["World 2-5"], BAH_SEQUENCE_IDS)
+        incompatible = dict(levels)
+        incompatible["World 2-5"] = 10
+        with self.assertRaisesRegex(ValueError, "music-event availability"):
+            validate_music_mapping(MUSIC_RANDOMIZATION_LEVELS, incompatible, maps)
 
     def test_world_maps_are_a_safe_derangement(self) -> None:
         levels, maps = generate_music_mapping(
@@ -116,6 +132,19 @@ class TestMusicRomPatching(TestCase):
         self.assertEqual(patched[138], 15)
         self.assertEqual(patched[154], 80)
         self.assertEqual(len(patched), len(course))
+
+    def test_course_patch_preserves_music_event_availability_per_view(self) -> None:
+        course = bytearray(160)
+        struct.pack_into("<II", course, 7 * 8, 112, 48)
+        course[122] = 6   # Desert has music events.
+        course[138] = 10  # Bonus Room has none.
+        course[154] = 9   # Underground has music events.
+        patched, count = patch_course_music_data(bytes(course), 24)
+        self.assertEqual(count, 2)
+        self.assertEqual((patched[122], patched[138], patched[154]), (24, 10, 24))
+        patched, count = patch_course_music_data(bytes(course), 16)
+        self.assertEqual(count, 1)
+        self.assertEqual((patched[122], patched[138], patched[154]), (6, 16, 9))
 
     def test_world_map_patch_preserves_non_world_entries(self) -> None:
         overlay = bytearray(WORLD_MAP_MUSIC_TABLE_OFFSET + 40)

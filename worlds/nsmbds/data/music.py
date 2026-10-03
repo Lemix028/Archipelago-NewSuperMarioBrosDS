@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
 from random import Random
@@ -14,7 +15,12 @@ MUSIC_RANDOMIZATION_OFF = 0
 MUSIC_RANDOMIZATION_LEVELS = 1
 MUSIC_RANDOMIZATION_LEVELS_AND_WORLD_MAPS = 2
 MUSIC_RANDOMIZATION_MIXED_LEVELS_AND_WORLD_MAPS = 3
-MUSIC_MAPPING_VERSION = 1
+MUSIC_MAPPING_VERSION = 2
+
+# These sequences contain the NSMBDS music-event command B0 02 01 00 80.
+# Verified against the USA A2DE sound_data.sdat. Enemies such as the
+# Blockhoppers in 2-5 use these events to jump.
+BAH_SEQUENCE_IDS = frozenset({6, 9, 12, 14, 24, 26, 100, 101, 102, 103, 104, 106, 107})
 
 
 class MusicCategory(str, Enum):
@@ -213,6 +219,46 @@ def balanced_music_assignment(
     }
 
 
+def _assign_compatible_level_music(
+    rng: Random, tracks: Sequence[MusicTrack],
+) -> dict[str, int]:
+    """Keep the presence of music events in each level's primary theme."""
+    result: dict[str, int] = {}
+    for has_bah in (True, False):
+        contexts = tuple(
+            context for context in LEVEL_MUSIC_CONTEXTS
+            if (context.original_sequence_id in BAH_SEQUENCE_IDS) == has_bah
+        )
+        compatible = tuple(
+            track for track in tracks
+            if (track.sequence_id in BAH_SEQUENCE_IDS) == has_bah
+        )
+        result.update(balanced_music_assignment(contexts, compatible, rng))
+    return result
+
+
+def _assign_mixed_world_maps(
+    rng: Random, levels: dict[str, int],
+) -> dict[str, int]:
+    """Use the least-used tracks so the mixed pool stays balanced overall."""
+    level_counts = Counter(levels.values())
+    counts = {track.sequence_id: level_counts[track.sequence_id]
+              for track in MIXED_LEVEL_TRACKS}
+    assignments: list[MusicTrack] = []
+    for _context in WORLD_MAP_MUSIC_CONTEXTS:
+        minimum = min(counts.values())
+        candidates = [track for track in MIXED_LEVEL_TRACKS
+                      if counts[track.sequence_id] == minimum]
+        track = rng.choice(candidates)
+        assignments.append(track)
+        counts[track.sequence_id] += 1
+    _avoid_self_matches(WORLD_MAP_MUSIC_CONTEXTS, assignments)
+    return {
+        context.name: track.sequence_id
+        for context, track in zip(WORLD_MAP_MUSIC_CONTEXTS, assignments)
+    }
+
+
 def generate_music_mapping(rng: Random, mode: int) -> tuple[dict[str, int], dict[str, int]]:
     if mode == MUSIC_RANDOMIZATION_OFF:
         return {}, {}
@@ -224,18 +270,10 @@ def generate_music_mapping(rng: Random, mode: int) -> tuple[dict[str, int], dict
         raise ValueError(f"Unsupported music randomization mode {mode}.")
 
     if mode == MUSIC_RANDOMIZATION_MIXED_LEVELS_AND_WORLD_MAPS:
-        combined_contexts = (*LEVEL_MUSIC_CONTEXTS, *WORLD_MAP_MUSIC_CONTEXTS)
-        combined = balanced_music_assignment(combined_contexts, MIXED_LEVEL_TRACKS, rng)
-        levels = {
-            context.name: combined[context.name]
-            for context in LEVEL_MUSIC_CONTEXTS
-        }
-        maps = {
-            context.name: combined[context.name]
-            for context in WORLD_MAP_MUSIC_CONTEXTS
-        }
+        levels = _assign_compatible_level_music(rng, MIXED_LEVEL_TRACKS)
+        maps = _assign_mixed_world_maps(rng, levels)
     else:
-        levels = balanced_music_assignment(LEVEL_MUSIC_CONTEXTS, LEVEL_TRACKS, rng)
+        levels = _assign_compatible_level_music(rng, LEVEL_TRACKS)
         maps: dict[str, int] = {}
     if mode == MUSIC_RANDOMIZATION_LEVELS_AND_WORLD_MAPS:
         maps = balanced_music_assignment(WORLD_MAP_MUSIC_CONTEXTS, WORLD_MAP_TRACKS, rng)
@@ -273,6 +311,13 @@ def validate_music_mapping(
     )
     if any(value not in safe_level_ids for value in level_mapping.values()):
         raise ValueError("Level music mapping contains a sequence outside the safe pool.")
+    if any(
+        (level_mapping[name] in BAH_SEQUENCE_IDS)
+        != (context.original_sequence_id in BAH_SEQUENCE_IDS)
+        for name, context in LEVEL_CONTEXT_BY_NAME.items()
+        if name in level_mapping
+    ):
+        raise ValueError("Level music mapping changes a level's music-event availability.")
     safe_world_map_ids = (
         SAFE_MIXED_LEVEL_SEQUENCE_IDS
         if mode == MUSIC_RANDOMIZATION_MIXED_LEVELS_AND_WORLD_MAPS
@@ -288,7 +333,7 @@ def validate_music_mapping(
 
 
 __all__ = [
-    "LEVEL_CONTEXT_BY_NAME", "LEVEL_MUSIC_CONTEXTS", "LEVEL_TRACKS",
+    "BAH_SEQUENCE_IDS", "LEVEL_CONTEXT_BY_NAME", "LEVEL_MUSIC_CONTEXTS", "LEVEL_TRACKS",
     "MIXED_LEVEL_TRACKS", "MUSIC_MAPPING_VERSION", "MUSIC_RANDOMIZATION_LEVELS",
     "MUSIC_RANDOMIZATION_MIXED_LEVELS_AND_WORLD_MAPS",
     "MUSIC_RANDOMIZATION_LEVELS_AND_WORLD_MAPS", "MUSIC_RANDOMIZATION_OFF",

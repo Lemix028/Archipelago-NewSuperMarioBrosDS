@@ -569,6 +569,7 @@ class MusicRandomization(Choice):
     """
     Randomize complete music sequences while keeping boss music, temporary
     power-up music, jingles, ambience, menus, and minigames untouched.
+    Level music keeps the presence of the BAH cues that enemies react to.
 
     off:                     Keep all music vanilla. (Default)
     level:                   Shuffle the 11 normal level themes among levels.
