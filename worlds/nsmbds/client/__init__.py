@@ -911,7 +911,9 @@ def install_patch_startup_guard(bizhawk_context, configure_launch_from_args) -> 
 
 def main(*args: str) -> None:
     """Launch the NSMBDS BizHawk client GUI executable."""
+    from CommonClient import CommonContext
     from worlds._bizhawk import context as bizhawk_context
+    from worlds._bizhawk.context import AuthStatus, ConnectionStatus
     from MultiServer import mark_raw
     from .launcher import configure_launch_from_args
     from .diagnostics import DiagnosticState, build_diagnostic_snapshot, format_full, format_short, parse_diagnostic_mode
@@ -955,6 +957,32 @@ def main(*args: str) -> None:
             logger.info("NSMBDS client started; version %s; session %s.",
                         DISPLAY_VERSION, self.nsmbds_diagnostics.session_id)
             self.nsmbds_diagnostics.event("CLIENT", "started")
+
+        async def server_auth(self, password_requested: bool = False) -> None:
+            self.password_requested = password_requested
+
+            if self.bizhawk_ctx.connection_status != ConnectionStatus.CONNECTED:
+                logger.info("Awaiting connection to BizHawk before authenticating")
+                return
+
+            if self.client_handler is None:
+                return
+
+            if self.auth is None:
+                self.auth_status = AuthStatus.NEED_INFO
+                await self.client_handler.set_auth(self)
+                if self.auth is None:
+                    await self.get_username()
+
+            if password_requested and not self.password:
+                self.auth_status = AuthStatus.NEED_INFO
+                # The launcher replaces the core module's BizHawkClientContext
+                # name with this subclass. Its explicit super(Class, self)
+                # would therefore re-enter BizHawk's server_auth recursively.
+                await CommonContext.server_auth(self, password_requested)
+
+            await self.send_connect()
+            self.auth_status = AuthStatus.PENDING
 
         def on_package(self, cmd, args):
             if cmd == "Connected":
