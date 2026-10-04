@@ -120,22 +120,23 @@ def _single_star_coin_gate_rule(
 ) -> Rule:
     """Build the configured authorization rule for one Star-Coin gate."""
     mode = world.options.star_coin_gate_mode.value
+    gap = world.options.star_coin_gate_gap.value
     if mode == 0:
         tier = world.vanilla_gate_tiers[gate.name]
-        return Has("Star Coin", gate_required_lifetime_coins(gate, tier))
+        return Has("Star Coin", gate_required_lifetime_coins(gate, tier, gap))
     if mode == 1:
         return And(
             Has("Progressive Gate Pass", gate.progressive_index),
             Has(
                 "Star Coin",
-                gate_required_lifetime_coins(gate, gate.progressive_index),
+                gate_required_lifetime_coins(gate, gate.progressive_index, gap),
             ),
         )
     if mode == 2:
         tier = world.individual_gate_tiers[gate.permit_item_name]
         return And(
             Has(gate.permit_item_name),
-            Has("Star Coin", gate_required_lifetime_coins(gate, tier)),
+            Has("Star Coin", gate_required_lifetime_coins(gate, tier, gap)),
         )
     raise ValueError(f"Unsupported Star Coin Gate mode: {mode}")
 

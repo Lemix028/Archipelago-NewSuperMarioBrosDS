@@ -8,6 +8,7 @@ import logging
 from kvui import GameManager
 
 from kivy.clock import Clock
+from kivy.core.window import Window
 from kivy.metrics import dp
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
@@ -19,6 +20,7 @@ from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.label import MDLabel
 from kivymd.uix.scrollview import MDScrollView
+from kivymd.uix.tooltip import MDTooltipPlain
 
 from .state import InventoryEntry, ProgressCount, TrackerSnapshot, build_tracker_snapshot
 from ....version import DISPLAY_VERSION
@@ -42,6 +44,8 @@ from ...launcher import (
     set_emulator_feed_fade_seconds,
     set_emulator_feed_position,
     set_emulator_feed_width,
+    reserve_mode,
+    set_reserve_mode,
 )
 
 
@@ -51,6 +55,32 @@ CYAN = "62C6E8"
 ORANGE = "FFB74D"
 RED = "FF5252"
 logger = logging.getLogger("NSMBDS.Launch")
+RESERVE_MODE_LABELS = {"automatic": "Automatic", "manual": "Manual"}
+
+
+def change_reserve_mode(ctx, mode: str) -> bool:
+    """Apply the Settings preference through the guarded client mode setter."""
+    handler = getattr(ctx, "client_handler", None)
+    if handler is not None and callable(getattr(handler, "set_reserve_mode", None)):
+        return handler.set_reserve_mode(mode)
+    try:
+        set_reserve_mode(mode)
+        return True
+    except (OSError, TypeError, ValueError):
+        logger.exception("Could not save Item Reserve mode.")
+        return False
+
+
+def reserve_mode_spinner(mode: str, callback, *, disabled: bool = False) -> Spinner:
+    control = Spinner(
+        text=RESERVE_MODE_LABELS[mode], values=tuple(RESERVE_MODE_LABELS.values()),
+        size_hint_y=None, height=dp(32),
+        background_normal="", background_down="",
+        background_color=(0.18, 0.20, 0.24, 1), color=(1, 1, 1, 1),
+        disabled=disabled,
+    )
+    control.bind(text=lambda _spinner, label: callback(label.lower()))
+    return control
 
 
 def request_client_shutdown(ctx) -> None:
@@ -90,6 +120,65 @@ def _label(text: str, *, halign: str = "left") -> MDLabel:
     return label
 
 
+class _LockedReserveButton(Button):
+    """Permit hint that also works while the button is disabled."""
+
+    def __init__(self, *, tooltip_text: str, **kwargs):
+        super().__init__(**kwargs)
+        self.tooltip_text = tooltip_text
+        self._tooltip = None
+        self._hover_event = None
+        Window.bind(mouse_pos=self._on_mouse_pos, on_cursor_leave=self.hide_tooltip)
+
+    def _mouse_inside(self, pos) -> bool:
+        if not self.get_root_window() or not self.collide_point(*self.to_widget(*pos)):
+            return False
+        # A scrolled-out button must not respond outside its visible viewport.
+        ancestor = self.parent
+        while ancestor is not None and ancestor is not Window:
+            if isinstance(ancestor, MDScrollView) and not ancestor.collide_point(*ancestor.to_widget(*pos)):
+                return False
+            ancestor = ancestor.parent
+        return True
+
+    def _on_mouse_pos(self, _window, pos) -> None:
+        if self._mouse_inside(pos):
+            if self._tooltip is None and self._hover_event is None:
+                self._hover_event = Clock.schedule_once(self._show_tooltip, 0.25)
+        else:
+            self.hide_tooltip()
+
+    def _show_tooltip(self, _dt) -> None:
+        self._hover_event = None
+        if not self._mouse_inside(Window.mouse_pos):
+            return
+        tooltip = MDTooltipPlain(
+            text=self.tooltip_text, opacity=1, scale_value_x=1, scale_value_y=1,
+            theme_text_color="Custom", text_color=(1, 1, 1, 1),
+            theme_bg_color="Custom", md_bg_color=(0.18, 0.20, 0.24, 1),
+        )
+        tooltip.texture_update()
+        Window.add_widget(tooltip)
+        x, y = self.to_window(self.center_x, self.y)
+        tooltip.pos = (
+            max(dp(8), min(x - tooltip.width / 2, Window.width - tooltip.width - dp(8))),
+            max(dp(8), y - tooltip.height - dp(4)),
+        )
+        self._tooltip = tooltip
+
+    def hide_tooltip(self, *_args) -> None:
+        if self._hover_event is not None:
+            self._hover_event.cancel()
+            self._hover_event = None
+        if self._tooltip is not None:
+            Window.remove_widget(self._tooltip)
+            self._tooltip = None
+
+    def dispose(self) -> None:
+        self.hide_tooltip()
+        Window.unbind(mouse_pos=self._on_mouse_pos, on_cursor_leave=self.hide_tooltip)
+
+
 class NSMBDSTrackerPanel(MDScrollView):
     """Compact client overview without map-tracker or location-list overload."""
 
@@ -97,6 +186,9 @@ class NSMBDSTrackerPanel(MDScrollView):
         super().__init__(**kwargs)
         self.ctx = ctx
         self._snapshot: TrackerSnapshot | None = None
+        self._locked_buttons: list[_LockedReserveButton] = []
+        self.bind(scroll_x=self._hide_tooltips, scroll_y=self._hide_tooltips,
+                  parent=self._hide_tooltips)
         self.content = MDBoxLayout(
             orientation="vertical",
             adaptive_height=True,
@@ -113,6 +205,9 @@ class NSMBDSTrackerPanel(MDScrollView):
             self._render(snapshot)
 
     def _render(self, snapshot: TrackerSnapshot) -> None:
+        for button in self._locked_buttons:
+            button.dispose()
+        self._locked_buttons.clear()
         self.content.clear_widgets()
         self.content.padding = dp(10)
         self.content.spacing = dp(5)
@@ -146,6 +241,9 @@ class NSMBDSTrackerPanel(MDScrollView):
                 f"[b]Star Coins[/b]  [color={ORANGE}]{snapshot.star_coin_available} available[/color]"
                 f"    {snapshot.star_coin_spent} spent    "
                 f"[color={GREY}]{snapshot.star_coin_lifetime} received total[/color]"
+            ))
+            self.content.add_widget(_compact_label(
+                f"[color={GREY}]Gate gap / purchase price: {snapshot.star_coin_gate_gap} Star Coins[/color]"
             ))
 
         # Keep the long inventory alongside progress instead of below it.
@@ -189,7 +287,17 @@ class NSMBDSTrackerPanel(MDScrollView):
         body.add_widget(inventory_column)
         self.content.add_widget(body)
 
-        self.content.add_widget(_compact_heading("Power-ups"))
+        self.content.add_widget(_compact_heading("Item Reserve"))
+        if snapshot.reserve_delivery_pending:
+            self.content.add_widget(_compact_label("Finishing a pocket delivery…"))
+        elif snapshot.selected_powerup:
+            self.content.add_widget(_compact_label(
+                f"Selected for pocket: [b]{escape_markup(snapshot.selected_powerup)} ×1[/b] — delivered when empty."
+            ))
+        if snapshot.reserve_action_error:
+            self.content.add_widget(_compact_label(
+                f"[color={ORANGE}]{escape_markup(snapshot.reserve_action_error)}[/color]"
+            ))
         locks = dict(snapshot.powerup_locks)
         powerup_grid = MDGridLayout(cols=5, adaptive_height=True, spacing=dp(8))
         def resize_powerup_grid(instance, width):
@@ -206,13 +314,13 @@ class NSMBDSTrackerPanel(MDScrollView):
             row.add_widget(_compact_label(f"[b]{name}[/b]  ×{entry.received}", halign="center"))
             selectable = entry.received > 0 and not reason
             if selected:
-                button_text = "SELECTED"
+                button_text = "CANCEL"
                 button_color = (0.10, 0.55, 0.72, 1)
             elif is_next:
                 button_text = "NEXT"
                 button_color = (0.18, 0.42, 0.50, 1)
             elif selectable:
-                button_text = "SET NEXT"
+                button_text = "SEND 1" if snapshot.reserve_mode == "manual" else "SET NEXT"
                 button_color = (0.25, 0.28, 0.31, 1)
             elif reason:
                 button_text = "LOCKED"
@@ -220,13 +328,19 @@ class NSMBDSTrackerPanel(MDScrollView):
             else:
                 button_text = "—"
                 button_color = (0.16, 0.17, 0.18, 1)
-            button = Button(
+            button_type = _LockedReserveButton if button_text == "LOCKED" else Button
+            tooltip_kwargs = {"tooltip_text": f"Requires {reason}"} if button_text == "LOCKED" else {}
+            button = button_type(
                 text=button_text,
                 size_hint_y=None, height=dp(28), font_size="12sp",
                 background_normal="", background_down="",
                 background_color=button_color,
                 color=(1, 1, 1, 1),
+                disabled=not (selected or selectable) or snapshot.reserve_delivery_pending,
+                **tooltip_kwargs,
             )
+            if isinstance(button, _LockedReserveButton):
+                self._locked_buttons.append(button)
             if selected or selectable:
                 button.bind(on_release=lambda _button, name=entry.name, cancel=selected:
                             self._select_next_powerup(None if cancel else ITEM_TABLE[name][0]))
@@ -240,8 +354,13 @@ class NSMBDSTrackerPanel(MDScrollView):
 
     def _select_next_powerup(self, item_id: int | None) -> None:
         handler = getattr(self.ctx, "client_handler", None)
-        if handler is not None and handler.select_next_powerup(self.ctx, item_id):
+        if handler is not None:
+            handler.select_next_powerup(self.ctx, item_id)
             self.refresh(force=True)
+
+    def _hide_tooltips(self, *_args) -> None:
+        for button in self._locked_buttons:
+            button.hide_tooltip()
 
 
 def _compact_label(text: str, *, halign: str = "left") -> MDLabel:
@@ -754,7 +873,7 @@ class NSMBDSLaunchPanel(MDScrollView):
 
 
 class NSMBDSSettingsPanel(MDScrollView):
-    """Persistent client-side presentation settings for the Lua runtime."""
+    """Persistent client preferences and Lua presentation settings."""
 
     POSITION_LABELS = {
         "bottom_left": "Bottom Left",
@@ -776,6 +895,7 @@ class NSMBDSSettingsPanel(MDScrollView):
 
     def __init__(self, _ctx, **kwargs):
         super().__init__(**kwargs)
+        self.ctx = _ctx
         self._updating_controls = False
         self._width_save_event = None
         self.content = MDBoxLayout(
@@ -786,6 +906,14 @@ class NSMBDSSettingsPanel(MDScrollView):
         )
         self.add_widget(self.content)
         self.content.add_widget(_label("[size=26sp][b]Settings[/b][/size]"))
+        self.reserve_spinner = reserve_mode_spinner(reserve_mode(), self._set_reserve_mode)
+        self.content.add_widget(self._setting_row(
+            "Item Reserve",
+            "Automatic: refill an empty pocket.\nManual: select each copy in Overview.",
+            self.reserve_spinner,
+        ))
+        self.reserve_status = _compact_label("")
+        self.content.add_widget(self.reserve_status)
         self.content.add_widget(_label(
             "[size=19sp][b]Emulator Feed[/b][/size]\n"
             "[color=#B8B8B8]Configure the message overlay shown inside BizHawk. "
@@ -953,6 +1081,7 @@ class NSMBDSSettingsPanel(MDScrollView):
     def refresh(self) -> None:
         config = emulator_feed_config()
         self._updating_controls = True
+        self.refresh_reserve()
         self.width_label.text = f"[b]{config.width} px[/b]"
         self.feed_checkbox.active = config.enabled
         self.width_slider.value = config.width
@@ -962,6 +1091,24 @@ class NSMBDSSettingsPanel(MDScrollView):
             f"{config.fade_seconds} seconds",
         )
         self._updating_controls = False
+
+    def refresh_reserve(self, *_args) -> None:
+        previous = self._updating_controls
+        self._updating_controls = True
+        handler = getattr(self.ctx, "client_handler", None)
+        mode = getattr(handler, "reserve_mode", None) or reserve_mode()
+        self.reserve_spinner.text = RESERVE_MODE_LABELS[mode]
+        self.reserve_spinner.disabled = bool(handler and handler.reserve_delivery_pending())
+        error = getattr(handler, "reserve_action_error", "")
+        self.reserve_status.text = (
+            f"[color={ORANGE}]{escape_markup(error)}[/color]" if error else ""
+        )
+        self._updating_controls = previous
+
+    def _set_reserve_mode(self, mode: str) -> None:
+        if not self._updating_controls:
+            change_reserve_mode(self.ctx, mode)
+            self.refresh_reserve()
 
     def _set_enabled(self, _switch, active: bool) -> None:
         if not self._updating_controls:
@@ -1002,6 +1149,7 @@ class NSMBDSTrackerManager(GameManager):
         root = super().build()
         self.tracker_panel = NSMBDSTrackerPanel(self.ctx)
         self.add_client_tab("Overview", self.tracker_panel)
+        self.tracker_panel.parent.bind(on_pre_leave=self.tracker_panel._hide_tooltips)
         try:
             self.launch_panel = NSMBDSLaunchPanel(self.ctx)
         except Exception as exc:
@@ -1019,6 +1167,7 @@ class NSMBDSTrackerManager(GameManager):
         self.settings_panel = NSMBDSSettingsPanel(self.ctx)
         self.add_client_tab("Settings", self.settings_panel)
         Clock.schedule_interval(self.tracker_panel.refresh, 0.5)
+        Clock.schedule_interval(self.settings_panel.refresh_reserve, 0.5)
         if isinstance(self.launch_panel, NSMBDSLaunchPanel):
             Clock.schedule_interval(self.launch_panel.refresh, 1.0)
             Clock.schedule_once(self.launch_panel.maybe_auto_launch, 0.25)

@@ -188,7 +188,9 @@ def build_diagnostic_snapshot(ctx: Any) -> dict[str, Any]:
                     "Last Reconnect": _clock(state.bridge.last_reconnect_at), "Last Disconnect Reason": state.bridge.last_error or "Unknown"},
         "rom": {"Region": "USA" if handler is not None else None,
                 "AP Seed Fingerprint": hashlib.sha256(str(getattr(ctx, "server_seed_name")).encode()).hexdigest()[:8] if getattr(ctx, "server_seed_name", None) else None,
-                "Slot ID": getattr(ctx, "slot", None)},
+                "Slot ID": getattr(ctx, "slot", None),
+                "Star Coin Gate Gap": slot_data.get("star_coin_gate_gap", 5),
+                "Gate Purchase Price": slot_data.get("star_coin_gate_gap", 5)},
         "sync": {"Received Item Index": state.last_received_index, "Queued Item Index": state.last_queued_index,
                  "Last Directly Applied Index": state.last_applied_index,
                  "Unprocessed Item Entries": max(0, len(items) - getattr(handler, "_items_received_index", 0)),
@@ -202,6 +204,9 @@ def build_diagnostic_snapshot(ctx: Any) -> dict[str, Any]:
                  "Pending Location Entries": [_name(i, _location_names) for i in sorted(unsent_locations)[:10]],
                  "Pending Location Extra": max(0, len(unsent_locations) - 10)},
         "reserve": {"Queue Size": len(deferred), "Persistence Loaded": bool(getattr(handler, "_item_cursor_loaded", False)),
+                    "Mode": getattr(handler, "reserve_mode", "automatic").title(),
+                    "Delivery Pending": bool(handler and callable(getattr(handler, "reserve_delivery_pending", None))
+                                             and handler.reserve_delivery_pending()),
                     "Selected Item": _name(getattr(handler, "_next_powerup_id", None), item_id_to_name),
                     "Entries": [_name(i, item_id_to_name) for i in deferred[:10]], "Extra": max(0, len(deferred) - 10)},
         "game": {"Game Data Status": (

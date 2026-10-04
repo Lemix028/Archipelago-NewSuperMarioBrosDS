@@ -7,6 +7,7 @@ import hashlib
 from typing import TYPE_CHECKING
 
 from .item_transactions import ItemTransactionMixin, ItemTransactionPending
+from .reserve import ReserveHandlingMixin
 
 from ...items import (
     BASE_ID,
@@ -64,7 +65,7 @@ RECEIVED_NOTIFICATION_ITEM_IDS = frozenset(
 )
 
 
-class ItemHandlingMixin(ItemTransactionMixin):
+class ItemHandlingMixin(ReserveHandlingMixin, ItemTransactionMixin):
     """Apply received inventory, life, filler, and verified trap items."""
 
     def _queue_item_receipt(self, item_id):
@@ -89,10 +90,12 @@ class ItemHandlingMixin(ItemTransactionMixin):
             diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
             resuming_transaction = self._pending_item_transaction is not None
             missing_license = self._missing_powerup_license(ctx, network_item.item)
-            if not resuming_transaction and item_id_to_name.get(network_item.item) in INVENTORY_RAM_VALUES and any(
-                item_id_to_name.get(queued) in INVENTORY_RAM_VALUES
-                and self._missing_powerup_license(ctx, queued) is None
-                for queued in self._deferred_item_ids
+            if not resuming_transaction and item_id_to_name.get(network_item.item) in INVENTORY_RAM_VALUES and (
+                self.reserve_mode == "manual" or any(
+                    item_id_to_name.get(queued) in INVENTORY_RAM_VALUES
+                    and self._missing_powerup_license(ctx, queued) is None
+                    for queued in self._deferred_item_ids
+                )
             ):
                 self._deferred_item_ids.append(network_item.item)
                 if diagnostics is not None:
@@ -199,7 +202,11 @@ class ItemHandlingMixin(ItemTransactionMixin):
                     if pending_id not in restored_deferred:
                         restored_deferred.append(pending_id)
                 selected = value.get("next_powerup")
-                self._next_powerup_id = selected if selected in restored_deferred else None
+                selected_mode = value.get("next_powerup_mode") or "automatic"
+                self._next_powerup_id = (
+                    selected if selected in restored_deferred and selected_mode == self.reserve_mode else None
+                )
+                self._next_powerup_mode = selected_mode if self._next_powerup_id is not None else None
                 return cursor
             return max(0, int(value)) if value is not None else None
         except (ImportError, OSError, KeyError, TypeError, ValueError):
@@ -222,6 +229,7 @@ class ItemHandlingMixin(ItemTransactionMixin):
                 {
                     "cursor": int(self._items_received_index),
                     "next_powerup": getattr(self, "_next_powerup_id", None),
+                    "next_powerup_mode": getattr(self, "_next_powerup_mode", None),
                     # Only unapplied reserve power-ups survive a restart.
                     # Filler and traps are intentionally never replayed.
                     "deferred_powerups": [
@@ -232,7 +240,8 @@ class ItemHandlingMixin(ItemTransactionMixin):
                 },
                 # persistent_store updates its cache before writing the file.
                 # After an I/O failure, cached equality must not skip the retry.
-                **({"force_store": True} if self._pending_item_transaction is not None else {}),
+                **({"force_store": True} if self._pending_item_transaction is not None
+                   or getattr(self, "_force_item_cursor_store", False) else {}),
             )
             return True
         except (ImportError, OSError, TypeError, ValueError):
@@ -279,6 +288,7 @@ class ItemHandlingMixin(ItemTransactionMixin):
                 diagnostics.event("ITEM", "deferred applied", item_id_to_name.get(item_id, f"id={item_id}"))
             if getattr(self, "_next_powerup_id", None) == item_id:
                 self._next_powerup_id = None
+                self._next_powerup_mode = None
         elif item_id_to_name.get(item_id) not in INVENTORY_RAM_VALUES:
             self._deferred_item_ids.remove(item_id)
             self._deferred_item_ids.append(item_id)
@@ -292,31 +302,25 @@ class ItemHandlingMixin(ItemTransactionMixin):
         if retry is not None and getattr(self, "_retry_non_powerup", False):
             return retry
         selected = getattr(self, "_next_powerup_id", None)
-        if selected in self._deferred_item_ids and self._missing_powerup_license(ctx, selected) is None:
+        if (selected in self._deferred_item_ids and self._reserve_item_allowed(selected)
+                and self._missing_powerup_license(ctx, selected) is None):
             return selected
+        if self.reserve_mode == "manual":
+            return retry
         return next((item_id for item_id in self._deferred_item_ids
                      if self._missing_powerup_license(ctx, item_id) is None), None)
 
     def next_powerup_item(self, ctx: "BizHawkClientContext") -> int | None:
         """Return the pinned power-up, or the oldest usable queued power-up."""
         selected = getattr(self, "_next_powerup_id", None)
-        if selected in self._deferred_item_ids and self._missing_powerup_license(ctx, selected) is None:
+        if (selected in self._deferred_item_ids and self._reserve_item_allowed(selected)
+                and self._missing_powerup_license(ctx, selected) is None):
             return selected
+        if self.reserve_mode == "manual":
+            return None
         return next((item_id for item_id in self._deferred_item_ids
                      if item_id_to_name.get(item_id) in INVENTORY_RAM_VALUES
                      and self._missing_powerup_license(ctx, item_id) is None), None)
-
-    def select_next_powerup(self, ctx: "BizHawkClientContext", item_id: int | None) -> bool:
-        """Pin one existing, licensed reserve power-up, or resume automatic order."""
-        if item_id is not None and (
-            item_id not in self._deferred_item_ids
-            or item_id_to_name.get(item_id) not in INVENTORY_RAM_VALUES
-            or self._missing_powerup_license(ctx, item_id) is not None
-        ):
-            return False
-        self._next_powerup_id = item_id
-        self._persist_item_cursor()
-        return True
 
     def _missing_powerup_license(self, ctx: "BizHawkClientContext", item_id: int) -> str | None:
         """Return the missing license that should defer an inventory power-up."""
@@ -357,6 +361,10 @@ class ItemHandlingMixin(ItemTransactionMixin):
             return True
 
         if item_name in INVENTORY_RAM_VALUES:
+            if not self._reserve_item_allowed(item_id):
+                return False
+            session_identity = self._session_identity
+            selection_revision = self._reserve_selection_revision
             missing_license = self._missing_powerup_license(ctx, item_id)
             if missing_license is not None:
                 self._log_held_powerup(item_id, missing_license)
@@ -373,6 +381,10 @@ class ItemHandlingMixin(ItemTransactionMixin):
             ):
                 return False
             current_inventory = inventory_result[0][0]
+            if (self._session_identity != session_identity
+                    or self._reserve_selection_revision != selection_revision
+                    or not self._reserve_item_allowed(item_id)):
+                return False
             if current_inventory != 0:
                 diagnostic = (item_name, "occupied reserve slot")
                 if self._held_powerup_log_key != diagnostic:

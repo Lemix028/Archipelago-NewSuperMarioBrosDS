@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ....data.powerup_licenses import license_items_for_mode
-from ....data.star_coin_gates import STAR_COIN_GATES
+from ....data.star_coin_gates import STAR_COIN_GATES, star_coin_gate_gap
 from ....items import (
     CASTLE_KEY_NAMES,
     INVENTORY_RAM_VALUES,
@@ -94,6 +94,10 @@ class TrackerSnapshot:
     next_powerup: str | None = None
     selected_powerup: str | None = None
     powerup_locks: tuple[tuple[str, str], ...] = ()
+    reserve_mode: str = "automatic"
+    reserve_delivery_pending: bool = False
+    reserve_action_error: str = ""
+    star_coin_gate_gap: int = 5
 
 
 def _is_server_connected(ctx: Any) -> bool:
@@ -210,6 +214,7 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
         )
 
     rom_handler = getattr(ctx, "client_handler", None)
+    from ...launcher import reserve_mode
     pending_powerup_counts = Counter(
         item_id_to_name[item_id]
         for item_id in getattr(rom_handler, "_deferred_item_ids", ())
@@ -278,7 +283,14 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
         star_coin_lifetime=received_star_coins,
         star_coin_spent=int(getattr(rom_handler, "_star_coin_spent", 0)),
         star_coin_available=int(getattr(rom_handler, "_star_coin_available", received_star_coins)),
+        star_coin_gate_gap=star_coin_gate_gap(slot_data),
         pending_powerups=pending_powerups,
+        reserve_mode=getattr(rom_handler, "reserve_mode", None) or reserve_mode(),
+        reserve_delivery_pending=bool(
+            rom_handler and callable(getattr(rom_handler, "reserve_delivery_pending", None))
+            and rom_handler.reserve_delivery_pending()
+        ),
+        reserve_action_error=getattr(rom_handler, "reserve_action_error", ""),
         next_powerup=item_id_to_name.get(next_powerup_id),
         selected_powerup=item_id_to_name.get(selected_powerup_id),
         powerup_locks=tuple(
@@ -310,6 +322,7 @@ def render_tracker_markup(snapshot: TrackerSnapshot) -> str:
             f"Star Coins: {snapshot.star_coin_available} available | "
             f"{snapshot.star_coin_lifetime} received total | {snapshot.star_coin_spent} spent"
         ),
+        f"Gate gap / purchase price: {snapshot.star_coin_gate_gap} Star Coins",
         "",
         "[size=19sp][b]Check Progress[/b][/size]",
         f"Total: {snapshot.total_progress.checked} / {snapshot.total_progress.total}",
@@ -336,6 +349,7 @@ def render_tracker_markup(snapshot: TrackerSnapshot) -> str:
     lines.extend((
         "",
         "[size=19sp][b]Waiting Power-Ups[/b][/size]",
+        f"Reserve Mode: {snapshot.reserve_mode.title()}",
         f"Queued: {sum(entry.received for entry in snapshot.pending_powerups)}",
     ))
     lines.extend(

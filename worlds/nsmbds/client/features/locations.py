@@ -36,7 +36,6 @@ STAR_COIN_LOCATION_IDS = frozenset(
 
 GATE_PURCHASE_MASK_BITS = (1 << len(STAR_COIN_GATES)) - 1
 GATE_PURCHASE_SPENT_SHIFT = len(STAR_COIN_GATES)
-GATE_PURCHASE_COST = 5
 
 
 class LocationTrackingMixin:
@@ -207,11 +206,11 @@ class LocationTrackingMixin:
         if not identity or identity[0] is None or identity[2] is None:
             return None
         digest = hashlib.sha256(repr(tuple(identity)).encode("utf-8")).hexdigest()
-        return f"nsmbds_gate_purchases_{digest}"
+        return f"nsmbds_gate_purchases_v2_g{self._star_coin_gate_gap}_{digest}"
 
     def _gate_purchase_payload(self) -> int:
         """Encode gate bits plus a monotone unary spent-coin floor."""
-        spent_count = max(0, self._gate_purchase_spent_floor // GATE_PURCHASE_COST)
+        spent_count = max(0, self._gate_purchase_spent_floor // self._star_coin_gate_gap)
         spent_bits = (1 << spent_count) - 1 if spent_count else 0
         return (
             (self._gate_purchase_mask & GATE_PURCHASE_MASK_BITS)
@@ -228,7 +227,7 @@ class LocationTrackingMixin:
         spent_bits = payload >> GATE_PURCHASE_SPENT_SHIFT
         self._gate_purchase_spent_floor = max(
             self._gate_purchase_spent_floor,
-            spent_bits.bit_count() * GATE_PURCHASE_COST,
+            spent_bits.bit_count() * self._star_coin_gate_gap,
         )
 
     def _handle_gate_storage_packet(self, cmd: str, args: dict) -> bool:
@@ -311,7 +310,7 @@ class LocationTrackingMixin:
         self._gate_purchase_spent_floor = max(
             self._gate_purchase_spent_floor,
             sum(
-                gate.star_coin_cost
+                self._star_coin_gate_gap
                 for gate_index, gate in enumerate(STAR_COIN_GATES)
                 if self._gate_purchase_mask & (1 << gate_index)
             ),

@@ -215,6 +215,19 @@ class StarCoinGateMode(Choice):
     default = 0
 
 
+class StarCoinGateGap(Range):
+    """
+    Star Coins between each logical overworld sign tier (1 through 5).
+    Tier n requires n times this many total received Star Coins. Opening a
+    sign also costs this many available Star Coins. Applies to the existing
+    signs, including those leading to side levels, in every gate mode.
+    """
+    display_name = "Star Coin Gate Gap"
+    range_start = 1
+    range_end = 5
+    default = 5
+
+
 class StarCoinTracking(Choice):
     """
     Controls when collected Star Coins become Archipelago location checks.
@@ -611,6 +624,7 @@ class NSMBDSOptions(PerGameCommonOptions):
     # Overworld & Progression Logic
     level_randomization:                  LevelRandomization
     star_coin_gate_mode:                  StarCoinGateMode
+    star_coin_gate_gap:                   StarCoinGateGap
     star_coin_tracking:                   StarCoinTracking
     tower_castle_keys:                    TowerCastleKeys
     license_mini_mushroom:               LicenseMiniMushroom
@@ -662,6 +676,7 @@ NSMBDS_OPTION_GROUPS = [
     OptionGroup("Overworld & Progression", [
         LevelRandomization,
         StarCoinGateMode,
+        StarCoinGateGap,
         StarCoinTracking,
         TowerCastleKeys,
         SecretExitShortcutLogic,

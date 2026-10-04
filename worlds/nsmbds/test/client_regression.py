@@ -86,6 +86,7 @@ class FakeGameManager:
 
 fake_kivy = types.ModuleType("kivy")
 fake_kivy_clock = types.ModuleType("kivy.clock")
+fake_kivy_window = types.ModuleType("kivy.core.window")
 fake_kivy_metrics = types.ModuleType("kivy.metrics")
 fake_kivy_button = types.ModuleType("kivy.uix.button")
 fake_kivy_checkbox = types.ModuleType("kivy.uix.checkbox")
@@ -102,12 +103,14 @@ fake_kivymd_gridlayout = types.ModuleType("kivymd.uix.gridlayout")
 fake_kivymd_label = types.ModuleType("kivymd.uix.label")
 fake_kivymd_progress = types.ModuleType("kivymd.uix.progressindicator")
 fake_kivymd_scrollview = types.ModuleType("kivymd.uix.scrollview")
+fake_kivymd_tooltip = types.ModuleType("kivymd.uix.tooltip")
 fake_kvui = types.ModuleType("kvui")
 fake_kivy_clock.Clock = types.SimpleNamespace(
     schedule_interval=lambda *_args: None,
     schedule_once=lambda *_args: None,
 )
 fake_kivy_metrics.dp = lambda value: value
+fake_kivy_window.Window = types.SimpleNamespace()
 fake_kivy_button.Button = FakeGuiWidget
 fake_kivy_checkbox.CheckBox = FakeGuiWidget
 fake_kivy_progressbar.ProgressBar = FakeGuiWidget
@@ -122,10 +125,12 @@ fake_kivymd_gridlayout.MDGridLayout = FakeGuiWidget
 fake_kivymd_label.MDLabel = FakeGuiWidget
 fake_kivymd_progress.MDLinearProgressIndicator = FakeGuiWidget
 fake_kivymd_scrollview.MDScrollView = FakeGuiWidget
+fake_kivymd_tooltip.MDTooltipPlain = FakeGuiWidget
 fake_kvui.GameManager = FakeGameManager
 sys.modules.update({
     "kivy": fake_kivy,
     "kivy.clock": fake_kivy_clock,
+    "kivy.core.window": fake_kivy_window,
     "kivy.metrics": fake_kivy_metrics,
     "kivy.uix.button": fake_kivy_button,
     "kivy.uix.checkbox": fake_kivy_checkbox,
@@ -142,6 +147,7 @@ sys.modules.update({
     "kivymd.uix.label": fake_kivymd_label,
     "kivymd.uix.progressindicator": fake_kivymd_progress,
     "kivymd.uix.scrollview": fake_kivymd_scrollview,
+    "kivymd.uix.tooltip": fake_kivymd_tooltip,
     "kvui": fake_kvui,
 })
 tracker_view_module = load_module(
@@ -149,6 +155,9 @@ tracker_view_module = load_module(
     os.path.join(NSMBDS_DIR, "client", "ui", "tracker", "view.py"),
 )
 launcher_module = sys.modules["nsmbds.client.launcher"]
+# Isolated clients must never read or change the maintainer's preferences.
+launcher_module.reserve_mode = lambda: "automatic"
+launcher_module.set_reserve_mode = lambda mode: None
 
 
 class FakeContext:
@@ -3162,7 +3171,7 @@ def test_star_coin_gate_tier_mailbox_rejects_old_slot_data() -> None:
     check(
         progressive_mailbox[:8]
         == ram_addresses.AP_STAR_COIN_GATE_TIER_MAGIC
-        + bytes((ram_addresses.AP_STAR_COIN_GATE_TIER_VERSION, 1, 0, 0))
+        + bytes((ram_addresses.AP_STAR_COIN_GATE_TIER_VERSION, 1, 5, 0))
         and progressive_mailbox[8:] == bytes((*range(1, 30), 32, 30, 31)),
         "Progressive mode publishes tiers in native connection order",
     )
@@ -4245,6 +4254,221 @@ async def test_star_coin_tracking_after_lua_reload() -> None:
         check(runtime_mode == 1, "Instant Star Coin tracking is restored after a Lua reload")
     finally:
         fake_bizhawk.send_requests = original_send_requests
+
+
+async def test_manual_reserve_receipt_and_one_copy_delivery() -> None:
+    client = client_module.NSMBDSClient()
+    context = FakeContext()
+    context.client_handler = client
+    client._missing_powerup_license = lambda ctx, item: None
+    mini = client_module.ITEM_TABLE["Mini Mushroom"][0]
+    flower = client_module.ITEM_TABLE["Fire Flower"][0]
+    coins = client_module.ITEM_TABLE["Coin Bundle"][0]
+    context.items_received = [types.SimpleNamespace(item=item) for item in (mini, mini, flower, coins)]
+    ram = {ram_addresses.ADDR_INVENTORY_ITEM: 0, ram_addresses.ADDR_COINS: 10}
+    reads = []
+    original_read, original_write = fake_bizhawk.guarded_read, fake_bizhawk.guarded_write
+
+    async def read(_ctx, requests, guards):
+        reads.extend(requests)
+        return [bytes([ram.get(address, 0)]) for address, _size, _domain in requests]
+
+    async def write(_ctx, requests, guards):
+        if any(ram.get(address, expected[0]) != expected[0] for address, expected, _domain in guards):
+            return False
+        for address, value, _domain in requests:
+            ram[address] = value[0]
+        return True
+
+    fake_bizhawk.guarded_read, fake_bizhawk.guarded_write = read, write
+    try:
+        check(client.set_reserve_mode("manual"), "Manual can be selected without a ROM patch")
+        await client._apply_pending_items(context)
+        check(ram[ram_addresses.ADDR_INVENTORY_ITEM] == 0
+              and client._deferred_item_ids == [mini, mini, flower]
+              and client._items_received_index == 4 and ram[ram_addresses.ADDR_COINS] == 35,
+              "Manual queues the first and subsequent power-ups without starving coin deliveries")
+        count = len(reads)
+        for _ in range(4):
+            await client._apply_pending_items(context)
+        check(len(reads) == count and client.next_powerup_item(context) is None,
+              "Idle Manual has no automatic next power-up and makes no reserve RAM requests")
+        check(client.select_next_powerup(context, mini), "Manual explicitly releases a single copy")
+        ram[ram_addresses.ADDR_INVENTORY_ITEM] = 2
+        await client._apply_pending_items(context)
+        check(client._next_powerup_id == mini and client._deferred_item_ids == [mini, mini, flower]
+              and ram[ram_addresses.ADDR_INVENTORY_ITEM] == 2,
+              "A full pocket preserves the selection and every queued copy")
+        check(client.select_next_powerup(context, None), "An unstarted Manual selection can be cancelled")
+        ram[ram_addresses.ADDR_INVENTORY_ITEM] = 0
+        await client._apply_pending_items(context)
+        check(ram[ram_addresses.ADDR_INVENTORY_ITEM] == 0, "Cancellation leaves an empty pocket empty")
+        client.select_next_powerup(context, mini)
+        await client._apply_pending_items(context)
+        check(ram[ram_addresses.ADDR_INVENTORY_ITEM] == 4 and client._deferred_item_ids == [mini, flower]
+              and client._next_powerup_id is None, "Manual delivers exactly one selected copy")
+        ram[ram_addresses.ADDR_INVENTORY_ITEM] = 0
+        await client._apply_pending_items(context)
+        snapshot = tracker_module.build_tracker_snapshot(context)
+        check(ram[ram_addresses.ADDR_INVENTORY_ITEM] == 0 and snapshot.reserve_mode == "manual"
+              and snapshot.next_powerup is None and snapshot.selected_powerup is None,
+              "Using the sent power-up never releases the remaining copies in Manual")
+        client.select_next_powerup(context, flower)
+        client.set_reserve_mode("automatic")
+        check(client._next_powerup_id is None, "Changing modes clears an unstarted selection")
+        await client._apply_pending_items(context)
+        check(ram[ram_addresses.ADDR_INVENTORY_ITEM] == 4,
+              "Automatic resumes with the oldest remaining usable copy")
+    finally:
+        fake_bizhawk.guarded_read, fake_bizhawk.guarded_write = original_read, original_write
+
+
+async def test_manual_reserve_selection_races_and_pending_delivery() -> None:
+    client = client_module.NSMBDSClient()
+    context = FakeContext()
+    mini = client_module.ITEM_TABLE["Mini Mushroom"][0]
+    client._deferred_item_ids = [mini]
+    client._missing_powerup_license = lambda ctx, item: None
+    client.set_reserve_mode("manual")
+    client.select_next_powerup(context, mini)
+    original_read, original_send = fake_bizhawk.guarded_read, fake_bizhawk.send_requests
+
+    async def cancel_during_read(_ctx, _requests, _guards):
+        check(client.select_next_powerup(context, None), "Selection may be cancelled before a write starts")
+        return [b"\x00"]
+
+    async def unexpected_write(*_args):
+        raise AssertionError("A cancelled selection must not start a transaction")
+
+    fake_bizhawk.guarded_read, fake_bizhawk.send_requests = cancel_during_read, unexpected_write
+    try:
+        await client._retry_one_deferred_item(context)
+        check(client._deferred_item_ids == [mini] and client._pending_item_transaction is None,
+              "Cancelling during a RAM read prevents the write, preserving the copy")
+
+        async def change_mode_during_read(_ctx, _requests, _guards):
+            check(client.set_reserve_mode("manual"), "Mode can change before a write starts")
+            return [b"\x00"]
+
+        client.set_reserve_mode("automatic")
+        fake_bizhawk.guarded_read = change_mode_during_read
+        await client._retry_one_deferred_item(context)
+        check(client._deferred_item_ids == [mini] and client._pending_item_transaction is None,
+              "Switching to Manual during an Automatic RAM read prevents an automatic delivery")
+        client._pending_item_transaction = {"owner": "deferred", "item_id": mini, "request": {"token": "same"}}
+        check(not client.set_reserve_mode("automatic") and not client.select_next_powerup(context, None)
+              and client._pending_item_transaction["request"]["token"] == "same",
+              "An unconfirmed pocket write locks edits and retains its original transaction")
+    finally:
+        fake_bizhawk.guarded_read, fake_bizhawk.send_requests = original_read, original_send
+
+
+def test_manual_reserve_persistence_and_command_validation() -> None:
+    import copy
+    from nsmbds.client.features.reserve import powerup_command, reserve_command
+
+    storage = {}
+    fake_utils = types.ModuleType("Utils")
+    fake_utils.persistent_load = lambda: storage
+    def store(category, key, value, **kwargs):
+        storage.setdefault(category, {})[key] = copy.deepcopy(value)
+    fake_utils.persistent_store = store
+    previous_utils = sys.modules.get("Utils")
+    sys.modules["Utils"] = fake_utils
+    try:
+        mini = client_module.ITEM_TABLE["Mini Mushroom"][0]
+        client = client_module.NSMBDSClient()
+        context = FakeContext()
+        context.client_handler = client
+        client._session_identity = ("manual-reserve-seed", 0, 3)
+        client._items_received_index = 2
+        client._deferred_item_ids = [mini, mini]
+        client._missing_powerup_license = lambda ctx, item: "Mini Mushroom Permit"
+        outputs = []
+        check(reserve_command(context, outputs.append, "manual"), "Reserve command selects the shared mode")
+        check(not powerup_command(context, outputs.append, "Mini Mushroom")
+              and "Mini Mushroom Permit" in outputs[-1], "Commands report the missing permit")
+        client._missing_powerup_license = lambda ctx, item: None
+        check(powerup_command(context, outputs.append, "mini mushroom"), "Commands select full names case-insensitively")
+        restarted = client_module.NSMBDSClient()
+        restarted._reserve_mode = "manual"
+        restarted._session_identity = client._session_identity
+        check(restarted._load_item_cursor() == 2 and restarted._deferred_item_ids == [mini, mini]
+              and restarted._next_powerup_id == mini and restarted._next_powerup_mode == "manual",
+              "A client restart restores the explicitly released Manual copy")
+        automatic = client_module.NSMBDSClient()
+        automatic._session_identity = client._session_identity
+        automatic._load_item_cursor()
+        check(automatic._next_powerup_id is None and automatic._deferred_item_ids == [mini, mini],
+              "A persisted selection from another mode cannot trigger a surprise delivery")
+        key = client._item_cursor_storage_key()
+        storage["nsmbds"][key].pop("next_powerup_mode")
+        restarted._load_item_cursor()
+        check(restarted._next_powerup_id is None, "Legacy Automatic selections are not restored as Manual releases")
+        check(powerup_command(context, outputs.append, "cancel") and client._next_powerup_id is None,
+              "Command cancellation uses the same one-copy API")
+        client._persist_item_cursor = lambda: False
+        check(not client.select_next_powerup(context, mini) and client._next_powerup_id is None,
+              "A persistence failure does not create an unsaved release")
+    finally:
+        if previous_utils is None:
+            sys.modules.pop("Utils", None)
+        else:
+            sys.modules["Utils"] = previous_utils
+
+
+async def test_gate_gap_thresholds_mailbox_and_purchase_accounting() -> None:
+    coin_id = client_module.ITEM_TABLE["Star Coin"][0]
+    gates = client_module.STAR_COIN_GATES
+    for gap in range(1, 6):
+        for mode in range(3):
+            ctx = FakeContext()
+            ctx.slot_data.update({
+                "star_coin_gate_mode": mode, "star_coin_gate_gap": gap,
+                "star_coin_items": True,
+                "vanilla_gate_tiers": complete_gate_tiers(lambda gate: gate.name),
+                "individual_gate_tiers": complete_gate_tiers(lambda gate: gate.permit_item_name),
+            })
+            permits = ([client_module.ITEM_TABLE["Progressive Gate Pass"][0]] * 32 if mode == 1 else
+                       [client_module.ITEM_TABLE[gate.permit_item_name][0] for gate in gates] if mode == 2 else [])
+            for coins in (0, gap - 1, gap, 2 * gap, 31 * gap, 32 * gap):
+                ctx.items_received = [types.SimpleNamespace(item=item) for item in [coin_id] * coins + permits]
+                masks = client_module.NSMBDSClient._star_coin_permit_masks(ctx)
+                for gate in gates:
+                    check(bool(masks[gate.permit_byte_index] & (1 << gate.permit_bit))
+                          == (coins >= gate.progressive_index * gap),
+                          f"Gap {gap}, mode {mode}: threshold and permit agree for {gate.name}")
+            mailbox = client_module.NSMBDSClient._star_coin_gate_tier_mailbox(ctx)
+            check(mailbox[4:8] == bytes((2, mode, gap, 0)), "Version two publishes the seed gap")
+        messages = []
+        async def send(payload):
+            messages.extend(payload)
+        ctx.send_msgs = send
+        ctx.server_seed_name = f"gap-accounting-{gap}"
+        client = client_module.NSMBDSClient()
+        client.on_package(ctx, "Connected", {"team": 0, "slot": 1})
+        check(client._star_coin_gate_gap == gap, "Connection restores the seed's currency units")
+        key = client._gate_purchase_storage_key()
+        check(f"_v2_g{gap}_" in key, "Price versions cannot merge incompatible purchase records")
+        data = bytearray(ram_addresses.LEVEL_AND_SECRET_FLAG_READ_SIZE)
+        await client._detect_and_store_gate_purchases(ctx, bytes(data))
+        for gate in gates[:3]:
+            data[gate.path_address - ram_addresses.ADDR_LEVEL_DATA_BASE] = 0xC0
+        await client._detect_and_store_gate_purchases(ctx, bytes(data))
+        check(client._star_coin_balances(ctx) == (32 * gap, 3 * gap, 29 * gap),
+              "Purchases spend the seed price while lifetime count is preserved")
+        restarted = client_module.NSMBDSClient()
+        restarted._star_coin_gate_gap = gap
+        restarted._merge_gate_purchase_payload(client._gate_purchase_payload())
+        check(restarted._star_coin_balances(ctx) == client._star_coin_balances(ctx),
+              "A restart restores gap units from OR-safe purchase storage")
+        reopened_payload = client._gate_purchase_payload()
+        await client._detect_and_store_gate_purchases(ctx, bytes(len(data)))
+        await client._detect_and_store_gate_purchases(ctx, bytes(data))
+        check(client._gate_purchase_payload() == reopened_payload,
+              "Reopening purchased signs after a savestate does not charge twice")
+        check(all(message["cmd"] == "Set" for message in messages),
+              "Gate purchases remain invisible to location checks")
 
 
 def main() -> None:

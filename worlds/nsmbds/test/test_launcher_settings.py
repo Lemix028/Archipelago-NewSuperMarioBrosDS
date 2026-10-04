@@ -10,6 +10,7 @@ from unittest import TestCase, mock
 
 from settings import BizHawkClientOptions
 from worlds.nsmbds.client import launcher
+from worlds.nsmbds.settings import NSMBDSSettings
 
 
 class FakeSettings:
@@ -24,6 +25,27 @@ class FakeSettings:
 
 
 class TestBizHawkLauncherSettings(TestCase):
+    def test_reserve_mode_defaults_and_saved_manual_preference(self) -> None:
+        settings = FakeSettings()
+        settings.nsmbds_options = NSMBDSSettings()
+        with mock.patch.object(launcher, "_settings", return_value=settings):
+            self.assertEqual(launcher.reserve_mode(), "automatic")
+            launcher.set_reserve_mode("manual")
+            self.assertEqual(launcher.reserve_mode(), "manual")
+            with self.assertRaises(ValueError):
+                launcher.set_reserve_mode("invalid")
+        self.assertEqual(settings.save_count, 1)
+
+    def test_failed_reserve_save_does_not_change_live_preference(self) -> None:
+        settings = FakeSettings()
+        settings.nsmbds_options = NSMBDSSettings()
+        with mock.patch.object(launcher, "_settings", return_value=settings), mock.patch.object(
+            settings, "save", side_effect=OSError("disk full")
+        ):
+            with self.assertRaises(OSError):
+                launcher.set_reserve_mode("manual")
+            self.assertEqual(launcher.reserve_mode(), "automatic")
+
     def test_unset_path_is_read_without_required_file_dialog(self) -> None:
         settings = FakeSettings()
         with mock.patch.object(launcher, "_settings", return_value=settings), mock.patch(

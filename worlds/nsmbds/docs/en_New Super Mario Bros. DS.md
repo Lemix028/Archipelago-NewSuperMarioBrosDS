@@ -87,6 +87,18 @@ tiers require more received Star Coins:
   tiers one after another.
 - **Individual:** collect Star Coins and the matching named Gate Pass for each tier.
 
+**Star Coin Gate Gap** (`star_coin_gate_gap`) sets the spacing from **1 to 5**,
+with **5** as the default. Tier `n` needs `n × gap` total received Star Coins;
+opening a sign costs `gap` available Star Coins. For example, gap 3 gives
+thresholds of 3, 6, 9, …, 96, and each purchase costs 3.
+The option applies to the existing 32 signs, including those leading to side
+levels. Houses without their own sign keep their existing access rules.
+Spending coins never reduces the total used for tier requirements or your goal.
+Gate Pass requirements still apply in Progressive and Individual modes.
+
+Changing this option requires a newly generated seed and ROM. The updated gate
+client requires patch protocol 4; regenerate older player patches before using it.
+
 ### Power-Up Permits
 
 Permits can lock the use of Mushrooms, Fire Flowers, Blue Shells, Mini
@@ -138,12 +150,28 @@ This means level music can play on a world map, and world-map music can play ins
 If your reserve pocket is full, a received Power-Up waits until it can be
 delivered. It is not lost.
 
-The **Power-ups** list at the bottom of the client's Overview shows your
-waiting power-ups. Click **Next** to reserve one copy for the next
-empty pocket, or click the selected power-up again to cancel. After delivery,
-the oldest available power-up is next automatically. Power-ups awaiting a
-Permit stay queued and show their requirement. Your selection and backlog
-are saved for this seed and slot across client restarts.
+The **Item Reserve** at the bottom of the client's Overview shows your waiting
+power-ups. Choose **Automatic** or **Manual** in Settings. This preference is
+saved locally and applies to all your seeds.
+
+**Automatic** (default) fills an empty pocket with the oldest available power-up.
+Click **SET NEXT** to prioritize one copy; **CANCEL** restores the automatic order.
+After that copy is delivered, automatic refilling resumes.
+
+**Manual** keeps received power-ups in the reserve until you click **SEND 1**.
+Each selection sends exactly one copy when the pocket is empty. If the pocket is
+full, the selection waits and can be replaced or cancelled. After delivery,
+another selection is required, even if more copies of the same type are waiting.
+Switching modes cancels an unstarted selection and keeps your reserve stock.
+
+Power-ups awaiting a Permit stay queued. Hover over **LOCKED** to see the missing Permit. Your
+selection and backlog are saved for this seed and slot across client restarts.
+Controls briefly lock while an already started pocket delivery is being
+confirmed. Normal level power-ups and received buffs, Coins, lives, and traps
+still use their usual behavior.
+
+You can also use `/nsmbds_reserve automatic`, `/nsmbds_reserve manual`,
+`/nsmbds_powerup Mini Mushroom`, and `/nsmbds_powerup cancel` in the client.
 
 ## Item placement
 

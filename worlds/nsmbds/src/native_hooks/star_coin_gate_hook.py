@@ -1,6 +1,8 @@
 """Prebuilt native Star-Coin Gate hook metadata."""
 
 from __future__ import annotations
+import runpy
+from pathlib import Path
 
 OVERLAY_ID = 8
 OVERLAY_BASE = 0x020CC2E0
@@ -42,46 +44,23 @@ INDIVIDUAL_TIER_MESSAGE_BASE = 80
 GATE_PRICE = 5
 
 
-def _progressive_tier_message(tier: int) -> str:
-    pass_label = "Gate Pass" if tier == 1 else "Gate Passes"
-    return (
-        f"Requires {tier} Progressive\n"
-        f"{pass_label} and {tier * GATE_PRICE} total\n"
-        "received Star Coins.\n"
-        "Opening costs 5 Star Coins."
-    )
-
-
-TIER_MESSAGES = (
-    *(
-        f"Requires {tier * GATE_PRICE} total received\n"
-        "Star Coins.\n"
-        "Opening costs 5 Star Coins."
-        for tier in range(1, 33)
-    ),
-    *(_progressive_tier_message(tier) for tier in range(1, 33)),
-    *(
-        "Requires this gate's Gate Pass\n"
-        f"and {tier * GATE_PRICE} total received\n"
-        "Star Coins.\n"
-        "Opening costs 5 Star Coins."
-        for tier in range(1, 33)
-    ),
-)
+TIER_MESSAGES = runpy.run_path(
+    Path(__file__).resolve().parents[2] / "data" / "star_coin_gate_messages.py"
+)["gate_tier_messages"](GATE_PRICE)
 
 # star_coin_gate_hook.s
 STAR_COIN_GATE_HOOK_BYTES = bytes.fromhex(
-    "10002de90020a0e1141292e56c019fe5f232d2e50030c0e564319fe5003093e50130c0e50210c0e5"
-    "070053e32000008a4e4f8fe203c0d4e70c0051e11c00002a40019fe5360f07ee00c090e538419fe5"
-    "04005ce13700001a04c0d0e501005ce33400001a05c0d0e502005ce33100008a014c8fe20340d4e7"
-    "014084e0080080e204c0d0e701005ce32a00003a20005ce32800008af4009fe5360f07ee0300d0e7"
-    "01c0a0e31c0110e11000bde80300000a000000ea1000bde8ee02d2e5c896ffea0000a0e3ee02c2e5"
-    "a8008fe203c0d0e701c08ce0b8009fe5360f07ee001090e5b0409fe5040051e11700001a0410d0e5"
-    "010051e31400001a0530d0e5020053e31100008a080080e20cc0d0e701005ce30d00003a20005ce3"
-    "0b00008a0f00a0e3010053e320008002020053e3400080020c0080e0050000ea1000bde80000a0e3"
-    "ee02c2e50f00a0e3000000ea0f00a0e344309fe5002093e540309fe50440a0e30040c3e50010a0e3"
-    "bf7effebb596ffea04040305050503030004080b10151a1d20dc0e02fc8b080228dc0e0241504754"
-    "10dc0e0228dc0e0241504754f4e30e0298e30e020000000000000000000000000110d1e530009fe5"
+    "10002de90020a0e1141292e578019fe5f232d2e50030c0e570319fe5003093e50130c0e50210c0e5"
+    "070053e32300008a514f8fe203c0d4e70c0051e11f00002a4c019fe5360f07ee00c090e544419fe5"
+    "04005ce13a00001a04c0d0e502005ce33700001a05c0d0e502005ce33400008a06c0d0e505005ce3"
+    "3100001a014c8fe20340d4e7014084e0080080e204c0d0e701005ce32a00003a20005ce32800008a"
+    "f4009fe5360f07ee0300d0e701c0a0e31c0110e11000bde80300000a000000ea1000bde8ee02d2e5"
+    "c596ffea0000a0e3ee02c2e5a8008fe203c0d0e701c08ce0b8009fe5360f07ee001090e5b0409fe5"
+    "040051e11700001a0410d0e5020051e31400001a0530d0e5020053e31100008a080080e20cc0d0e7"
+    "01005ce30d00003a20005ce30b00008a0f00a0e3010053e320008002020053e3400080020c0080e0"
+    "050000ea1000bde80000a0e3ee02c2e50f00a0e3000000ea0f00a0e344309fe5002093e540309fe5"
+    "0440a0e30040c3e50010a0e3bc7effebb296ffea04040305050503030004080b10151a1d20dc0e02"
+    "fc8b080228dc0e024150475410dc0e0228dc0e0241504754f4e30e0298e30e020510a0e330009fe5"
     "000090e50030a0e303c290e70c0057e10300000a013083e2050053e3f9ffffba0030e0e3022a8ae2"
     "143282e5187282e5e2a2ffea04e40e0200000000000000000000000000000000c083ff0ab383ffca"
     "6c0884e50010a0e3701884e5bb83ffea"

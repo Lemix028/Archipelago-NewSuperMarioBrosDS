@@ -172,6 +172,7 @@ class TestProcedurePatch(NSMBDSTestBase):
                 [
                     ["apply_bsdiff4", ["native_hooks.bsdiff4"]],
                     ["apply_tokens", ["token_data.bin"]],
+                    ["apply_star_coin_gates", ["nsmbds_patch_config.json"]],
                     ["apply_level_randomization", ["nsmbds_patch_config.json"]],
                     ["apply_music_randomization", ["nsmbds_patch_config.json"]],
                     ["apply_secondary_screen_backgrounds", ["nsmbds_patch_config.json"]],
@@ -188,6 +189,7 @@ class TestProcedurePatch(NSMBDSTestBase):
             self.assertEqual(patch_config["level_randomization"], 0)
             self.assertEqual(len(patch_config["level_mapping"]), 80)
             self.assertEqual(patch_config["options"]["music_randomization"], 0)
+            self.assertEqual(patch_config["options"]["star_coin_gate_gap"], 5)
             self.assertEqual(patch_config["level_music_mapping"], {})
             self.assertEqual(patch_config["world_map_music_mapping"], {})
             self.assertEqual(patch_config["options"]["death_link_grace_percentage"], 0)

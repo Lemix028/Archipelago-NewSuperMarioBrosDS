@@ -36,7 +36,7 @@ from .data.music import (
     validate_music_mapping,
 )
 from .data.powerup_licenses import license_items_for_mode
-from .data.star_coin_gates import STAR_COIN_GATES, TOTAL_STAR_COIN_GATE_COST
+from .data.star_coin_gates import STAR_COIN_GATES, star_coin_gate_gap
 from .items import (
     FILLER_ITEM_WEIGHTS,
     ITEM_TABLE,
@@ -76,7 +76,7 @@ from .options import (
 from .regions import REGION_LIST, build_region_connections, build_region_locations
 from .rom import NSMBDSPatchExtension, NSMBDSProcedurePatch, write_patch_payload
 from .rules import set_completion_rules, set_rules
-from .settings import NSMBDSSettings
+from .settings import NSMBDSSettings, ensure_nsmbds_settings
 
 VANILLA_ROUTE_EVENT_NAMES = ALL_SECRET_EXITS
 
@@ -165,6 +165,9 @@ class NSMBDSWorld(World):
                 for name in NSMBDSOptions.__annotations__
                 if name in slot_data
             }
+            slot_options = dict(slot_options)
+            slot_options.setdefault("star_coin_gate_gap", slot_data.get("star_coin_gate_gap", 5))
+            star_coin_gate_gap(slot_options)
             for name, value in slot_options.items():
                 option = getattr(self.options, name, None)
                 if option is not None:
@@ -251,7 +254,7 @@ class NSMBDSWorld(World):
                 "vanilla_gate_tiers",
             )
 
-        host_settings = get_settings().nsmbds_options
+        host_settings = ensure_nsmbds_settings(get_settings())
         allow_unsafe_value = host_settings.allow_unsafe_nsmbds_options
         if isinstance(allow_unsafe_value, str):
             allow_unsafe = allow_unsafe_value.strip().lower() in {"1", "true", "yes", "on"}
@@ -571,7 +574,7 @@ class NSMBDSWorld(World):
         )
         progression_star_coin_count = min(
             star_coin_count,
-            max(TOTAL_STAR_COIN_GATE_COST, goal_coin_target),
+            max(len(STAR_COIN_GATES) * self.options.star_coin_gate_gap.value, goal_coin_target),
         )
         star_coin_id = ITEM_TABLE["Star Coin"][0]
         pool.extend(
@@ -735,6 +738,7 @@ class NSMBDSWorld(World):
             "advanced_location_item_placement": self.options.advanced_location_item_placement.value,
             "required_star_coins": self.options.required_star_coins.value,
             "star_coin_gate_mode": self.options.star_coin_gate_mode.value,
+            "star_coin_gate_gap": self.options.star_coin_gate_gap.value,
             "star_coin_tracking": self.options.star_coin_tracking.value,
             "tower_castle_keys": bool(self.options.tower_castle_keys.value),
             "license_mini_mushroom": bool(self.options.license_mini_mushroom.value),

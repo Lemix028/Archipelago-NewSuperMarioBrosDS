@@ -175,13 +175,13 @@ AP_STAR_COIN_CURRENCY_MAGIC = b"APSC"
 
 # Seed-specific Star-Coin Gate presentation data consumed by the native gate
 # hook. The mailbox is intentionally versioned and has no legacy layout:
-# magic[4], version, gate mode, reserved[2], then one tier byte for each gate in
-# deterministic STAR_COIN_GATES order. The Overlay 8 mailboxes occupy the
+# magic[4], version, gate mode, seed gap, reserved, then one tier byte for each
+# gate in native world/connection order. The Overlay 8 mailboxes occupy the
 # aligned part of the separately verified zero-filled data cave at system
 # 0x020EDC0D..0x020EDE12, away from the native hook code cave.
 ADDR_AP_STAR_COIN_GATE_TIER_MAILBOX = 0x000EDC28  # system 0x020EDC28
 AP_STAR_COIN_GATE_TIER_MAGIC = b"APGT"
-AP_STAR_COIN_GATE_TIER_VERSION = 1
+AP_STAR_COIN_GATE_TIER_VERSION = 2
 AP_STAR_COIN_GATE_TIER_HEADER_SIZE = 8
 AP_STAR_COIN_GATE_TIER_COUNT = 32
 AP_STAR_COIN_GATE_TIER_MAILBOX_SIZE = (

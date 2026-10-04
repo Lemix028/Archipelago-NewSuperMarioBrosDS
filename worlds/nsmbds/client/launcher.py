@@ -29,6 +29,7 @@ EMULATOR_FEED_POSITIONS = (
     "top_right",
 )
 EMULATOR_FEED_FADE_CHOICES = (0, 5, 10, 20, 30, 60)
+RESERVE_MODES = ("automatic", "manual")
 
 
 @dataclass(frozen=True)
@@ -73,8 +74,11 @@ def configure_launch_from_args(args: Iterable[str]) -> LaunchState:
 
 def _settings():
     from settings import get_settings
+    from ..settings import ensure_nsmbds_settings
 
-    return get_settings()
+    host = get_settings()
+    ensure_nsmbds_settings(host)
+    return host
 
 
 def _nsmbds_value(name: str, default=None):
@@ -265,7 +269,7 @@ def validate_seed_rom(path: Path) -> None:
         raise ValueError(
             "Selected ROM is clean or uses an older patch. Regenerate the seed patch with "
             "the current APWorld, apply it, and cold-boot the new ROM. Reapplying an old "
-            ".apnsmbds file or loading an old savestate does not install the native block hook."
+            ".apnsmbds file or loading an old savestate does not install the current native hooks."
         )
 
 
@@ -311,6 +315,26 @@ def auto_launch_enabled() -> bool:
 
 def set_auto_launch(enabled: bool) -> None:
     _set_nsmbds_value("auto_launch_game", bool(enabled))
+
+
+def reserve_mode() -> str:
+    """Read the local reserve preference before applying received items."""
+    value = str(_nsmbds_value("reserve_mode", "automatic")).strip().lower()
+    return value if value in RESERVE_MODES else "automatic"
+
+
+def set_reserve_mode(mode: str) -> None:
+    if mode not in RESERVE_MODES:
+        raise ValueError(f"Unknown reserve mode: {mode}")
+    settings = _settings()
+    options = settings.nsmbds_options
+    previous = getattr(options, "reserve_mode", "automatic")
+    options.reserve_mode = mode
+    try:
+        settings.save()
+    except Exception:
+        options.reserve_mode = previous
+        raise
 
 
 def emulator_feed_config() -> EmulatorFeedConfig:

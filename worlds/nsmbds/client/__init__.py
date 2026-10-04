@@ -135,6 +135,12 @@ class NSMBDSClient(
 
     def __init__(self) -> None:
         super().__init__()
+        # Core constructs the handler while importing this package, before
+        # NSMBDSWorld registers. Read host preferences only on actual use.
+        self._reserve_mode: str | None = None
+        self.reserve_action_error = ""
+        self._reserve_selection_revision = 0
+        self._next_powerup_mode: str | None = None
         self._observed_locations: set[int] = set()
         self._pending_emulator_feed: deque[tuple[tuple[str, str], ...]] = deque(maxlen=2000)
         self._emulator_feed_flush_lock = asyncio.Lock()
@@ -218,6 +224,7 @@ class NSMBDSClient(
         self._gate_path_open_states: dict[int, bool] = {}
         self._gate_purchase_mask = 0
         self._gate_purchase_spent_floor = 0
+        self._star_coin_gate_gap = 5
         self._gate_storage_sync_pending = False
         self._gate_storage_write_pending = False
         self._last_published_poptracker_view: str | None = None
@@ -630,6 +637,8 @@ class NSMBDSClient(
                     self._pending_item_transaction = None
                     self._deferred_item_ids.clear()
                     self._next_powerup_id = None
+                    self._next_powerup_mode = None
+                    self._reserve_selection_revision += 1
                     self._item_cursor_loaded = True
                     self._item_cursor_needs_initial_sync = False
                     self._persist_item_cursor()
@@ -696,6 +705,8 @@ class NSMBDSClient(
                     # discarded tail no longer belong to this server state.
                     self._deferred_item_ids.clear()
                     self._next_powerup_id = None
+                    self._next_powerup_mode = None
+                    self._reserve_selection_revision += 1
                     self._persist_item_cursor()
                     logger.info(
                         "Rebased the NSMBDS item cursor to %d and discarded %d "
@@ -706,6 +717,9 @@ class NSMBDSClient(
             return
         if cmd != "Connected":
             return
+
+        from ..data.star_coin_gates import star_coin_gate_gap
+        self._star_coin_gate_gap = star_coin_gate_gap(args.get("slot_data") or ctx.slot_data or {})
 
         identity = (
             getattr(ctx, "server_seed_name", None) or getattr(ctx, "seed_name", None),
@@ -775,6 +789,9 @@ class NSMBDSClient(
 
     def _reset_session_state(self) -> None:
         """Clear local progress only after connecting to a different AP session."""
+        self.reserve_action_error = ""
+        self._next_powerup_mode = None
+        self._reserve_selection_revision += 1
         self._logged_unmatched_block_events.clear()
         self._observed_locations.clear()
         self._pending_emulator_feed.clear()
@@ -920,6 +937,18 @@ def main(*args: str) -> None:
     from .transport import NSMBDSBizHawkContext
 
     class NSMBDSCommandProcessor(bizhawk_context.BizHawkClientCommandProcessor):
+        @mark_raw
+        def _cmd_nsmbds_reserve(self, mode: str = "") -> bool:
+            """Show or set reserve handling: /nsmbds_reserve [automatic|manual]"""
+            from .features.reserve import reserve_command
+            return reserve_command(self.ctx, self.output, mode)
+
+        @mark_raw
+        def _cmd_nsmbds_powerup(self, name: str = "") -> bool:
+            """Send one reserve power-up: /nsmbds_powerup <power-up name|cancel>"""
+            from .features.reserve import powerup_command
+            return powerup_command(self.ctx, self.output, name)
+
         @mark_raw
         def _cmd_nsmbds_debug(self, mode: str = "") -> bool:
             """Toggle detailed NSMBDS logging: /nsmbds_debug [on|off]"""

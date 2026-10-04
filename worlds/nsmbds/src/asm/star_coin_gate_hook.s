@@ -5,7 +5,8 @@
 .equ SELECTOR_TRACE,     0x020EDC20
 .equ TIER_MAILBOX,       0x020EDC28
 .equ TIER_MAGIC,         0x54475041
-.equ TIER_VERSION,       1
+.equ TIER_VERSION,       2
+.equ GATE_PRICE,         5  @ Seed patch replaces both price immediates.
 .equ CURRENT_WORLD,      0x02088BFC
 .equ VANILLA_CONTINUE,   0x020D3BA8
 .equ MESSAGE_ROUTINE,    0x020CDC30
@@ -57,6 +58,9 @@ _start:
     ldrb    ip, [r0, #5]
     cmp     ip, #2
     bhi     invalid_tier_data_stacked
+    ldrb    ip, [r0, #6]
+    cmp     ip, #GATE_PRICE
+    bne     invalid_tier_data_stacked
     adr     r4, gate_offsets
     ldrb    r4, [r4, r3]
     add     r4, r4, r1
@@ -93,7 +97,7 @@ missing_permit:
     ldrb    ip, [r0, r3]
     add     ip, ip, r1
 
-    @ Tier mailbox layout: "APGT", version, mode, reserved[2], tiers[32].
+    @ Tier mailbox layout: "APGT", version, mode, seed gap, reserved, tiers[32].
     @ Invalid data is a hard incompatibility and deliberately shows message 15
     @ rather than applying any old one-tier behavior.
     ldr     r0, =TIER_MAILBOX
@@ -157,7 +161,8 @@ gate_offsets:
 .global early_gate_identity
 .type early_gate_identity, %function
 early_gate_identity:
-    ldrb    r1, [r1, #1]
+    @ Actor field 0x268 feeds both the affordability check and coin deduction.
+    mov     r1, #GATE_PRICE
 
     ldr     r0, =GATE_CONNECTIONS
     ldr     r0, [r0]

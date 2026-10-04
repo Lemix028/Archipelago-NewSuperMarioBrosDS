@@ -34,7 +34,7 @@ class TestMiniCastleHook(TestCase):
         )
 
     def test_patch_marker_requires_native_mini_castle_protocol(self) -> None:
-        self.assertEqual(PATCH_PROTOCOL_VERSION, 3)
+        self.assertEqual(PATCH_PROTOCOL_VERSION, 4)
         self.assertEqual(struct.unpack_from("<I", PATCH_MARKER, 8)[0], PATCH_PROTOCOL_VERSION)
 
     def test_hook_replays_return_value_and_fits_overlay_cave(self) -> None:

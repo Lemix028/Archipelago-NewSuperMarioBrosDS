@@ -31,7 +31,7 @@ from ...data.ram_addresses import (
     WORLD_ENABLED_VALUE,
     WORLDMAP_ACTOR_BYTES_PER_WORLD,
 )
-from ...data.star_coin_gates import STAR_COIN_GATES, gate_required_lifetime_coins
+from ...data.star_coin_gates import STAR_COIN_GATES, gate_required_lifetime_coins, star_coin_gate_gap
 
 if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
@@ -96,7 +96,7 @@ class OverworldStateReconcilerMixin:
         tiers = cls._star_coin_gate_tiers(ctx)
         header = (
             AP_STAR_COIN_GATE_TIER_MAGIC
-            + bytes((AP_STAR_COIN_GATE_TIER_VERSION, gate_mode, 0, 0))
+            + bytes((AP_STAR_COIN_GATE_TIER_VERSION, gate_mode, star_coin_gate_gap(ctx.slot_data), 0))
         )
         if len(header) != AP_STAR_COIN_GATE_TIER_HEADER_SIZE:
             raise ValueError("Invalid Star-Coin Gate tier mailbox header size.")
@@ -118,13 +118,14 @@ class OverworldStateReconcilerMixin:
         masks = bytearray(AP_STAR_COIN_GATE_PERMIT_MASK_SIZE)
         gate_mode = int(ctx.slot_data["star_coin_gate_mode"])
         gate_tiers = cls._star_coin_gate_tiers(ctx)
+        gap = star_coin_gate_gap(ctx.slot_data)
         star_coin_id = ITEM_TABLE["Star Coin"][0]
         lifetime_star_coins = sum(
             item.item == star_coin_id for item in ctx.items_received
         )
         if gate_mode == 0:
             for gate, tier in zip(STAR_COIN_GATES, gate_tiers):
-                if lifetime_star_coins >= gate_required_lifetime_coins(gate, tier):
+                if lifetime_star_coins >= gate_required_lifetime_coins(gate, tier, gap):
                     masks[gate.permit_byte_index] |= 1 << gate.permit_bit
         elif gate_mode == 1:
             permit_id = ITEM_TABLE["Progressive Gate Pass"][0]
@@ -133,13 +134,13 @@ class OverworldStateReconcilerMixin:
                 len(STAR_COIN_GATES),
             )
             for gate, tier in zip(STAR_COIN_GATES[:permit_count], gate_tiers):
-                required_coins = gate_required_lifetime_coins(gate, tier)
+                required_coins = gate_required_lifetime_coins(gate, tier, gap)
                 if lifetime_star_coins >= required_coins:
                     masks[gate.permit_byte_index] |= 1 << gate.permit_bit
         else:
             received_ids = {item.item for item in ctx.items_received}
             for gate, tier in zip(STAR_COIN_GATES, gate_tiers):
-                required_coins = gate_required_lifetime_coins(gate, tier)
+                required_coins = gate_required_lifetime_coins(gate, tier, gap)
                 if (
                     ITEM_TABLE[gate.permit_item_name][0] in received_ids
                     and lifetime_star_coins >= required_coins
@@ -164,7 +165,7 @@ class OverworldStateReconcilerMixin:
         spent = 0
         for gate_index, gate in enumerate(STAR_COIN_GATES):
             if self._gate_purchase_mask & (1 << gate_index):
-                spent += gate.star_coin_cost
+                spent += star_coin_gate_gap(ctx.slot_data)
         spent = max(spent, self._gate_purchase_spent_floor)
         return lifetime, spent, max(0, lifetime - spent)
 
@@ -348,7 +349,7 @@ class OverworldStateReconcilerMixin:
 
         # The native hook uses the final authorization masks to gate purchases,
         # then selects the seed-specific requirement text from the versioned tier
-        # mailbox. The original purchase path still checks and spends five Coins.
+        # mailbox. The seed's native purchase path checks and spends the gap.
 
         # Tower 2 completion and, for current key seeds, Bowser's Castle Key
         # jointly own the two final approach-path bits.

@@ -3,6 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
+
+
+DEFAULT_STAR_COIN_GATE_GAP = 5
+
+
+def star_coin_gate_gap(slot_data: Mapping[str, object]) -> int:
+    """Validate a seed's spacing and purchase price; old slot data uses five."""
+    gap = slot_data.get("star_coin_gate_gap", DEFAULT_STAR_COIN_GATE_GAP)
+    if isinstance(gap, bool) or not isinstance(gap, int) or not 1 <= gap <= 5:
+        raise ValueError("Star Coin Gate Gap must be an integer from 1 through 5.")
+    return gap
 
 
 @dataclass(frozen=True)
@@ -56,9 +68,10 @@ class StarCoinGateDefinition:
 def gate_required_lifetime_coins(
     gate: StarCoinGateDefinition,
     tier: int,
+    gap: int = DEFAULT_STAR_COIN_GATE_GAP,
 ) -> int:
     """Return the cumulative lifetime Star-Coin budget for a logical gate tier."""
-    return tier * gate.star_coin_cost
+    return tier * gap
 
 
 def _mapping(

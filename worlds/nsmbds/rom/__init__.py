@@ -19,6 +19,7 @@ from .level_randomization import patch_level_randomization_from_json
 from .music import patch_music_randomization_from_json
 from .palette import patch_player_palettes_from_json
 from .secondary_screen import patch_secondary_screen_backgrounds_from_json
+from .star_coin_gates import patch_star_coin_gates_from_json
 
 if TYPE_CHECKING:
     from .. import NSMBDSWorld
@@ -33,8 +34,11 @@ BASE_ROM_GAME_CODE = BASE_GAME_CODE
 
 def _settings():
     from settings import get_settings
+    from ..settings import ensure_nsmbds_settings
 
-    return get_settings()
+    host = get_settings()
+    ensure_nsmbds_settings(host)
+    return host
 
 
 def _base_rom_setting_path() -> Path | None:
@@ -138,6 +142,10 @@ class NSMBDSPatchExtension(APPatchExtension):
     result_file_ending = ".nds"
 
     @staticmethod
+    def apply_star_coin_gates(caller: APProcedurePatch, rom: bytes, config_file: str) -> bytes:
+        return patch_star_coin_gates_from_json(rom, caller.get_file(config_file))
+
+    @staticmethod
     def apply_level_randomization(
         caller: APProcedurePatch,
         rom: bytes,
@@ -191,6 +199,7 @@ class NSMBDSProcedurePatch(APProcedurePatch, APTokenMixin):
     procedure = [
         ("apply_bsdiff4", ["native_hooks.bsdiff4"]),
         ("apply_tokens", ["token_data.bin"]),
+        ("apply_star_coin_gates", ["nsmbds_patch_config.json"]),
         ("apply_level_randomization", ["nsmbds_patch_config.json"]),
         ("apply_music_randomization", ["nsmbds_patch_config.json"]),
         ("apply_secondary_screen_backgrounds", ["nsmbds_patch_config.json"]),
@@ -236,6 +245,7 @@ def write_patch_payload(world: "NSMBDSWorld", patch: NSMBDSProcedurePatch) -> No
         "license_fire_flower": bool(world.options.license_fire_flower.value),
         "license_touchscreen_pocket": bool(world.options.license_touchscreen_pocket.value),
         "star_coin_gate_mode": world.options.star_coin_gate_mode.value,
+        "star_coin_gate_gap": world.options.star_coin_gate_gap.value,
         "star_coin_tracking": world.options.star_coin_tracking.value,
         "death_link": bool(world.options.death_link.value),
         "death_link_amnesty": world.options.death_link_amnesty.value,
