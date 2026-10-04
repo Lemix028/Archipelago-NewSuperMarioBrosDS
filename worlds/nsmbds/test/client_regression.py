@@ -187,6 +187,7 @@ class FakeContext:
         self.want_slot_data = False
         self.rom_hash = "test-hash"
         self.items_received = []
+        self.server = types.SimpleNamespace(socket=types.SimpleNamespace(open=True, closed=False))
 
 
 def complete_gate_tiers(identifier, leading_gates=()) -> dict[str, int]:
@@ -506,7 +507,9 @@ async def test_individual_powerup_license_sync() -> None:
 
 
 def test_spoiler_free_tracker() -> None:
-    disconnected_snapshot = tracker_module.build_tracker_snapshot(FakeContext())
+    disconnected_context = FakeContext()
+    disconnected_context.server = None
+    disconnected_snapshot = tracker_module.build_tracker_snapshot(disconnected_context)
     check(
         not disconnected_snapshot.seed_loaded,
         "Tracker suppresses seed data until a server connection and slot data are available",
@@ -3843,6 +3846,95 @@ async def test_block_mailbox_send_failure_keeps_event_pending() -> None:
     )
 
 
+async def test_mailbox_disconnect_keeps_event_pending() -> None:
+    writes = []
+    messages = []
+
+    async def fake_guarded_write(_ctx, write_requests, _guards):
+        writes.extend(write_requests)
+        return True
+
+    async def fake_send_msgs(payload):
+        messages.extend(payload)
+
+    fake_bizhawk.guarded_write = fake_guarded_write
+    client = client_module.NSMBDSClient()
+    context = FakeContext()
+    context.send_msgs = fake_send_msgs
+    location_id = locations.LOCATION_TABLE["World 1-1 Blocksanity Block 1"]
+    pending = [("block", location_id, 14)]
+    server = context.server
+
+    context.server = None
+    await client._submit_pending_mailbox_checks(context, pending)
+    context.server = server
+    server.socket.open = False
+    await client._submit_pending_mailbox_checks(context, pending)
+    check(
+        not messages and not writes and not client._sent_locations,
+        "A disconnected server leaves the block mailbox pending",
+    )
+
+    async def disconnect_during_send(_payload):
+        server.socket.open = False
+        server.socket.closed = True
+
+    server.socket.open = True
+    context.send_msgs = disconnect_during_send
+    await client._submit_pending_mailbox_checks(context, pending)
+    check(
+        not writes and not client._sent_locations,
+        "A disconnect during submission leaves the block mailbox pending",
+    )
+
+    server.socket.open = True
+    server.socket.closed = False
+    context.send_msgs = fake_send_msgs
+    await client._submit_pending_mailbox_checks(context, pending)
+    check(
+        len(messages) == 1 and len(writes) == 1 and location_id in client._sent_locations,
+        "The pending block is sent and acknowledged after reconnecting",
+    )
+
+
+async def test_reconnect_resends_unconfirmed_mailbox_checks() -> None:
+    client = client_module.NSMBDSClient()
+    context = FakeContext()
+    client._item_cursor_loaded = True
+    confirmed = locations.LOCATION_TABLE["World 1-1 1-Up Block"]
+    unconfirmed = locations.LOCATION_TABLE["World 1-1 Blocksanity Block 1"]
+    inactive = locations.LOCATION_TABLE["World 1-1 Red Coin Challenge"]
+    client._observed_locations.update((confirmed, unconfirmed, inactive))
+    client._sent_locations.update((confirmed, unconfirmed, inactive))
+    messages = []
+
+    async def fake_send_msgs(payload):
+        messages.extend(payload)
+
+    context.send_msgs = fake_send_msgs
+    client.on_package(context, "Connected", {
+        "checked_locations": [confirmed],
+        "missing_locations": [unconfirmed],
+    })
+    await client._detect_and_send_locations(
+        context, bytes(ram_addresses.LOCATION_DATA_SNAPSHOT_SIZE)
+    )
+    check(
+        messages == [{"cmd": "LocationChecks", "locations": [unconfirmed]}],
+        "Reconnect resends an observed block without replaying confirmed or inactive checks",
+    )
+    await client._detect_and_send_locations(
+        context, bytes(ram_addresses.LOCATION_DATA_SNAPSHOT_SIZE)
+    )
+    check(len(messages) == 1, "The resent block is not submitted on every watcher tick")
+
+    context.server_seed_name = "seed-b"
+    client.on_package(context, "Connected", {
+        "checked_locations": [], "missing_locations": [unconfirmed],
+    })
+    check(not client._observed_locations, "Observed blocks do not carry into another seed")
+
+
 async def test_blocksanity_mailbox() -> None:
     writes: list[tuple] = []
     sent_messages: list[dict] = []
@@ -4125,10 +4217,34 @@ async def test_star_coin_tracking_configuration() -> None:
     check(
         requests == [
             {"type": "NSMBDS_STAR_COIN_TRACKING", "mode": 0},
+            {"type": "NSMBDS_STAR_COIN_TRACKING", "mode": 0},
             {"type": "NSMBDS_STAR_COIN_TRACKING", "mode": 1},
         ],
-        "Star Coin tracking mode is synchronized once and legacy seeds retain instant tracking",
+        "Star Coin tracking mode is refreshed and legacy seeds retain instant tracking",
     )
+
+
+async def test_star_coin_tracking_after_lua_reload() -> None:
+    runtime_mode = 0
+    original_send_requests = fake_bizhawk.send_requests
+
+    async def configure(_ctx, requests):
+        nonlocal runtime_mode
+        runtime_mode = requests[0]["mode"]
+        return [{"type": "NSMBDS_STAR_COIN_TRACKING_RESPONSE", "value": True}]
+
+    fake_bizhawk.send_requests = configure
+    try:
+        client = client_module.NSMBDSClient()
+        context = FakeContext()
+        context.slot_data = {"star_coin_tracking": 1}
+        await client._sync_star_coin_tracking(context)
+        check(runtime_mode == 1, "Instant Star Coin tracking is enabled initially")
+        runtime_mode = 0
+        await client._sync_star_coin_tracking(context)
+        check(runtime_mode == 1, "Instant Star Coin tracking is restored after a Lua reload")
+    finally:
+        fake_bizhawk.send_requests = original_send_requests
 
 
 def main() -> None:

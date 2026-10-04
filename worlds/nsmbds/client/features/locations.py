@@ -45,9 +45,6 @@ class LocationTrackingMixin:
     async def _sync_star_coin_tracking(self, ctx: "BizHawkClientContext") -> None:
         """Tell Lua whether pickups should be committed before level completion."""
         mode = int((ctx.slot_data or {}).get("star_coin_tracking", 1))
-        if mode == getattr(self, "_star_coin_tracking_mode_sent", None):
-            return
-
         from worlds._bizhawk import send_requests
 
         responses = await send_requests(ctx.bizhawk_ctx, [{
@@ -63,6 +60,15 @@ class LocationTrackingMixin:
                 logger.warning("BizHawk rejected the Star Coin tracking mode; retrying next tick.")
             return
         self._star_coin_tracking_mode_sent = mode
+
+    async def _send_location_checks(
+        self, ctx: "BizHawkClientContext", location_ids: list[int]
+    ) -> bool:
+        server = ctx.server
+        if server is None or not server.socket.open or server.socket.closed:
+            return False
+        await ctx.send_msgs([{"cmd": "LocationChecks", "locations": location_ids}])
+        return ctx.server is server and server.socket.open and not server.socket.closed
 
     def _is_location_active(
         self, ctx: "BizHawkClientContext", location_name: str, location_id: int
@@ -146,20 +152,20 @@ class LocationTrackingMixin:
 
         new_checks: list[int] = []
         for location_name, location_id in LOCATION_TABLE.items():
-            # Red Coin Challenges are transient events supplied by the Lua hook.
-            if (
-                location_name not in self._dynamic_location_ram_map
-                and location_name not in BOSS_LOCATION_COMPLETION_SOURCES
-            ):
-                continue
-            if not self._is_location_completed(
-                location_name,
-                level_data,
-                self._dynamic_boss_completion_sources,
-                self._dynamic_secret_exit_requirements,
-                self._dynamic_location_ram_map,
-            ):
-                continue
+            if location_id not in self._observed_locations:
+                if (
+                    location_name not in self._dynamic_location_ram_map
+                    and location_name not in BOSS_LOCATION_COMPLETION_SOURCES
+                ):
+                    continue
+                if not self._is_location_completed(
+                    location_name,
+                    level_data,
+                    self._dynamic_boss_completion_sources,
+                    self._dynamic_secret_exit_requirements,
+                    self._dynamic_location_ram_map,
+                ):
+                    continue
 
             if location_id not in self._observed_locations:
                 diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
@@ -180,7 +186,8 @@ class LocationTrackingMixin:
 
         logger.debug("Submitting %d location(s)", len(new_checks))
         try:
-            await ctx.send_msgs([{"cmd": "LocationChecks", "locations": new_checks}])
+            if not await self._send_location_checks(ctx, new_checks):
+                return
         except Exception:
             logger.exception("Failed to submit %d NSMBDS location check(s).", len(new_checks))
             diagnostics = getattr(ctx, "nsmbds_diagnostics", None)

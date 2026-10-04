@@ -131,7 +131,8 @@ class RedCoinTrackingMixin:
             return
 
         try:
-            await ctx.send_msgs([{"cmd": "LocationChecks", "locations": [location_id]}])
+            if not await self._send_location_checks(ctx, [location_id]):
+                return
         except Exception:
             logger.exception("Failed to submit Red Coin Challenge %r; the Lua event remains pending.", location_name)
             return

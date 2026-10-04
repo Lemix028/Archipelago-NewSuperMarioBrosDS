@@ -367,7 +367,8 @@ class NSMBDSClient(
                     diagnostics.last_detected_location = location_id
                     diagnostics.counters["locations_detected"] += 1
                     diagnostics.event("LOCATION", "detected", names.get(location_id, f"id={location_id}"))
-        await ctx.send_msgs([{"cmd": "LocationChecks", "locations": location_ids}])
+        if not await self._send_location_checks(ctx, location_ids):
+            return
         self._observed_locations.update(location_ids)
         self._sent_locations.update(location_ids)
         if diagnostics is not None:
@@ -764,7 +765,7 @@ class NSMBDSClient(
         else:
             self._active_locations.clear()
             self._active_location_set_known = False
-        self._sent_locations.update(checked_locations)
+        self._sent_locations = checked_locations
         self._observed_locations.update(checked_locations)
         logger.info(
             "Synchronized AP location state: %d checked, %d active.",

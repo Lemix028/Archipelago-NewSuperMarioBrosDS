@@ -158,7 +158,8 @@ class BlockCheckTrackingMixin:
             return
 
         try:
-            await ctx.send_msgs([{"cmd": "LocationChecks", "locations": [location_id]}])
+            if not await self._send_location_checks(ctx, [location_id]):
+                return
         except Exception:
             logger.exception("Failed to submit %s %r; the Lua event remains pending.", category, location_name)
             return
