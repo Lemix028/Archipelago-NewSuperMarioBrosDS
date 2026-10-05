@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ...data.level_randomization import LEVEL_NAME_BY_AREA_ID
 from ...data.ram_addresses import (
     ADDR_AP_STAR_COIN_GATE_HOOK_MARKER,
     ADDR_CURRENT_COURSE_LEVEL,
     ADDR_CURRENT_COURSE_WORLD,
+    ADDR_CURRENT_COURSE_AREA,
     AP_STAR_COIN_GATE_HOOK_MARKER,
     MEMORY_DOMAIN,
 )
@@ -42,13 +44,15 @@ class PopTrackerWorldSyncMixin:
                     len(AP_STAR_COIN_GATE_HOOK_MARKER),
                     MEMORY_DOMAIN,
                 ),
+                (ADDR_CURRENT_COURSE_AREA, 1, MEMORY_DOMAIN),
             ],
         )
         if (
-            len(result) != 3
+            len(result) != 4
             or len(result[0]) != 1
             or len(result[1]) != 1
             or len(result[2]) != len(AP_STAR_COIN_GATE_HOOK_MARKER)
+            or len(result[3]) != 1
         ):
             return
 
@@ -60,9 +64,13 @@ class PopTrackerWorldSyncMixin:
         if bytes(result[2]) == AP_STAR_COIN_GATE_HOOK_MARKER:
             tab_title = f"W{world_number} Overworld"
         else:
-            stage_name = RUNTIME_COURSE_TO_STAGE_NAME.get((world_index, result[1][0]))
+            if (ctx.slot_data or {}).get("level_randomization", 0):
+                stage_name = LEVEL_NAME_BY_AREA_ID.get(result[3][0])
+            else:
+                stage_name = RUNTIME_COURSE_TO_STAGE_NAME.get((world_index, result[1][0]))
             if stage_name is None:
                 return
+            world_number = int(stage_name.split(" ", 2)[1].split("-", 1)[0])
             tab_title = stage_name.replace("World ", "W", 1)
 
         view = f"{world_number}|{tab_title}"

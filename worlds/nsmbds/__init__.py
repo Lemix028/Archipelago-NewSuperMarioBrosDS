@@ -25,9 +25,11 @@ from .data.level_randomization import (
     IDENTITY_LEVEL_MAPPING,
     LEVEL_RANDOMIZATION_OFF,
     LEVEL_RANDOMIZATION_VERSION,
+    SUPPORTED_LEVEL_RANDOMIZATION_VERSIONS,
     generate_level_mapping,
     invert_level_mapping,
     level_mapping_digest,
+    location_map_slot,
     mapped_event_name,
     validate_level_mapping,
 )
@@ -175,7 +177,7 @@ class NSMBDSWorld(World):
 
         level_randomization = int(self.options.level_randomization.value)
         if slot_data and level_randomization != LEVEL_RANDOMIZATION_OFF:
-            if int(slot_data.get("level_randomization_version", -1)) != LEVEL_RANDOMIZATION_VERSION:
+            if int(slot_data.get("level_randomization_version", -1)) not in SUPPORTED_LEVEL_RANDOMIZATION_VERSIONS:
                 raise ValueError(
                     "Incompatible NSMBDS level-randomization slot-data version."
                 )
@@ -768,8 +770,18 @@ class NSMBDSWorld(World):
             slot_data["vanilla_gate_tiers"] = dict(self.vanilla_gate_tiers)
         return slot_data
 
+    def extend_hint_information(self, hint_data: dict[int, dict[int, str]]) -> None:
+        """Show the physical map node beside hinted content checks."""
+        if self.options.level_randomization.value == LEVEL_RANDOMIZATION_OFF:
+            return
+        player_hints = hint_data.setdefault(self.player, {})
+        for location in self.multiworld.get_locations(self.player):
+            slot_name = location_map_slot(self.level_mapping, location.name, content_to_slot=self.content_to_slot)
+            if location.address is not None and slot_name is not None:
+                player_hints[location.address] = f"Map slot: {slot_name}"
+
     def write_spoiler_header(self, spoiler_handle: TextIO) -> None:
-        """Record the authoritative slot-to-course mapping for alpha seeds."""
+        """Record the authoritative slot-to-course mapping for randomized seeds."""
         if self.options.level_randomization.value == LEVEL_RANDOMIZATION_OFF:
             return
         spoiler_handle.write("\nLevel Randomization:\n")

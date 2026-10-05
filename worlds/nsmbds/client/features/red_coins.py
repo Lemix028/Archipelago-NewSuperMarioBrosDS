@@ -157,6 +157,7 @@ class RedCoinTrackingMixin:
             level_mapping,
             world,
             level,
+            area if slot_data and slot_data.get("level_randomization", 0) else None,
         ):
             location_name = resolve_red_coin_location_name(
                 content_world,

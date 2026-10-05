@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import random
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping
@@ -14,7 +15,8 @@ from .level_catalog import FULL_LEVEL_CATALOG
 LEVEL_RANDOMIZATION_OFF = 0
 LEVEL_RANDOMIZATION_GLOBAL = 1
 LEVEL_RANDOMIZATION_WITHIN_WORLD = 2
-LEVEL_RANDOMIZATION_VERSION = 1
+LEVEL_RANDOMIZATION_VERSION = 2
+SUPPORTED_LEVEL_RANDOMIZATION_VERSIONS = frozenset({1, LEVEL_RANDOMIZATION_VERSION})
 
 
 class LevelPool(StrEnum):
@@ -36,6 +38,7 @@ class LevelSlotDefinition:
     area_id: int
     overlay_node_offset: int
     pool: LevelPool
+    supports_hammer_bro: bool
 
 
 CLASSIC_SECRET_EXIT_STAGES = frozenset({
@@ -128,6 +131,12 @@ LEVEL_SLOTS: tuple[LevelSlotDefinition, ...] = tuple(
         area_id,
         overlay_node_offset,
         _pool_for_stage(name),
+        # Sprite 22 (actor 0x45) supplies the native map-Hammer-Bro anchors.
+        # Verified against all playable course sprite blocks in USA A2DE.
+        # Castles have no roaming map actors and are already a separate pool.
+        (int(name.split(" ", 2)[1].split("-", 1)[0]) >= 5
+         and _pool_for_stage(name) not in (LevelPool.CASTLE, LevelPool.FINAL_CASTLE))
+        or name == "World 4-A",
     )
     for name, area_id, overlay_node_offset in _VANILLA_NODE_DATA
 )
@@ -136,6 +145,22 @@ LEVEL_AREA_ID_BY_NAME = {slot.name: slot.area_id for slot in LEVEL_SLOTS}
 LEVEL_NODE_OFFSET_BY_NAME = {slot.name: slot.overlay_node_offset for slot in LEVEL_SLOTS}
 ALL_STORY_LEVELS = tuple(slot.name for slot in LEVEL_SLOTS)
 IDENTITY_LEVEL_MAPPING = {name: name for name in ALL_STORY_LEVELS}
+_LEVEL_CHECK_PREFIX = re.compile("^(" + "|".join(re.escape(name) for name in ALL_STORY_LEVELS) + ") ")
+
+# Global course areas remain content-owned when the map node is shuffled.
+# The intervening cannon courses are outside the story-level permutation.
+_CANNON_AREA_IDS = frozenset({20, 43, 65, 87, 106, 128})
+_AREA_ORDERED_SLOTS = sorted(LEVEL_SLOTS, key=lambda slot: slot.area_id)
+LEVEL_NAME_BY_AREA_ID = {
+    area: slot.name
+    for index, slot in enumerate(_AREA_ORDERED_SLOTS)
+    for area in range(
+        slot.area_id,
+        _AREA_ORDERED_SLOTS[index + 1].area_id
+        if index + 1 < len(_AREA_ORDERED_SLOTS) else 176,
+    )
+    if area not in _CANNON_AREA_IDS
+}
 
 
 def _stable_seed(seed_name: str, player: int, mode: int) -> int:
@@ -177,16 +202,18 @@ def generate_level_mapping(
         (
             slot.pool,
             slot.world_number if mode == LEVEL_RANDOMIZATION_WITHIN_WORLD else 0,
+            slot.supports_hammer_bro,
         )
         for slot in LEVEL_SLOTS
         if slot.pool is not LevelPool.FINAL_CASTLE
     })
-    for pool, world_number in grouping_keys:
+    for pool, world_number, supports_hammer_bro in grouping_keys:
         slots = tuple(
             slot.name
             for slot in LEVEL_SLOTS
             if slot.pool is pool
             and (not world_number or slot.world_number == world_number)
+            and slot.supports_hammer_bro == supports_hammer_bro
         )
         for destination, source in zip(slots, _derangement(slots, rng)):
             mapping[destination] = source
@@ -236,20 +263,9 @@ def level_mapping_digest(mapping: Mapping[str, str]) -> str:
 
 
 def invert_level_mapping(mapping: Mapping[str, str]) -> dict[str, str]:
-    validate_level_mapping(mapping, _infer_mapping_mode(mapping))
+    # Validate the complete bijection before constructing its inverse.
+    validate_level_mapping(mapping, LEVEL_RANDOMIZATION_GLOBAL)
     return {content: slot for slot, content in mapping.items()}
-
-
-def _infer_mapping_mode(mapping: Mapping[str, str]) -> int:
-    """Infer the least restrictive validation mode for a received mapping."""
-    if dict(mapping) == IDENTITY_LEVEL_MAPPING:
-        return LEVEL_RANDOMIZATION_OFF
-    if all(
-        LEVEL_SLOT_BY_NAME[slot].world_number == LEVEL_SLOT_BY_NAME[content].world_number
-        for slot, content in mapping.items()
-    ):
-        return LEVEL_RANDOMIZATION_WITHIN_WORLD
-    return LEVEL_RANDOMIZATION_GLOBAL
 
 
 def mapped_event_name(mapping: Mapping[str, str], vanilla_event_name: str) -> str:
@@ -277,7 +293,7 @@ def mapping_from_slot_data(slot_data: Mapping[str, Any] | None) -> dict[str, str
     mode = int(slot_data.get("level_randomization", LEVEL_RANDOMIZATION_OFF))
     if mode == LEVEL_RANDOMIZATION_OFF:
         return dict(IDENTITY_LEVEL_MAPPING)
-    if int(slot_data.get("level_randomization_version", -1)) != LEVEL_RANDOMIZATION_VERSION:
+    if int(slot_data.get("level_randomization_version", -1)) not in SUPPORTED_LEVEL_RANDOMIZATION_VERSIONS:
         raise ValueError("Unsupported NSMBDS level-randomization slot-data version.")
     raw_mapping = slot_data.get("level_mapping")
     if not isinstance(raw_mapping, Mapping):
@@ -288,6 +304,23 @@ def mapping_from_slot_data(slot_data: Mapping[str, Any] | None) -> dict[str, str
     if digest and digest != level_mapping_digest(mapping):
         raise ValueError("NSMBDS level mapping digest does not match its contents.")
     return mapping
+
+
+def location_map_slot(
+    mapping: Mapping[str, str], location_name: str,
+    *, content_to_slot: Mapping[str, str] | None = None,
+) -> str | None:
+    """Find the physical map slot for a course check, including slot-owned exits."""
+    for slot_name in MINI_CASTLE_SECRET_EXIT_SLOTS:
+        if location_name == f"{slot_name} Secret Exit":
+            return slot_name
+    match = _LEVEL_CHECK_PREFIX.match(location_name)
+    if match is not None:
+        content_name = match[1]
+        if content_to_slot is not None:
+            return content_to_slot.get(content_name)
+        return next((slot for slot, content in mapping.items() if content == content_name), None)
+    return None
 
 
 _catalog_names = {
@@ -321,10 +354,12 @@ __all__ = [
     "IDENTITY_LEVEL_MAPPING",
     "LEVEL_AREA_ID_BY_NAME",
     "LEVEL_NODE_OFFSET_BY_NAME",
+    "LEVEL_NAME_BY_AREA_ID",
     "LEVEL_RANDOMIZATION_GLOBAL",
     "LEVEL_RANDOMIZATION_OFF",
     "LEVEL_RANDOMIZATION_VERSION",
     "LEVEL_RANDOMIZATION_WITHIN_WORLD",
+    "SUPPORTED_LEVEL_RANDOMIZATION_VERSIONS",
     "LEVEL_SLOT_BY_NAME",
     "LEVEL_SLOTS",
     "LevelPool",
@@ -333,6 +368,7 @@ __all__ = [
     "generate_level_mapping",
     "invert_level_mapping",
     "level_mapping_digest",
+    "location_map_slot",
     "mapped_event_name",
     "mapping_from_slot_data",
     "validate_level_mapping",

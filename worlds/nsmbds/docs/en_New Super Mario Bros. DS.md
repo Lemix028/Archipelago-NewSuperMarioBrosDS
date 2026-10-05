@@ -47,6 +47,34 @@ The flying-block room in World 6-2 contains 128 flying-block checks and can also
 These checks never contain progression items for the local player, 
 and at most 16 can be global checks for other players. The remaining checks contain local filler or traps.
 
+### Level Randomization
+
+`level_randomization` can keep the vanilla layout (`off`), shuffle compatible
+courses across worlds (`global`), or shuffle them inside each world
+(`within_world`). Secret-exit courses, Towers, Castles and ordinary courses
+use separate pools. New mappings also preserve roaming Hammer Bro spawn
+anchors, so a map enemy is not sent to a course without its spawn resources.
+Singleton compatibility pools remain fixed; Bowser's Castle always stays fixed.
+
+Check names describe the **original course content**. Map routes, Tower/Castle
+Keys and Star Coin gates describe the **destination map slot**. The Mini-Mario
+Secret Exit checks named `World 2-Castle Secret Exit` and
+`World 5-Castle Secret Exit` are tied to those map slots, even when a different
+boss course is loaded there. Power-Up requirements for other course checks
+travel with their content, including the World 6-2 bonus room.
+
+Enter `/level W3-3` in the client's command field, or paste a full check name:
+`/level World 3-3 Star Coin 3`. The response tells you exactly which map node
+to enter. `/level world 3` lists the courses in physical map world 3;
+`/level all` lists every entrance. Check counts also follow the physical slots.
+Archipelago hints include the map slot and PopTracker navigation follows the
+course currently loaded. These commands run locally and do not expose item
+placements or send messages to other players.
+
+New mappings use version 2. Existing version-1 seeds remain loadable and keep
+their original placement; their older permutations do not receive the new
+Hammer Bro compatibility restrictions. Generate a new seed to use them.
+
 ## Goals
 
 You can choose one of four victory conditions:

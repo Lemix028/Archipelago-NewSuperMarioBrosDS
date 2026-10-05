@@ -938,6 +938,12 @@ def main(*args: str) -> None:
 
     class NSMBDSCommandProcessor(bizhawk_context.BizHawkClientCommandProcessor):
         @mark_raw
+        def _cmd_level(self, query: str = "") -> bool:
+            """Find an entrance: /level <level or check name|all|world 1-8>"""
+            from .features.level_lookup import level_command
+            return level_command(self.ctx, self.output, query)
+
+        @mark_raw
         def _cmd_nsmbds_reserve(self, mode: str = "") -> bool:
             """Show or set reserve handling: /nsmbds_reserve [automatic|manual]"""
             from .features.reserve import reserve_command

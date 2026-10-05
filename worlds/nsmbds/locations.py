@@ -605,8 +605,18 @@ def runtime_content_course_candidates(
     level_mapping: dict[str, str],
     reported_world: int,
     reported_level: int,
+    reported_area: int | None = None,
 ) -> tuple[tuple[int, int], ...]:
     """Return runtime identities in reliable slot-to-content priority order."""
+    if reported_area is not None:
+        from .data.level_randomization import LEVEL_NAME_BY_AREA_ID
+
+        # World/level can describe the slot, the original course, or a hybrid.
+        # Global area IDs unambiguously identify loaded content and its rooms.
+        content_name = LEVEL_NAME_BY_AREA_ID.get(reported_area)
+        if content_name is None:
+            return ()
+        return (STAGE_NAME_TO_RUNTIME_COURSE[content_name],)
     reported = (reported_world, reported_level)
     candidates: list[tuple[int, int]] = []
 

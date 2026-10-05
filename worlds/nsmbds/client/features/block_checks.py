@@ -241,6 +241,7 @@ class BlockCheckTrackingMixin:
             level_mapping,
             world,
             level,
+            area if slot_data and slot_data.get("level_randomization", 0) else None,
         ):
             location_name = cls._resolve_block_location(
                 (content_world, content_level, area, tile_x, tile_y),

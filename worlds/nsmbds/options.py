@@ -177,19 +177,15 @@ class AdvancedLocationItemPlacement(Choice):
 
 class LevelRandomization(Choice):
     """
-    [Alpha preview]
-    This feature is still in development and may cause unexpected behavior.
-    Logic not fully tested; use at your own risk. Hammer Bros and red flying ?
-    blocks can be broken by level randomization.
-
     off:           Keep every course in its vanilla slot. (Default)
-    global:        Shuffle level across all eight worlds.
-    within_world:  Shuffle level only among compatible slots in the same world.
+    global:        Shuffle levels across all eight worlds.
+    within_world:  Shuffle levels in the same world.
 
-    Secret-exit level, Towers, Castles, and normal level are separate pools.
+    Secret-exit levels, Towers, Castles, and normal levels are separate pools.
     World 8-Bowser's Castle always remains fixed.
+
     """
-    display_name = "[Alpha] Level Randomization"
+    display_name = "Level Randomization"
     option_off = 0
     option_global = 1
     option_within_world = 2

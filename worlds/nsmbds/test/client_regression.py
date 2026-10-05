@@ -417,11 +417,11 @@ async def test_poptracker_world_sync_follows_overworld_and_courses() -> None:
     sent_messages: list[dict] = []
     marker = ram_addresses.AP_STAR_COIN_GATE_HOOK_MARKER
     observed_views = iter((
-        [bytes([0]), bytes([1]), marker],
-        [bytes([0]), bytes([1]), marker],
-        [bytes([0]), bytes([1]), bytes(len(marker))],
-        [bytes([6]), bytes([2]), marker],
-        [bytes([0xFF]), bytes([1]), marker],
+        [bytes([0]), bytes([1]), marker, bytes([0])],
+        [bytes([0]), bytes([1]), marker, bytes([0])],
+        [bytes([0]), bytes([1]), bytes(len(marker)), bytes([0])],
+        [bytes([6]), bytes([2]), marker, bytes([0])],
+        [bytes([0xFF]), bytes([1]), marker, bytes([0])],
     ))
 
     async def fake_read(_bizhawk_ctx, read_requests):
@@ -434,6 +434,7 @@ async def test_poptracker_world_sync_follows_overworld_and_courses() -> None:
                     len(marker),
                     ram_addresses.MEMORY_DOMAIN,
                 ),
+                (ram_addresses.ADDR_CURRENT_COURSE_AREA, 1, ram_addresses.MEMORY_DOMAIN),
             ],
             "PopTracker navigation reads the Worldmap marker and runtime course identity",
         )
@@ -475,6 +476,40 @@ async def test_poptracker_world_sync_follows_overworld_and_courses() -> None:
             },
         ],
         "PopTracker navigation publishes each distinct Worldmap or course view once",
+    )
+
+
+async def test_poptracker_randomized_course_uses_content_area() -> None:
+    sent_messages: list[dict] = []
+    marker = ram_addresses.AP_STAR_COIN_GATE_HOOK_MARKER
+    observed_views = iter((
+        [bytes([0]), bytes([1]), bytes(len(marker)), bytes([48])],
+        [bytes([2]), bytes([1]), bytes(len(marker)), bytes([48])],
+        [bytes([0]), bytes([1]), marker, bytes([48])],
+        [bytes([0]), bytes([1]), bytes(len(marker)), bytes([0xFF])],
+        [bytes([0]), bytes([1]), bytes(len(marker)), b""],
+    ))
+
+    async def fake_read(_bizhawk_ctx, _read_requests):
+        return next(observed_views)
+
+    async def fake_send_msgs(messages):
+        sent_messages.extend(messages)
+
+    fake_bizhawk.read = fake_read
+    client = client_module.NSMBDSClient()
+    context = FakeContext()
+    context.slot_data["level_randomization"] = 2
+    context.send_msgs = fake_send_msgs
+
+    for _index in range(5):
+        await client._sync_poptracker_world(context)
+
+    check(
+        [message["operations"][0]["value"] for message in sent_messages]
+        == ["3|W3-3", "1|W1 Overworld"],
+        "Randomized PopTracker views follow content areas in courses and physical worlds on maps; "
+        "hybrid IDs, duplicate views and missing or invalid areas cannot select a different course",
     )
 
 

@@ -6,6 +6,11 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
+from ....data.level_randomization import (
+    ALL_STORY_LEVELS,
+    location_map_slot,
+    mapping_from_slot_data,
+)
 from ....data.powerup_licenses import license_items_for_mode
 from ....data.star_coin_gates import STAR_COIN_GATES, star_coin_gate_gap
 from ....items import (
@@ -64,6 +69,61 @@ class InventoryEntry:
     name: str
     received: int
     required: int = 1
+
+
+@dataclass(frozen=True)
+class LevelDirectoryEntry:
+    content_name: str
+    map_slot: str
+    progress: ProgressCount
+    check_names: tuple[str, ...]
+
+
+def build_level_directory(ctx: Any) -> tuple[LevelDirectoryEntry, ...]:
+    """List every original course and where its checks are played in this seed."""
+    mapping = mapping_from_slot_data(getattr(ctx, "slot_data", None))
+    inverse = {content: slot for slot, content in mapping.items()}
+    checked = set(getattr(ctx, "checked_locations", ()))
+    active = checked | set(getattr(ctx, "missing_locations", ()))
+    slot_ids: dict[str, set[int]] = {slot: set() for slot in ALL_STORY_LEVELS}
+    slot_checks: dict[str, list[str]] = {slot: [] for slot in ALL_STORY_LEVELS}
+    for name, location_id in LOCATION_TABLE.items():
+        if location_id not in active:
+            continue
+        slot = location_map_slot(mapping, name, content_to_slot=inverse)
+        if slot is not None:
+            slot_ids[slot].add(location_id)
+            slot_checks[slot].append(name)
+    return tuple(
+        LevelDirectoryEntry(
+            content, inverse[content], _progress_for_ids(slot_ids[inverse[content]], checked),
+            tuple(slot_checks[inverse[content]]),
+        )
+        for content in ALL_STORY_LEVELS
+    )
+
+
+def filter_level_directory(
+    entries: tuple[LevelDirectoryEntry, ...], query: str, world_number: int = 0,
+) -> tuple[LevelDirectoryEntry, ...]:
+    """Accept full check names, World 3-3, W3-3 and either side of the mapping."""
+    def normalize(value: str) -> str:
+        return "".join(value.casefold().replace("world", "w").split())
+
+    search = normalize(query)
+    matches = tuple(
+        entry for entry in entries
+        if (not world_number or entry.map_slot.startswith(f"World {world_number}-"))
+        and (
+            not search or any(search in normalize(name) for name in (
+                entry.content_name, entry.map_slot, *entry.check_names,
+            ))
+        )
+    )
+    return tuple(sorted(matches, key=lambda entry: (
+        bool(search) and search not in normalize(entry.content_name)
+        and not any(search in normalize(name) for name in entry.check_names)
+    )))
 
 
 @dataclass(frozen=True)
@@ -151,19 +211,22 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
     checked = set(getattr(ctx, "checked_locations", ())) & known_location_ids
     missing = set(getattr(ctx, "missing_locations", ())) & known_location_ids
     active = checked | missing
+    slot_data = getattr(ctx, "slot_data", None) or {}
+    mapping = mapping_from_slot_data(slot_data)
+    inverse = {content: slot for slot, content in mapping.items()}
 
     id_to_name = {location_id: name for name, location_id in LOCATION_TABLE.items()}
     world_ids: dict[str, set[int]] = {f"World {world}": set() for world in range(1, 9)}
     category_ids: dict[str, set[int]] = {}
     for location_id in active:
         name = id_to_name[location_id]
-        world_name = name.split("-", 1)[0].split(" ", 2)[:2]
+        physical_name = location_map_slot(mapping, name, content_to_slot=inverse) or name
+        world_name = physical_name.split("-", 1)[0].split(" ", 2)[:2]
         world_label = " ".join(world_name)
         if world_label in world_ids:
             world_ids[world_label].add(location_id)
         category_ids.setdefault(_location_category(name, location_id), set()).add(location_id)
 
-    slot_data = getattr(ctx, "slot_data", None) or {}
     received = Counter(item.item for item in getattr(ctx, "items_received", ()))
     received_star_coins = received[ITEM_TABLE["Star Coin"][0]]
     inventory: list[tuple[str, tuple[InventoryEntry, ...]]] = [
@@ -243,6 +306,7 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
         "Star Coins",
         "Red Coin Challenges",
         "1-Up Blocks",
+        "Blocksanity",
         "Secret Exits",
         "Toad Houses",
         "Map Rewards",

@@ -1,4 +1,4 @@
-"""ROM patching for the alpha overworld level randomizer."""
+"""ROM patching for the overworld level randomizer."""
 
 from __future__ import annotations
 

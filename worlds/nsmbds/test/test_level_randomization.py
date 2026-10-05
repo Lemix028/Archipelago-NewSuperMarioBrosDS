@@ -1,4 +1,4 @@
-"""Regression coverage for alpha level randomization."""
+"""Regression coverage for level randomization and physical check navigation."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from ..data.level_randomization import (
     FINAL_CASTLE_STAGE,
     IDENTITY_LEVEL_MAPPING,
     LEVEL_AREA_ID_BY_NAME,
+    LEVEL_NAME_BY_AREA_ID,
     LEVEL_NODE_OFFSET_BY_NAME,
     LEVEL_RANDOMIZATION_GLOBAL,
     LEVEL_RANDOMIZATION_VERSION,
@@ -26,6 +27,9 @@ from ..data.level_randomization import (
     LEVEL_SLOT_BY_NAME,
     LevelPool,
     generate_level_mapping,
+    invert_level_mapping,
+    location_map_slot,
+    mapping_from_slot_data,
     level_mapping_digest,
     validate_level_mapping,
 )
@@ -34,6 +38,11 @@ from ..locations import (
     ACTIVE_STAGE_BY_NAME,
     LOCATION_TABLE,
     RUNTIME_BLOCK_TO_BLOCKSANITY_LOCATION_NAME,
+    RUNTIME_BLOCK_TO_ONE_UP_LOCATION_NAME,
+    RUNTIME_MOVING_BLOCK_TO_BLOCKSANITY_LOCATION_NAME,
+    RUNTIME_MOVING_BLOCK_TO_ONE_UP_LOCATION_NAME,
+    RED_COIN_CHALLENGE_NAMES_BY_STAGE,
+    STAGE_NAME_TO_RUNTIME_COURSE,
     build_boss_location_completion_sources,
     build_mapped_location_ram_map,
     build_secret_exit_ram_requirements,
@@ -116,6 +125,112 @@ class TestUniversalTrackerDerivedState(TestCase):
 
 class TestLevelMapping(TestCase):
 
+    @staticmethod
+    def _slot_data(mapping, mode=LEVEL_RANDOMIZATION_GLOBAL):
+        return {
+            "level_randomization": mode,
+            "level_randomization_version": LEVEL_RANDOMIZATION_VERSION,
+            "level_mapping": mapping,
+            "level_mapping_digest": level_mapping_digest(mapping),
+        }
+
+    def test_area_catalog_covers_every_story_room_and_excludes_cannons(self) -> None:
+        self.assertEqual(set(LEVEL_NAME_BY_AREA_ID), set(range(176)) - {20, 43, 65, 87, 106, 128})
+        for stage, area in LEVEL_AREA_ID_BY_NAME.items():
+            self.assertEqual(LEVEL_NAME_BY_AREA_ID[area], stage)
+        for runtime_key, name in {
+            **RUNTIME_BLOCK_TO_BLOCKSANITY_LOCATION_NAME,
+            **RUNTIME_BLOCK_TO_ONE_UP_LOCATION_NAME,
+            **RUNTIME_MOVING_BLOCK_TO_BLOCKSANITY_LOCATION_NAME,
+            **RUNTIME_MOVING_BLOCK_TO_ONE_UP_LOCATION_NAME,
+        }.items():
+            self.assertTrue(name.startswith(LEVEL_NAME_BY_AREA_ID[runtime_key[2]] + " "), name)
+
+    def test_invalid_mapping_fails_with_value_error_before_inversion(self) -> None:
+        for mapping in ({"unknown": "unknown"}, {**IDENTITY_LEVEL_MAPPING, "World 1-1": "unknown"}):
+            with self.assertRaises(ValueError):
+                invert_level_mapping(mapping)
+
+    def test_received_mapping_rejects_missing_version_digest_and_non_bijection(self) -> None:
+        data = self._slot_data(generate_level_mapping("corruption", 1, LEVEL_RANDOMIZATION_GLOBAL))
+        for field, value in (
+            ("level_randomization_version", -1), ("level_mapping_digest", "wrong"),
+            ("level_mapping", None), ("level_randomization", 999),
+            ("level_mapping", {**IDENTITY_LEVEL_MAPPING, "World 1-1": "World 1-2"}),
+        ):
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                mapping_from_slot_data({**data, field: value})
+
+    def test_every_shuffled_block_and_one_up_uses_loaded_area(self) -> None:
+        from ..data.ram_addresses import AP_EVENT_TYPE_MOVING_BLOCK_OPEN
+
+        catalogs = (
+            (RUNTIME_BLOCK_TO_BLOCKSANITY_LOCATION_NAME, AP_EVENT_TYPE_BLOCK_BUMP),
+            (RUNTIME_BLOCK_TO_ONE_UP_LOCATION_NAME, AP_EVENT_TYPE_BLOCK_BUMP),
+            (RUNTIME_MOVING_BLOCK_TO_BLOCKSANITY_LOCATION_NAME, AP_EVENT_TYPE_MOVING_BLOCK_OPEN),
+            (RUNTIME_MOVING_BLOCK_TO_ONE_UP_LOCATION_NAME, AP_EVENT_TYPE_MOVING_BLOCK_OPEN),
+        )
+        for mode in (LEVEL_RANDOMIZATION_GLOBAL, LEVEL_RANDOMIZATION_WITHIN_WORLD):
+            for seed in ("audit-1", "audit-2", "audit-3"):
+                mapping = generate_level_mapping(seed, 1, mode)
+                inverse = invert_level_mapping(mapping)
+                data = self._slot_data(mapping, mode)
+                for catalog, event in catalogs:
+                    for key, expected in catalog.items():
+                        content = LEVEL_NAME_BY_AREA_ID[key[2]]
+                        slot_world, slot_level = STAGE_NAME_TO_RUNTIME_COURSE[inverse[content]]
+                        # Cover slot IDs, original IDs, and hybrid world/level IDs.
+                        for world, level in ((slot_world, slot_level), key[:2], (slot_world, key[1])):
+                            self.assertEqual(BlockCheckTrackingMixin._resolve_seed_block_location(
+                                data, (world, level, *key[2:]), event,
+                            ), expected, (seed, mode, key, expected))
+
+    def test_every_shuffled_red_coin_ring_uses_loaded_area(self) -> None:
+        for mode in (LEVEL_RANDOMIZATION_GLOBAL, LEVEL_RANDOMIZATION_WITHIN_WORLD):
+            mapping = generate_level_mapping("rings-audit", 1, mode)
+            data = self._slot_data(mapping, mode)
+            inverse = invert_level_mapping(mapping)
+            for content, names in RED_COIN_CHALLENGE_NAMES_BY_STAGE.items():
+                content_world, content_level = STAGE_NAME_TO_RUNTIME_COURSE[content]
+                slot_world, slot_level = STAGE_NAME_TO_RUNTIME_COURSE[inverse[content]]
+                area = 45 if content == "World 3-1" else LEVEL_AREA_ID_BY_NAME[content]
+                for index, expected in enumerate(names, 1):
+                    x = 219 if index == 2 else 41
+                    for world, level in ((slot_world, slot_level), (content_world, content_level), (slot_world, content_level)):
+                        self.assertEqual(RedCoinTrackingMixin._resolve_seed_red_coin_location(
+                            data, world, level, area, x, index,
+                        ), expected, (mode, content, world, level))
+            for area in (20, 43, 65, 87, 106, 128, 255):
+                self.assertIsNone(RedCoinTrackingMixin._resolve_seed_red_coin_location(
+                    data, 0, 1, area, 0, 1,
+                ))
+
+    def test_directory_and_world_progress_use_physical_slots(self) -> None:
+        from ..client.ui.tracker.state import build_level_directory, build_tracker_snapshot, filter_level_directory
+
+        mapping = dict(IDENTITY_LEVEL_MAPPING)
+        mapping["World 3-3"], mapping["World 1-1"] = "World 1-1", "World 3-3"
+        mapping["World 2-Castle"], mapping["World 3-Castle"] = "World 3-Castle", "World 2-Castle"
+        context = SimpleNamespace(
+            slot_data=self._slot_data(mapping),
+            checked_locations={LOCATION_TABLE["World 3-3 Star Coin 3"]},
+            missing_locations={LOCATION_TABLE["World 2-Castle Secret Exit"]},
+            items_received=[],
+        )
+        entries = build_level_directory(context)
+        for query in ("W3-3", "World 3-3 Star Coin 3", "world 3-3"):
+            found = filter_level_directory(entries, query)
+            self.assertEqual(len(found), 1 if "Star Coin" in query else 2)
+            self.assertEqual(found[0].map_slot, "World 1-1")
+        mini = filter_level_directory(entries, "World 2-Castle Secret Exit")
+        self.assertEqual(len(mini), 1)
+        self.assertEqual(mini[0].map_slot, "World 2-Castle")
+        self.assertEqual(mini[0].content_name, "World 3-Castle")
+        self.assertNotIn("World 3-3", [entry.content_name for entry in filter_level_directory(entries, "W3-3", 3)])
+        self.assertEqual(dict(build_tracker_snapshot(context).world_progress)["World 1"].checked, 1)
+        self.assertEqual(location_map_slot(mapping, "World 2-Castle Star Coin 3"), "World 3-Castle")
+        self.assertEqual(location_map_slot(mapping, "World 2-Castle Secret Exit"), "World 2-Castle")
+
     def test_global_mapping_is_stable_bijective_and_pool_safe(self) -> None:
         mapping = generate_level_mapping("mapping-test", 2, LEVEL_RANDOMIZATION_GLOBAL)
         self.assertEqual(
@@ -133,6 +248,22 @@ class TestLevelMapping(TestCase):
             slot == FINAL_CASTLE_STAGE or slot != content
             for slot, content in mapping.items()
         ))
+
+    def test_new_mappings_preserve_roaming_actor_spawn_support(self) -> None:
+        for mode in (LEVEL_RANDOMIZATION_GLOBAL, LEVEL_RANDOMIZATION_WITHIN_WORLD):
+            for seed in range(100):
+                mapping = generate_level_mapping(str(seed), 1, mode)
+                self.assertTrue(all(
+                    LEVEL_SLOT_BY_NAME[slot].supports_hammer_bro
+                    == LEVEL_SLOT_BY_NAME[content].supports_hammer_bro
+                    for slot, content in mapping.items()
+                ), (seed, mode))
+
+    def test_legacy_mapping_version_remains_loadable(self) -> None:
+        mapping = dict(IDENTITY_LEVEL_MAPPING)
+        mapping["World 1-1"], mapping["World 8-3"] = "World 8-3", "World 1-1"
+        data = {**self._slot_data(mapping), "level_randomization_version": 1}
+        self.assertEqual(mapping_from_slot_data(data), mapping)
 
     def test_within_world_mapping_never_crosses_worlds(self) -> None:
         mapping = generate_level_mapping(
@@ -328,12 +459,70 @@ class TestGlobalLevelRandomizationGeneration(NSMBDSTestBase):
         self.world.generate_early()
         self.assertEqual(self.world.level_mapping, original)
 
+    def test_hints_locate_every_course_check_and_mini_exit(self) -> None:
+        hints = {}
+        self.world.extend_hint_information(hints)
+        for location in self.multiworld.get_locations(self.player):
+            if location.address is None:
+                continue
+            slot = location_map_slot(self.world.level_mapping, location.name)
+            if slot is not None:
+                self.assertEqual(hints[self.player][location.address], f"Map slot: {slot}")
+
 
 class TestWithinWorldLevelRandomizationGeneration(NSMBDSTestBase):
     options = {
         "level_randomization": "within_world",
         "secret_exit_checks": True,
     }
+
+
+class TestRandomizedGenerationMatrix(TestCase):
+    def test_goals_gates_routes_keys_and_check_categories_fill_and_remain_reachable(self) -> None:
+        from BaseClasses import CollectionState
+        from Fill import distribute_items_restrictive
+        from .. import NSMBDSWorld
+
+        for mode in ("global", "within_world"):
+            for goal in range(4):
+                for gate in range(3):
+                    profile = goal * 3 + gate
+                    with self.subTest(mode=mode, goal=goal, gate=gate):
+                        options = {
+                            "level_randomization": mode,
+                            "goal": goal,
+                            "required_star_coins": (30, 80, 160, 240)[goal],
+                            "star_coin_gate_mode": gate,
+                            "star_coin_gate_gap": (1, 3, 5)[gate],
+                            "tower_castle_keys": bool(profile % 2),
+                            "secret_exit_checks": bool(profile % 2),
+                            "secret_exit_shortcut_logic": bool(profile & 1),
+                            "secret_exit_world_unlock_logic": bool(profile & 2),
+                            "cannon_route_logic": bool(profile & 4),
+                            "toad_house_checks": bool(profile % 2),
+                            "red_coin_checks": bool(profile % 2),
+                            "one_up_block_checks": bool(profile % 2),
+                            "blocksanity": profile % 3 == 0,
+                            "world_6_2_bonus_area": bool(profile % 2),
+                            "blocksanity_global_check_percentage": (0, 30, 100)[gate],
+                            "blocksanity_item_placement": gate,
+                            "license_mini_mushroom": bool(profile % 2),
+                            "license_blue_shell": bool(profile % 2),
+                        }
+                        multiworld = setup_multiworld(NSMBDSWorld, seed=8400 + profile, options=options)
+                        distribute_items_restrictive(multiworld)
+                        call_all(multiworld, "post_fill")
+                        call_all(multiworld, "finalize_multiworld")
+                        state = CollectionState(multiworld)
+                        remaining = set(multiworld.get_locations(1))
+                        while remaining:
+                            sphere = {location for location in remaining if location.can_reach(state)}
+                            self.assertTrue(sphere, f"Unreachable: {sorted(location.name for location in remaining)}")
+                            remaining -= sphere
+                            for location in sphere:
+                                if location.item:
+                                    state.collect(location.item, True, location)
+                        self.assertTrue(multiworld.has_beaten_game(state, 1))
 
 
 class TestRandomizedRouteRequirements(NSMBDSTestBase):
@@ -376,6 +565,39 @@ class TestRandomizedRouteRequirements(NSMBDSTestBase):
         region = self.multiworld.get_region("World 6-2 Bonus Area", self.player)
         self.assertEqual([entrance.parent_region.name for entrance in region.entrances],
                          ["World 6-2"])
+
+
+class TestMiniExitInTowerSlot(NSMBDSTestBase):
+    options = {
+        "level_randomization": "global",
+        "secret_exit_checks": True,
+        "secret_exit_shortcut_logic": True,
+        "tower_castle_keys": False,
+        "license_blue_shell": True,
+        "license_mini_mushroom": True,
+    }
+
+    def setUp(self) -> None:
+        mapping = dict(IDENTITY_LEVEL_MAPPING)
+        mapping["World 1-Tower"], mapping["World 2-4"] = "World 2-4", "World 1-Tower"
+        with patch("worlds.nsmbds.generate_level_mapping", return_value=mapping):
+            super().setUp()
+
+    def test_tower_slot_requires_mini_for_loaded_secret_exit(self) -> None:
+        self.collect_all_but("Mini Mushroom Permit")
+        entrance = self.multiworld.get_entrance("World 1 -> World 1-Tower", self.player)
+        self.assertEqual(entrance.connected_region.name, "World 2-4")
+        self.assertTrue(self.can_reach_location("World 2-4 Goal"))
+        self.assertFalse(self.can_reach_location("World 2-4 Secret Exit"))
+        self.collect_by_name("Mini Mushroom Permit")
+        self.assertTrue(self.can_reach_location("World 2-4 Secret Exit"))
+
+    def test_tower_slot_does_not_keep_original_blue_shell_requirement(self) -> None:
+        self.collect_all_but("Blue Shell Permit")
+        self.assertTrue(self.can_reach_location("World 2-4 Secret Exit"))
+        self.assertFalse(self.can_reach_location("World 1-Tower Secret Exit"))
+        self.collect_by_name("Blue Shell Permit")
+        self.assertTrue(self.can_reach_location("World 1-Tower Secret Exit"))
 
 
 class TestRandomizedHiddenExitRequirements(TestRandomizedRouteRequirements):
