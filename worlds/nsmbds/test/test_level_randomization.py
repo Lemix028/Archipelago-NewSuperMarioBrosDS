@@ -493,7 +493,7 @@ class TestRandomizedGenerationMatrix(TestCase):
                             "goal": goal,
                             "required_star_coins": (30, 80, 160, 240)[goal],
                             "star_coin_gate_mode": gate,
-                            "star_coin_gate_gap": (1, 3, 5)[gate],
+                            "star_coin_gate_gap": (3, 4, 5)[gate],
                             "tower_castle_keys": bool(profile % 2),
                             "secret_exit_checks": bool(profile % 2),
                             "secret_exit_shortcut_logic": bool(profile & 1),

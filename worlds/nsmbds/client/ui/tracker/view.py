@@ -242,9 +242,6 @@ class NSMBDSTrackerPanel(MDScrollView):
                 f"    {snapshot.star_coin_spent} spent    "
                 f"[color={GREY}]{snapshot.star_coin_lifetime} received total[/color]"
             ))
-            self.content.add_widget(_compact_label(
-                f"[color={GREY}]Gate gap / purchase price: {snapshot.star_coin_gate_gap} Star Coins[/color]"
-            ))
 
         # Keep the long inventory alongside progress instead of below it.
         body = MDBoxLayout(orientation="horizontal", adaptive_height=True, spacing=dp(18))

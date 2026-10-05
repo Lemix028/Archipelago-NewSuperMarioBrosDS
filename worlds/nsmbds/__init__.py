@@ -173,7 +173,9 @@ class NSMBDSWorld(World):
             for name, value in slot_options.items():
                 option = getattr(self.options, name, None)
                 if option is not None:
-                    setattr(self.options, name, option.from_any(value))
+                    restored = (option.from_slot_data(value) if name == "star_coin_gate_gap"
+                                else option.from_any(value))
+                    setattr(self.options, name, restored)
 
         level_randomization = int(self.options.level_randomization.value)
         if slot_data and level_randomization != LEVEL_RANDOMIZATION_OFF:

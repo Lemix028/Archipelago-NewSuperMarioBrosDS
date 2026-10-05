@@ -66,15 +66,15 @@ class TestProgressiveGeneration(NSMBDSTestBase):
 
 
 class TestMinimumVanillaGapGeneration(NSMBDSTestBase):
-    options = {"star_coin_gate_gap": 1, "star_coin_gate_mode": "vanilla", "toad_house_checks": False}
+    options = {"star_coin_gate_gap": 3, "star_coin_gate_mode": "vanilla", "toad_house_checks": False}
 
 
 class TestMinimumProgressiveGapGeneration(NSMBDSTestBase):
-    options = {"star_coin_gate_gap": 1, "star_coin_gate_mode": "progressive"}
+    options = {"star_coin_gate_gap": 3, "star_coin_gate_mode": "progressive"}
 
 
 class TestMinimumIndividualGapGeneration(NSMBDSTestBase):
-    options = {"star_coin_gate_gap": 1, "star_coin_gate_mode": "individual"}
+    options = {"star_coin_gate_gap": 3, "star_coin_gate_mode": "individual"}
 
 
 class TestLicensesDisabledGeneration(NSMBDSTestBase):

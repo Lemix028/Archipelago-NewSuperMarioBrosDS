@@ -213,15 +213,25 @@ class StarCoinGateMode(Choice):
 
 class StarCoinGateGap(Range):
     """
-    Star Coins between each logical overworld sign tier (1 through 5).
+    Star Coins between each logical overworld sign tier (3 through 5).
     Tier n requires n times this many total received Star Coins. Opening a
     sign also costs this many available Star Coins. Applies to the existing
     signs, including those leading to side levels, in every gate mode.
     """
     display_name = "Star Coin Gate Gap"
-    range_start = 1
+    range_start = 3
     range_end = 5
     default = 5
+
+    @classmethod
+    def from_slot_data(cls, value: object) -> "StarCoinGateGap":
+        """Preserve prices of existing seeds, including former gaps one and two."""
+        from .data.star_coin_gates import star_coin_gate_gap
+
+        gap = star_coin_gate_gap({"star_coin_gate_gap": value})
+        option = cls(cls.default)
+        option.value = gap
+        return option
 
 
 class StarCoinTracking(Choice):

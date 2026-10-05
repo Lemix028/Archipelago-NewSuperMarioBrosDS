@@ -19,22 +19,27 @@ from ..rom.star_coin_gates import patch_gate_overlay, patch_gate_messages
 
 
 class TestStarCoinGateGap(TestCase):
-    def test_options_and_slot_values_accept_only_one_through_five(self):
+    def test_new_options_accept_three_through_five_and_saved_prices_accept_legacy_gaps(self):
         self.assertEqual(StarCoinGateGap.default, 5)
         self.assertEqual(star_coin_gate_gap({}), 5)
-        for gap in range(1, 6):
+        for gap in range(3, 6):
             self.assertEqual(StarCoinGateGap.from_any(gap).value, gap)
+        for gap in range(1, 6):
+            self.assertEqual(star_coin_gate_gap({"star_coin_gate_gap": gap}), gap)
+            self.assertEqual(StarCoinGateGap.from_slot_data(gap).value, gap)
         for gap in (0, 6, 7, -1, True, 2.5, "3", None):
             with self.subTest(gap=gap), self.assertRaises(ValueError):
                 star_coin_gate_gap({"star_coin_gate_gap": gap})
-        for gap in (0, 6):
+            with self.subTest(gap=gap), self.assertRaises(ValueError):
+                StarCoinGateGap.from_slot_data(gap)
+        for gap in (0, 1, 2, 6):
             with self.assertRaises(Exception):
                 StarCoinGateGap.from_any(gap)
 
     def test_all_signs_at_each_gap_and_mode_use_lifetime_threshold_and_passes(self):
         by_target = {gate.target_stage_name: gate for gate in STAR_COIN_GATES}
         for mode in range(3):
-            for gap in range(1, 6):
+            for gap in range(3, 6):
                 mw = setup_multiworld(NSMBDSWorld, seed=9187, options={
                     "star_coin_gate_mode": mode, "star_coin_gate_gap": gap,
                 })
@@ -78,7 +83,7 @@ class TestStarCoinGateGap(TestCase):
         world = mw.worlds[1]
         slot = world.fill_slot_data()
         original_tiers = deepcopy(world.vanilla_gate_tiers)
-        world.options.star_coin_gate_gap = StarCoinGateGap(1)
+        world.options.star_coin_gate_gap = StarCoinGateGap(5)
         mw.re_gen_passthrough = {world.game: slot}
         world.generate_early()
         self.assertEqual(world.options.star_coin_gate_gap.value, 3)
@@ -88,9 +93,21 @@ class TestStarCoinGateGap(TestCase):
         world.generate_early()
         self.assertEqual(world.options.star_coin_gate_gap.value, 5)
 
+    def test_tracker_preserves_existing_one_and_two_gap_seeds(self):
+        world = setup_multiworld(NSMBDSWorld, options={"star_coin_gate_gap": 3}).worlds[1]
+        slot = world.fill_slot_data()
+        for gap in (1, 2):
+            with self.subTest(gap=gap):
+                slot["star_coin_gate_gap"] = gap
+                slot["options"]["star_coin_gate_gap"] = gap
+                world.multiworld.re_gen_passthrough = {world.game: slot}
+                world.generate_early()
+                self.assertEqual(world.options.star_coin_gate_gap.value, gap)
+                self.assertEqual(world.fill_slot_data()["star_coin_gate_gap"], gap)
+
     def test_goal_coin_budget_can_exceed_gate_budget(self):
         mw = setup_multiworld(NSMBDSWorld, options={
-            "star_coin_gate_gap": 1, "goal": "star_coin_hunt", "required_star_coins": 200,
+            "star_coin_gate_gap": 3, "goal": "star_coin_hunt", "required_star_coins": 200,
         })
         coins = [item for item in mw.get_items() if item.name == "Star Coin"]
         self.assertEqual(sum(item.advancement for item in coins), 200)
