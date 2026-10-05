@@ -205,7 +205,7 @@ class DeathLinkMixin:
         ctx: BizHawkClientContext,
     ) -> tuple[int, int, int, int, int, int, int, int] | None:
         """Read death state plus Lua-visible protection charges."""
-        from worlds._bizhawk import read
+        from worlds._bizhawk import NotConnectedError, RequestFailedError, read
 
         try:
             result = await read(
@@ -221,6 +221,8 @@ class DeathLinkMixin:
                     (ADDR_STAGE_EXIT_FLAGS, 4, MEMORY_DOMAIN),
                 ],
             )
+        except (RequestFailedError, NotConnectedError):
+            raise
         except Exception:
             logger.exception("Failed to read NSMBDS Death Link state.")
             return None

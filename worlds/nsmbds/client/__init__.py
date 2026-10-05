@@ -302,9 +302,11 @@ class NSMBDSClient(
 
         self._watcher_diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
         watcher_started = perf_counter()
+        connection_failed = False
         try:
             await self._run_game_watcher(ctx)
         except (RequestFailedError, NotConnectedError) as exc:
+            connection_failed = True
             observe_bridge = getattr(ctx, "observe_bridge", None)
             if observe_bridge is not None:
                 state = "DISCONNECTED" if isinstance(exc, NotConnectedError) else "ERROR"
@@ -313,7 +315,7 @@ class NSMBDSClient(
                 bridge_logger.info("BizHawk connection lost; retrying on the next watcher tick: %s", exc)
         finally:
             elapsed = perf_counter() - watcher_started
-            if elapsed >= WATCHER_TOTAL_SLOW_SECONDS:
+            if not connection_failed and elapsed >= WATCHER_TOTAL_SLOW_SECONDS:
                 self._log_slow_watcher_operation("total", elapsed)
 
     def _log_slow_watcher_operation(self, operation_name: str, elapsed: float) -> None:
@@ -342,9 +344,17 @@ class NSMBDSClient(
 
     async def _run_watcher_operation(self, operation_name: str, operation):
         """Run one watcher operation and report only meaningful stalls."""
+        from worlds._bizhawk import NotConnectedError, RequestFailedError
+
         started = perf_counter()
+        connection_failed = False
         try:
             return await operation
+        except (RequestFailedError, NotConnectedError):
+            # The outer watcher handles bridge failures once and ends this
+            # pass. Continuing would poll a closed socket in every feature.
+            connection_failed = True
+            raise
         except Exception as exc:
             if self._should_log_watcher_issue(f"operation:{operation_name}:{type(exc).__name__}"):
                 logger.exception("NSMBDS %s failed; the watcher will retry next tick.", operation_name)
@@ -352,7 +362,7 @@ class NSMBDSClient(
                     self._watcher_diagnostics.error(operation_name, exc)
         finally:
             elapsed = perf_counter() - started
-            if elapsed >= WATCHER_OPERATION_SLOW_SECONDS:
+            if not connection_failed and elapsed >= WATCHER_OPERATION_SLOW_SECONDS:
                 self._log_slow_watcher_operation(operation_name, elapsed)
 
     async def _submit_pending_mailbox_checks(
@@ -477,23 +487,23 @@ class NSMBDSClient(
             "location detection", self._detect_and_send_locations(ctx, level_data)
         )
         for operation_name, operation in (
-            ("Death Link", self._handle_death_link(ctx)),
-            ("Timer Drain", self._apply_pending_timer_drains(ctx)),
-            ("Starman Buff", self._apply_pending_starman_buffs(ctx)),
-            ("positive filler bonuses", self._apply_pending_filler_bonuses(ctx)),
-            ("Speed Traps", self._apply_pending_speed_traps(ctx)),
-            ("in-game notifications", self._publish_next_ap_notification(ctx)),
-            ("emulator feed", self._flush_emulator_feed(ctx)),
+            ("Death Link", self._handle_death_link),
+            ("Timer Drain", self._apply_pending_timer_drains),
+            ("Starman Buff", self._apply_pending_starman_buffs),
+            ("positive filler bonuses", self._apply_pending_filler_bonuses),
+            ("Speed Traps", self._apply_pending_speed_traps),
+            ("in-game notifications", self._publish_next_ap_notification),
+            ("emulator feed", self._flush_emulator_feed),
         ):
-            await self._run_watcher_operation(operation_name, operation)
+            await self._run_watcher_operation(operation_name, operation(ctx))
 
         if medium_due:
-            for operation_name, operation in (
-                ("Star Coin gate detection", self._detect_and_store_gate_purchases(ctx, level_data)),
-                ("overworld state reconciliation", self._reconcile_overworld_state(ctx, level_data)),
-                ("goal detection", self._send_goal_if_complete(ctx)),
+            for operation_name, operation, args in (
+                ("Star Coin gate detection", self._detect_and_store_gate_purchases, (ctx, level_data)),
+                ("overworld state reconciliation", self._reconcile_overworld_state, (ctx, level_data)),
+                ("goal detection", self._send_goal_if_complete, (ctx,)),
             ):
-                await self._run_watcher_operation(operation_name, operation)
+                await self._run_watcher_operation(operation_name, operation(*args))
 
         if self._gate_storage_sync_pending or self._gate_storage_write_pending or slow_due:
             await self._run_watcher_operation(
@@ -513,7 +523,7 @@ class NSMBDSClient(
 
     async def _read_level_data(self, ctx: "BizHawkClientContext") -> bytes | None:
         """Read the world-map block plus the native Mini-Castle flags."""
-        from worlds._bizhawk import read
+        from worlds._bizhawk import NotConnectedError, RequestFailedError, read
 
         try:
             result = await read(
@@ -523,6 +533,8 @@ class NSMBDSClient(
                     (ADDR_AP_MINI_CASTLE_FLAGS_PERM, 4, MEMORY_DOMAIN),
                 ],
             )
+        except (RequestFailedError, NotConnectedError):
+            raise
         except Exception as exc:
             if self._should_log_watcher_issue(f"level-read:{type(exc).__name__}"):
                 logger.exception("Failed to read the NSMBDS level-data block.")

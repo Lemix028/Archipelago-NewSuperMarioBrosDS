@@ -74,6 +74,8 @@ class ItemHandlingMixin(ReserveHandlingMixin, ItemTransactionMixin):
 
     async def _apply_pending_items(self, ctx: "BizHawkClientContext") -> None:
         """Apply pending items, resolving uncertain writes before later items."""
+        from worlds._bizhawk import NotConnectedError, RequestFailedError
+
         if self._awaiting_item_history or self._item_cursor_needs_initial_sync:
             return
         await self._retry_one_deferred_item(ctx)
@@ -118,6 +120,10 @@ class ItemHandlingMixin(ReserveHandlingMixin, ItemTransactionMixin):
             try:
                 self._item_transaction_owner = "network"
                 applied = await self._apply_item(ctx, network_item.item)
+            except (RequestFailedError, NotConnectedError):
+                if self._session_identity == session_identity:
+                    self._persist_item_cursor()
+                raise  # Preserve the cursor/journal and stop this watcher pass.
             except Exception:
                 logger.exception("Failed to apply received item ID %s.", network_item.item)
                 if diagnostics is not None:
@@ -250,6 +256,8 @@ class ItemHandlingMixin(ReserveHandlingMixin, ItemTransactionMixin):
 
     async def _retry_one_deferred_item(self, ctx: "BizHawkClientContext") -> None:
         """Retry one queued item per poll so BizHawk cannot be flooded with RAM calls."""
+        from worlds._bizhawk import NotConnectedError, RequestFailedError
+
         if not self._deferred_item_ids:
             return
 
@@ -265,6 +273,10 @@ class ItemHandlingMixin(ReserveHandlingMixin, ItemTransactionMixin):
         try:
             self._item_transaction_owner = "deferred"
             applied = await self._apply_item(ctx, item_id)
+        except (RequestFailedError, NotConnectedError):
+            if self._deferred_item_ids is queue:
+                self._persist_item_cursor()
+            raise
         except Exception:
             logger.exception("Failed to apply deferred received item ID %s.", item_id)
             diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
