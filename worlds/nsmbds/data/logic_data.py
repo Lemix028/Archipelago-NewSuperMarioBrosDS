@@ -227,7 +227,7 @@ _ADVANCED_CORE = {
     "World 6-Castle Star Coin 3", "World 7-7 1-Up Block",
     "World 7-A 1-Up Block 1", "World 7-Ghost House Secret Exit",
     "World 7 Green Toad House 2 Goal", "World 8-1 Star Coin 1",
-    "World 8-Castle Star Coin 3",
+    "World 8-2 Star Coin 2", "World 8-Castle Star Coin 3",
 }
 
 _ADVANCED_BLOCKS = {
