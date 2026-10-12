@@ -238,6 +238,20 @@ class TestEmptyTrapList(NSMBDSTestBase):
         ))
 
 
+class TestRedCoinChecksEnabled(NSMBDSTestBase):
+    options = {"red_coin_checks": True}
+
+    def test_both_world_8_3_rings_are_separate_randomized_checks(self) -> None:
+        locations = self.multiworld.get_locations(self.player)
+        red_coins = [location for location in locations if "Red Coin Challenge" in location.name]
+        self.assertEqual(len(red_coins), 30)
+        rings = [self.multiworld.get_location(
+            f"World 8-3 Red Coin Challenge {index}", self.player,
+        ) for index in (1, 2)]
+        self.assertEqual(len({location.address for location in rings}), 2)
+        self.assertTrue(all(location.address is not None and not location.locked for location in rings))
+
+
 class TestRedCoinChecksDisabled(NSMBDSTestBase):
     """Test world generation when Red Coin checks are disabled."""
 

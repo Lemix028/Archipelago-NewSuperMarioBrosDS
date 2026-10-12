@@ -48,7 +48,7 @@ shows the available balance, the amount spent, and the total received.
 | Star Coins | 240 | Always |
 | Castle boss defeats | 9 | Always |
 | Toad House rewards | 34 | Yes |
-| Red Coin Challenges | 29 | Yes |
+| Red Coin Challenges | 30 | Yes |
 | Secret exits | 18 | No |
 | Hidden or flying 1-Up Blocks | 43, plus 8 in the World 6-2 bonus room | No |
 | Blocksanity | 1,038 Coin and Power-Up Blocks, plus 120 in the World 6-2 bonus room | No |

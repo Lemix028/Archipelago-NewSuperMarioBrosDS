@@ -3766,6 +3766,72 @@ async def test_red_coin_mailbox() -> None:
     )
 
 
+async def test_world_8_3_red_coin_mailbox() -> None:
+    from nsmbds.data.level_randomization import (
+        IDENTITY_LEVEL_MAPPING, LEVEL_RANDOMIZATION_GLOBAL,
+        LEVEL_RANDOMIZATION_VERSION, level_mapping_digest,
+    )
+
+    ring_ids = [locations.LOCATION_TABLE[f"World 8-3 Red Coin Challenge {index}"]
+                for index in (1, 2)]
+    for shuffled in (False, True):
+        for order in ((0, 1), (1, 0)):
+            for counter in (1, 2):
+                writes: list[tuple] = []
+                sent_messages: list[dict] = []
+                event: list[bytes] = []
+
+                async def fake_read(_bizhawk_ctx, _read_requests):
+                    return event
+
+                async def fake_guarded_write(_bizhawk_ctx, write_requests, _guards):
+                    writes.extend(write_requests)
+                    return True
+
+                async def fake_send_msgs(messages):
+                    sent_messages.extend(messages)
+
+                fake_bizhawk.read = fake_read
+                fake_bizhawk.guarded_write = fake_guarded_write
+                client = client_module.NSMBDSClient()
+                context = FakeContext()
+                context.send_msgs = fake_send_msgs
+                if shuffled:
+                    mapping = dict(IDENTITY_LEVEL_MAPPING)
+                    mapping["World 1-1"], mapping["World 8-3"] = "World 8-3", "World 1-1"
+                    context.slot_data.update({
+                        "level_randomization": LEVEL_RANDOMIZATION_GLOBAL,
+                        "level_randomization_version": LEVEL_RANDOMIZATION_VERSION,
+                        "level_mapping": mapping,
+                        "level_mapping_digest": level_mapping_digest(mapping),
+                    })
+                client._active_location_set_known = True
+                client._active_locations = set(ring_ids)
+
+                for sequence, ring in enumerate((*order, *order), 12):
+                    event = [
+                        bytes([sequence]), bytes([ram_addresses.AP_EVENT_TYPE_RED_COIN_COMPLETE]),
+                        struct.pack("<I", 0 if shuffled else 7),
+                        struct.pack("<I", 1 if shuffled else 3),
+                        struct.pack("<I", 157), struct.pack("<i", (12, 239)[ring]),
+                        bytes([counter]), bytes([sequence - 1]), bytes([sequence]),
+                    ]
+                    await client._detect_and_send_red_coin_challenge(context)
+                check(
+                    sent_messages == [{"cmd": "LocationChecks", "locations": [ring_ids[ring]]}
+                                      for ring in order]
+                    and client._sent_locations == set(ring_ids),
+                    f"8-3 rings submit two distinct checks once: shuffled={shuffled}, "
+                    f"order={order}, player={counter}",
+                )
+                check(
+                    writes == [(ram_addresses.ADDR_AP_RED_COIN_EVENT_ACK_SEQUENCE,
+                                [sequence], ram_addresses.MEMORY_DOMAIN)
+                               for sequence in range(12, 16)],
+                    "8-3 ring completions and duplicates are all acknowledged",
+                )
+
+
 async def test_one_up_block_mailbox() -> None:
     writes: list[tuple] = []
     sent_messages: list[dict] = []

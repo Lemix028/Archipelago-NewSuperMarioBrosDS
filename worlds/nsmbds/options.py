@@ -54,7 +54,7 @@ class RequiredStarCoins(Range):
 
 
 class RedCoinChecks(Toggle):
-    """Include all 29 Red Coin Ring challenges across the world map as check locations."""
+    """Include all 30 Red Coin Ring challenges across the world map as check locations."""
     display_name = "Red Coin Checks"
     default = 1
 

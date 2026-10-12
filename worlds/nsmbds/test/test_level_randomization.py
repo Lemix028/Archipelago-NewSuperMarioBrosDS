@@ -193,9 +193,11 @@ class TestLevelMapping(TestCase):
             for content, names in RED_COIN_CHALLENGE_NAMES_BY_STAGE.items():
                 content_world, content_level = STAGE_NAME_TO_RUNTIME_COURSE[content]
                 slot_world, slot_level = STAGE_NAME_TO_RUNTIME_COURSE[inverse[content]]
-                area = 45 if content == "World 3-1" else LEVEL_AREA_ID_BY_NAME[content]
+                area = {"World 3-1": 45, "World 8-3": 157}.get(
+                    content, LEVEL_AREA_ID_BY_NAME[content],
+                )
                 for index, expected in enumerate(names, 1):
-                    x = 219 if index == 2 else 41
+                    x = (5, 217)[index - 1] if content == "World 8-3" else (41, 219)[index - 1]
                     for world, level in ((slot_world, slot_level), (content_world, content_level), (slot_world, content_level)):
                         self.assertEqual(RedCoinTrackingMixin._resolve_seed_red_coin_location(
                             data, world, level, area, x, index,

@@ -47,11 +47,19 @@ def verify() -> None:
         assert actual == expected, (world, level, expected, actual)
         resolved_names.add(actual)
     resolved_names.add(resolve(None, 2, 1, 45, 219, 2))
+    resolved_names.add(resolve(None, 7, 3, 157, 217, 1))
     assert resolved_names == catalog_names
-    assert len(catalog_names) == 29
+    assert len(catalog_names) == 30
 
     assert resolve(None, 2, 1, 45, 41, 1) == "World 3-1 Red Coin Challenge 1"
     assert resolve(None, 2, 1, 45, 219, 2) == "World 3-1 Red Coin Challenge 2"
+    # Either player may complete either 8-3 ring. Counter is a player index,
+    # so only the position separates these two spatially disjoint routes.
+    for counter in (1, 2):
+        for x in (2, 5, 12):
+            assert resolve(None, 7, 3, 157, x, counter) == "World 8-3 Red Coin Challenge 1"
+        for x in (217, 221, 239):
+            assert resolve(None, 7, 3, 157, x, counter) == "World 8-3 Red Coin Challenge 2"
 
     mapping = dict(randomization.IDENTITY_LEVEL_MAPPING)
     mapping["World 1-1"], mapping["World 3-1"] = "World 3-1", "World 1-1"
@@ -64,7 +72,12 @@ def verify() -> None:
     assert resolve(slot_data, 2, 1, 0, 0, 1) == "World 1-1 Red Coin Challenge"
     assert resolve(slot_data, 0, 1, 45, 41, 1) == "World 3-1 Red Coin Challenge 1"
     assert resolve(slot_data, 0, 1, 45, 219, 2) == "World 3-1 Red Coin Challenge 2"
-    print("Red Coin identity: all 29 catalog locations and shuffled slot/content courses OK")
+    mapping["World 1-1"], mapping["World 8-3"] = mapping["World 8-3"], mapping["World 1-1"]
+    slot_data["level_mapping_digest"] = randomization.level_mapping_digest(mapping)
+    for counter in (1, 2):
+        assert resolve(slot_data, 0, 1, 157, 5, counter) == "World 8-3 Red Coin Challenge 1"
+        assert resolve(slot_data, 0, 1, 157, 217, counter) == "World 8-3 Red Coin Challenge 2"
+    print("Red Coin identity: all 30 catalog locations and shuffled slot/content courses OK")
 
 
 if __name__ == "__main__":

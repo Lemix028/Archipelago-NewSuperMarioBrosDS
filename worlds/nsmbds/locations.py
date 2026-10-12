@@ -705,7 +705,7 @@ RED_COIN_COURSE_LEVELS: dict[str, int] = {
 RED_COIN_CHALLENGE_NAMES_BY_STAGE: dict[str, tuple[str, ...]] = {
     stage_name: (
         (f"{stage_name} Red Coin Challenge 1", f"{stage_name} Red Coin Challenge 2")
-        if stage_name == "World 3-1"
+        if stage_name in {"World 3-1", "World 8-3"}
         else (f"{stage_name} Red Coin Challenge",)
     )
     for stage_name in RED_COIN_COURSE_LEVELS
@@ -983,13 +983,19 @@ def resolve_red_coin_location_name(
     player_x: int,
     counter_index: int,
 ) -> str | None:
-    """Resolve a transient completion, including both rings in World 3-1."""
+    """Resolve a transient completion, including both rings in 3-1 and 8-3."""
     if (world, level, area) == (2, 0x01, 45):
         # The vanilla USA course contains rings at editor X 41 and 219 in the
         # same area. Their eight-coin routes are separated by the midpoint.
         if player_x >= 130 or (player_x < 0 and counter_index == 2):
             return "World 3-1 Red Coin Challenge 2"
         return "World 3-1 Red Coin Challenge 1"
+    if (world, level, area) == (7, 0x03, 157):
+        # H03_2 contains rings at editor X 5 and 217. The first route's
+        # coins span X 2..12, and the second route's coins span X 221..239.
+        if player_x >= 130:
+            return "World 8-3 Red Coin Challenge 2"
+        return "World 8-3 Red Coin Challenge 1"
     return COURSE_KEY_TO_RED_COIN_LOCATION_NAME.get((world, level))
 
 
