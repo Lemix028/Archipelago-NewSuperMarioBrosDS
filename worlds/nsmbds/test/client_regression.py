@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import builtins
 import inspect
 import hashlib
@@ -48,7 +49,28 @@ fake_bizhawk.read = lambda *args, **kwargs: None
 fake_bizhawk.write = lambda *args, **kwargs: None
 fake_bizhawk.guarded_read = lambda *args, **kwargs: None
 fake_bizhawk.guarded_write = lambda *args, **kwargs: None
-fake_bizhawk.send_requests = lambda *args, **kwargs: None
+
+
+async def fake_send_requests(bizhawk_ctx, requests):
+    """Translate consumable transactions into the harness's guarded RAM writes."""
+    responses = []
+    for request in requests:
+        if request["type"] != "NSMBDS_ITEM_WRITE":
+            raise AssertionError(f"Unexpected connector request: {request['type']}")
+        writes = [
+            (entry["address"], list(base64.b64decode(entry["value"], validate=True)), entry["domain"])
+            for entry in request["writes"]
+        ]
+        guards = [
+            (entry["address"], list(base64.b64decode(entry["expected_data"], validate=True)), entry["domain"])
+            for entry in request["guards"]
+        ]
+        applied = await fake_bizhawk.guarded_write(bizhawk_ctx, writes, guards)
+        responses.append({"type": "NSMBDS_ITEM_WRITE_RESPONSE", "value": applied})
+    return responses
+
+
+fake_bizhawk.send_requests = fake_send_requests
 fake_bizhawk.disconnect = lambda *args, **kwargs: None
 fake_bizhawk.NotConnectedError = type("NotConnectedError", (Exception,), {})
 fake_bizhawk.RequestFailedError = type("RequestFailedError", (Exception,), {})
@@ -4663,9 +4685,13 @@ def main() -> None:
         if name.startswith("test_") and callable(test)
     ]
     for test in tests:
-        result = test()
-        if inspect.isawaitable(result):
-            asyncio.run(result)
+        original_send_requests = fake_bizhawk.send_requests
+        try:
+            result = test()
+            if inspect.isawaitable(result):
+                asyncio.run(result)
+        finally:
+            fake_bizhawk.send_requests = original_send_requests
     print(f"All {len(tests)} client logic test groups passed.")
 
 
