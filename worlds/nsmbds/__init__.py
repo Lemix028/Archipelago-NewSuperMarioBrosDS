@@ -6,7 +6,7 @@ Main entry point for Archipelago multiworld generation.
 import os
 from typing import Any, ClassVar, TextIO
 
-from BaseClasses import Item, ItemClassification, Location, LocationProgressType, Region
+from BaseClasses import Item, ItemClassification, Location, LocationProgressType, MultiWorld, Region
 from settings import get_settings
 from worlds.AutoWorld import World
 from worlds.LauncherComponents import Component, SuffixIdentifier, Type, components, launch_subprocess
@@ -39,6 +39,11 @@ from .data.music import (
 )
 from .data.powerup_licenses import license_items_for_mode
 from .data.star_coin_gates import STAR_COIN_GATES, star_coin_gate_gap
+from .early_powerup_permits import (
+    enforce_early_powerup_permits,
+    prepare_early_powerup_permits,
+    validate_early_powerup_permits,
+)
 from .items import (
     FILLER_ITEM_WEIGHTS,
     ITEM_TABLE,
@@ -148,6 +153,7 @@ class NSMBDSWorld(World):
     world_map_music_mapping: dict[str, int]
     global_blocksanity_locations: list[str]
     _re_gen_slot_data: dict[str, Any]
+    early_powerup_permit_deadlines: dict[str, int]
 
     @staticmethod
     def interpret_slot_data(slot_data: dict[str, Any]) -> dict[str, Any]:
@@ -307,6 +313,18 @@ class NSMBDSWorld(World):
                 raise Exception(
                     "Required Star Coins cannot exceed 240."
                 )
+
+        prepare_early_powerup_permits(self)
+
+    @classmethod
+    def stage_finalize_multiworld(cls, multiworld: MultiWorld) -> None:
+        """Enforce permit deadlines after fill, Plando, and progression balancing."""
+        enforce_early_powerup_permits(multiworld, list(multiworld.get_game_worlds(cls.game)))
+
+    @classmethod
+    def stage_pre_output(cls, multiworld: MultiWorld) -> None:
+        """Check the final seed before output, after all finalization hooks."""
+        validate_early_powerup_permits(multiworld, list(multiworld.get_game_worlds(cls.game)))
 
     def create_regions(self) -> None:
         """Create all game regions, connect them, and populate with locations."""

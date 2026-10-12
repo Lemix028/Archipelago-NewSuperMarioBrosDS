@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from Options import Choice, DeathLink, OptionGroup, OptionSet, PerGameCommonOptions, Range, Toggle
 
 from .locations import ACTIVE_STAR_COIN_COUNT
+from .data.powerup_licenses import POWERUP_ITEM_LICENSES, TOUCHSCREEN_RESERVE_LICENSE
 
 ITEM_PLACEMENT_EXCLUDED = 0
 ITEM_PLACEMENT_PROGRESSION = 1
@@ -298,6 +299,29 @@ class LicenseTouchscreenPocket(Toggle):
        If enabled, players cannot use the Touchscreen Pocket until they find the Permit item in the multiworld."""
     display_name = "License: Touchscreen Pocket"
     default = 0
+
+
+class PowerupPermitPlacement(Choice):
+    """Controls placement of the permits chosen in Selected Powerup Permits.
+
+    normal: No additional placement restrictions. (Default)
+    early: Selected permits are guaranteed to be logically reachable by check sphere 2.
+    """
+    display_name = "Powerup Permit Placement"
+    option_normal = 0
+    option_early = 1
+    default = 0
+
+
+class SelectedPowerupPermits(OptionSet):
+    """Permits placed early when Powerup Permit Placement is early.
+
+    Use Permit item names, not consumable Powerups. An empty list applies no
+    placement restrictions; normal placement ignores this selection.
+    """
+    display_name = "Selected Powerup Permits"
+    valid_keys = frozenset((*POWERUP_ITEM_LICENSES.values(), TOUCHSCREEN_RESERVE_LICENSE))
+    default = frozenset()
 
 
 # =============================================================================
@@ -639,6 +663,8 @@ class NSMBDSOptions(PerGameCommonOptions):
     license_mushroom:                    LicenseMushroom
     license_fire_flower:                 LicenseFireFlower
     license_touchscreen_pocket:          LicenseTouchscreenPocket
+    powerup_permit_placement:             PowerupPermitPlacement
+    selected_powerup_permits:             SelectedPowerupPermits
 
     # Filler & Trap Pools
     filler_items:                         FillerItems
@@ -694,6 +720,8 @@ NSMBDS_OPTION_GROUPS = [
         LicenseMushroom,
         LicenseFireFlower,
         LicenseTouchscreenPocket,
+        PowerupPermitPlacement,
+        SelectedPowerupPermits,
     ]),
     OptionGroup("Filler Items", [
         FillerItems,
