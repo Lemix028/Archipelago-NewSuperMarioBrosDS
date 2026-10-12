@@ -109,7 +109,9 @@ class TestEarlyPermitOptions(TestCase):
     def test_defaults_and_normal_do_not_change_generation(self):
         mw = setup_multiworld(NSMBDSWorld, steps=("generate_early",), seed=1337)
         self.assertEqual(mw.worlds[1].options.powerup_permit_placement.value, 0)
-        self.assertEqual(mw.worlds[1].options.selected_powerup_permits.value, set())
+        self.assertEqual(mw.worlds[1].options.selected_powerup_permits.value, {
+            "Mushroom Permit", "Fire Flower Permit", "Touchscreen Pocket Permit",
+        })
         self.assertEqual(mw.worlds[1].early_powerup_permit_deadlines, {})
         self.assertEqual(mw.early_items[1], {})
         configured = setup_multiworld(NSMBDSWorld, steps=("generate_early",), seed=1337, options={
@@ -165,8 +167,17 @@ class TestEarlyPermitOptions(TestCase):
         for mode in ("normal", "early"):
             mw = setup_multiworld(NSMBDSWorld, steps=("generate_early",), seed=1337, options={
                 "powerup_permit_placement": mode,
+                "selected_powerup_permits": [],
             })
             self.assertEqual(mw.worlds[1].early_powerup_permit_deadlines, {})
+
+    def test_early_uses_default_selection_with_enabled_licenses(self):
+        mw = setup_multiworld(NSMBDSWorld, steps=("generate_early",), seed=1337, options={
+            **ALL_LICENSES, "powerup_permit_placement": "early",
+        })
+        self.assertEqual(mw.worlds[1].early_powerup_permit_deadlines, {
+            "Mushroom Permit": 2, "Fire Flower Permit": 2, "Touchscreen Pocket Permit": 2,
+        })
 
 
 class TestPermitSpherePlacement(TestCase):

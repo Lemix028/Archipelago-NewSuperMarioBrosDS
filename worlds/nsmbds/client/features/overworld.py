@@ -67,7 +67,7 @@ class OverworldStateReconcilerMixin:
             identifiers = tuple(gate.name for gate in STAR_COIN_GATES)
             if set(stored_tiers) != set(identifiers):
                 raise ValueError(
-                    "Vanilla Star-Coin Gate tier data must identify every gate exactly once."
+                    "No Keys Star-Coin Gate tier data must identify every gate exactly once."
                 )
             tiers = tuple(int(stored_tiers[identifier]) for identifier in identifiers)
         elif gate_mode == 1:

@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from Options import Choice, DeathLink, OptionGroup, OptionSet, PerGameCommonOptions, Range, Toggle
 
 from .locations import ACTIVE_STAR_COIN_COUNT
-from .data.powerup_licenses import POWERUP_ITEM_LICENSES, TOUCHSCREEN_RESERVE_LICENSE
+from .data.powerup_licenses import (
+    FIRE_FLOWER_LICENSE,
+    MUSHROOM_LICENSE,
+    POWERUP_ITEM_LICENSES,
+    TOUCHSCREEN_RESERVE_LICENSE,
+)
 
 ITEM_PLACEMENT_EXCLUDED = 0
 ITEM_PLACEMENT_PROGRESSION = 1
@@ -197,16 +202,18 @@ class StarCoinGateMode(Choice):
     """
     Controls Star-Coin signs on the overworld map.
 
-    In every mode, gates are arranged in tiers. Early tiers are cheaper and
-    later tiers require more Star Coins.
+    Every mode uses Star Coin tiers, including no_keys. Higher tiers require
+    more total received Star Coins. Opening a sign costs Star Coin Gate Gap.
 
-    vanilla:     Collect enough Star Coins to open each tier.
+    no_keys:     Collect enough Star Coins for the sign's tier, without Gate Passes. (Default)
     progressive: Collect Star Coins and Progressive Gate Passes to unlock the
                  tiers one after another.
-    individual:  Collect Star Coins and the matching named Gate Pass for each tier.
+    individual:  Collect Star Coins and the matching named Gate Pass for each sign.
+    Tower & Castle Keys are controlled separately.
     """
     display_name = "Star Coin Gate Mode"
-    option_vanilla = 0
+    option_no_keys = 0
+    alias_vanilla = 0
     option_progressive = 1
     option_individual = 2
     default = 0
@@ -318,10 +325,12 @@ class SelectedPowerupPermits(OptionSet):
 
     Use Permit item names, not consumable Powerups. An empty list applies no
     placement restrictions; normal placement ignores this selection.
+    Defaults to Mushroom, Fire Flower, and Touchscreen Pocket Permits.
+    Permits with disabled licenses are ignored.
     """
     display_name = "Selected Powerup Permits"
     valid_keys = frozenset((*POWERUP_ITEM_LICENSES.values(), TOUCHSCREEN_RESERVE_LICENSE))
-    default = frozenset()
+    default = frozenset({MUSHROOM_LICENSE, FIRE_FLOWER_LICENSE, TOUCHSCREEN_RESERVE_LICENSE})
 
 
 # =============================================================================
