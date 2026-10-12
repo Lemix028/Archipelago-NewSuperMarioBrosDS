@@ -18,6 +18,8 @@ from ...data.ram_addresses import (
     ADDR_LIVES,
     ADDR_POWERUP_LEVEL,
     ADDR_STAGE_EXIT_FLAGS,
+    ADDR_STAGE_FREEZE_FLAG,
+    ADDR_STAGE_MENU_OPEN,
     ADDR_TIMER,
     AP_NOTIFICATION_DEATH_LINK,
     MEMORY_DOMAIN,
@@ -95,6 +97,7 @@ class DeathLinkMixin:
             self._death_link_cooldown_until = 0.0
             self._death_link_amnesty_count = 0
             self._suppress_next_local_death = False
+            self._death_link_damage_grace_units = 0
         logger.info("NSMBDS Death Link %s.", "enabled" if enabled else "disabled")
 
     def _queue_incoming_death_link(self, ctx: BizHawkClientContext, source: str | None) -> None:
@@ -152,7 +155,12 @@ class DeathLinkMixin:
         effect = self._pending_death_link_effect
         if effect not in DEATH_LINK_CONCRETE_EFFECTS:
             effect = DEATH_LINK_EFFECT_DEATH
-        guards = self._game_data_guards()
+        guards = [
+            *self._game_data_guards(),
+            (ADDR_STAGE_EXIT_FLAGS, [0, 0, 0, 0], MEMORY_DOMAIN),
+            (ADDR_STAGE_FREEZE_FLAG, [0], MEMORY_DOMAIN),
+            (ADDR_STAGE_MENU_OPEN, [0], MEMORY_DOMAIN),
+        ]
         writes: list[tuple[int, list[int], str]]
         may_kill = False
 
@@ -182,6 +190,13 @@ class DeathLinkMixin:
         self._pending_death_link_effect = None
         if may_kill:
             self._suppress_next_local_death = True
+            # Damage is consumed by Lua on a later frame. If Mario became
+            # powered-up or the trigger found no player, it may never kill.
+            # Expire this expectation after two seconds of active countdown,
+            # rather than wall time (which would expire while paused).
+            self._death_link_damage_grace_units = (
+                2 * TIMER_UNITS_PER_SECOND if effect == DEATH_LINK_EFFECT_DAMAGE else 0
+            )
         cooldown_seconds = max(0, min(300, int((ctx.slot_data or {}).get("death_link_cooldown_seconds", 0))))
         if cooldown_seconds:
             self._death_link_cooldown_until = time.monotonic() + cooldown_seconds
@@ -203,7 +218,7 @@ class DeathLinkMixin:
     async def _read_lives_and_timer(
         self,
         ctx: BizHawkClientContext,
-    ) -> tuple[int, int, int, int, int, int, int, int] | None:
+    ) -> tuple[int, int, int, int, int, int, int, int, int, int] | None:
         """Read death state plus Lua-visible protection charges."""
         from worlds._bizhawk import NotConnectedError, RequestFailedError, read
 
@@ -219,6 +234,8 @@ class DeathLinkMixin:
                     (ADDR_AP_INSURED_DEATH_SEQUENCE, 1, MEMORY_DOMAIN),
                     (ADDR_AP_RETURN_TO_MAP_DEATH_SEQUENCE, 1, MEMORY_DOMAIN),
                     (ADDR_STAGE_EXIT_FLAGS, 4, MEMORY_DOMAIN),
+                    (ADDR_STAGE_FREEZE_FLAG, 1, MEMORY_DOMAIN),
+                    (ADDR_STAGE_MENU_OPEN, 1, MEMORY_DOMAIN),
                 ],
             )
         except (RequestFailedError, NotConnectedError):
@@ -226,7 +243,7 @@ class DeathLinkMixin:
         except Exception:
             logger.exception("Failed to read NSMBDS Death Link state.")
             return None
-        if len(result) != 8 or [len(value) for value in result] != [1, 4, 1, 1, 1, 1, 1, 4]:
+        if len(result) != 10 or [len(value) for value in result] != [1, 4, 1, 1, 1, 1, 1, 4, 1, 1]:
             logger.warning("Received invalid NSMBDS Death Link state data.")
             return None
         return (
@@ -238,6 +255,8 @@ class DeathLinkMixin:
             result[5][0],
             result[6][0],
             struct.unpack("<I", bytes(result[7]))[0],
+            result[8][0],
+            result[9][0],
         )
 
     async def _handle_death_link(self, ctx: BizHawkClientContext) -> None:
@@ -245,6 +264,7 @@ class DeathLinkMixin:
         state = await self._read_lives_and_timer(ctx)
         if state is None:
             return
+        self._life_delivery_needs_observation = False
         (
             lives,
             timer,
@@ -254,6 +274,8 @@ class DeathLinkMixin:
             insured_death_sequence,
             return_to_map_death_sequence,
             exit_flags,
+            freeze_flag,
+            menu_open,
         ) = state
         self._pending_trap_shields = shield_count
         self._pending_life_insurance = insurance_count
@@ -267,7 +289,8 @@ class DeathLinkMixin:
             and return_to_map_death_sequence != self._last_return_to_map_death_sequence
         )
         self._last_return_to_map_death_sequence = return_to_map_death_sequence
-        timer_is_counting = self._timer_is_counting(self._last_timer, timer)
+        previous_timer = self._last_timer
+        timer_is_counting = self._timer_is_counting(previous_timer, timer)
         self._last_timer = timer
 
         return_to_map_active = bool(exit_flags & STAGE_EXIT_RETURN_TO_MAP_MASK)
@@ -280,13 +303,10 @@ class DeathLinkMixin:
 
         if timer_is_counting:
             self._in_level_grace_polls = 16
-        elif self._in_level_grace_polls:
+        elif self._in_level_grace_polls and not freeze_flag and not menu_open:
             self._in_level_grace_polls -= 1
 
         enabled = bool(ctx.slot_data and ctx.slot_data.get("death_link", False))
-        if enabled and self._pending_death_link and timer_is_counting and not self._return_to_map_pending:
-            await self._apply_pending_death_link(ctx, timer, powerup)
-
         if self._last_lives is None:
             self._last_lives = lives
             return
@@ -294,21 +314,44 @@ class DeathLinkMixin:
         life_lost = lives < self._last_lives
         self._last_lives = lives
 
-        trigger_on_insured = bool(ctx.slot_data and ctx.slot_data.get("death_link_triggers_on_insured_death", True))
-        should_trigger = life_lost or (insured_death and trigger_on_insured)
-
-        if not enabled or not should_trigger:
+        died = life_lost or insured_death
+        if not died:
+            if self._suppress_next_local_death and self._death_link_damage_grace_units and timer_is_counting:
+                self._death_link_damage_grace_units = max(
+                    0, self._death_link_damage_grace_units - (previous_timer - timer)
+                )
+                if not self._death_link_damage_grace_units:
+                    self._suppress_next_local_death = False
+            # A lethal timer write must remain suppressed through arbitrarily
+            # long pauses/death animations. A newly loaded/restored timer ends
+            # that expectation when no death was observed.
+            if (self._suppress_next_local_death and not self._death_link_damage_grace_units
+                    and previous_timer is not None and timer > previous_timer):
+                self._suppress_next_local_death = False
+            if (enabled and self._pending_death_link and timer_is_counting
+                    and exit_flags == 0 and not self._return_to_map_pending
+                    and not freeze_flag and not menu_open
+                    and not self._suppress_next_local_death):
+                await self._apply_pending_death_link(ctx, timer, powerup)
             return
         if self._return_to_map_pending:
             self._return_to_map_pending = False
+            self._suppress_next_local_death = False
+            self._death_link_damage_grace_units = 0
             logger.debug("Ignored life loss caused by Return to Map.")
+            return
+        if not self._in_level_grace_polls and not self._suppress_next_local_death:
+            self._suppress_next_local_death = False
+            self._death_link_damage_grace_units = 0
+            logger.debug("Ignored life loss outside a recently active level timer.")
             return
         if self._suppress_next_local_death:
             self._suppress_next_local_death = False
+            self._death_link_damage_grace_units = 0
             logger.debug("Suppressed outgoing Death Link caused by an incoming Death Link.")
             return
-        if not self._in_level_grace_polls:
-            logger.debug("Ignored life loss outside a recently active level timer.")
+        trigger_on_insured = bool(ctx.slot_data and ctx.slot_data.get("death_link_triggers_on_insured_death", True))
+        if not enabled or (insured_death and not life_lost and not trigger_on_insured):
             return
 
         amnesty = max(1, min(30, int((ctx.slot_data or {}).get("death_link_amnesty", 1))))

@@ -592,12 +592,16 @@ class ItemHandlingMixin(ReserveHandlingMixin, ItemTransactionMixin):
             return False
         new_value = max(0, min(upper_bound, current_result[0][0] + delta))
         if item_id is not None:
-            return await self._write_item_transaction(
+            applied = await self._write_item_transaction(
                 ctx, item_id, [(address, [new_value], MEMORY_DOMAIN)],
                 [*self._game_data_guards(), (address, list(current_result[0]), MEMORY_DOMAIN)],
             )
-        return await guarded_write(
-            ctx.bizhawk_ctx,
-            [(address, [new_value], MEMORY_DOMAIN)],
-            self._game_data_guards(),
-        )
+        else:
+            applied = await guarded_write(
+                ctx.bizhawk_ctx,
+                [(address, [new_value], MEMORY_DOMAIN)],
+                self._game_data_guards(),
+            )
+        if applied and address == ADDR_LIVES:
+            self._life_delivery_needs_observation = True
+        return applied

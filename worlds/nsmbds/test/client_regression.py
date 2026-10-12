@@ -50,6 +50,8 @@ fake_bizhawk.guarded_read = lambda *args, **kwargs: None
 fake_bizhawk.guarded_write = lambda *args, **kwargs: None
 fake_bizhawk.send_requests = lambda *args, **kwargs: None
 fake_bizhawk.disconnect = lambda *args, **kwargs: None
+fake_bizhawk.NotConnectedError = type("NotConnectedError", (Exception,), {})
+fake_bizhawk.RequestFailedError = type("RequestFailedError", (Exception,), {})
 fake_bizhawk_client.BizHawkClient = FakeBizHawkClient
 fake_bizhawk_client.AutoBizHawkClientRegister = FakeAutoBizHawkClientRegister
 fake_worlds._bizhawk = fake_bizhawk
@@ -2544,6 +2546,8 @@ async def test_insured_death_still_sends_death_link() -> None:
             bytes([6]),
             bytes([0]),
             struct.pack("<I", 0),
+            bytes([0]),
+            bytes([0]),
         ]
 
     fake_bizhawk.read = fake_read
@@ -2582,6 +2586,8 @@ async def test_death_link_amnesty_sends_only_every_configured_death() -> None:
             bytes([0]),
             bytes([0]),
             struct.pack("<I", 0),
+            bytes([0]),
+            bytes([0]),
         ]
 
     async def fake_send_death(message):
@@ -2628,6 +2634,8 @@ async def test_return_to_map_does_not_send_death_link() -> None:
             bytes([0]),
             bytes([return_sequence]),
             struct.pack("<I", exit_flags),
+            bytes([0]),
+            bytes([0]),
         ]
 
     fake_bizhawk.read = fake_read

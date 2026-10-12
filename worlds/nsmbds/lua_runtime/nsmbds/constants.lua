@@ -33,7 +33,7 @@ M.SYS_RED_COIN_COUNTERS = { 0x020CA2D4, 0x020CA2D5 }
 -- pause menu has its own flag and does not reliably set freezeFlag.
 M.SYS_STAGE_FREEZE_FLAG = 0x020CA28C
 M.SYS_STAGE_MENU_OPEN = 0x020CA870
-M.SYS_STAGE_EXIT_FLAGS = 0x02085A1C
+M.SYS_STAGE_EXIT_FLAGS = 0x02085ACC
 -- Vanilla accumulates the three Star-Coin pickup bits here while a course is
 -- active, then copies them into MainSave only during the goal sequence.
 M.SYS_ACTIVE_STAR_COIN_FLAGS = 0x02085A2C

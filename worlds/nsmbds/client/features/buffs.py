@@ -379,4 +379,7 @@ class BuffHandlingMixin:
             # Exact-value guards would reject almost every legitimate bonus.
             if address not in (ADDR_TIMER, ADDR_STARMAN_TIMER):
                 guards.append((address, current_bytes, MEMORY_DOMAIN))
-        return await guarded_write(ctx.bizhawk_ctx, writes, guards)
+        applied = await guarded_write(ctx.bizhawk_ctx, writes, guards)
+        if applied and any(address == ADDR_LIVES for address, _, _, _ in changed):
+            self._life_delivery_needs_observation = True
+        return applied

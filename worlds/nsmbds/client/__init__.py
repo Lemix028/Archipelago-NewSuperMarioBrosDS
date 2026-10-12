@@ -171,7 +171,9 @@ class NSMBDSClient(
         self._death_link_cooldown_until = 0.0
         self._death_link_amnesty_count = 0
         self._suppress_next_local_death = False
+        self._death_link_damage_grace_units = 0
         self._last_lives: int | None = None
+        self._life_delivery_needs_observation = False
         self._last_timer: int | None = None
         self._in_level_grace_polls = 0
         self._return_to_map_pending = False
@@ -471,8 +473,10 @@ class NSMBDSClient(
 
         # Fast path: gameplay-affecting deliveries and transient mailboxes must
         # remain responsive even when maintenance work is deferred.
-        await self._run_watcher_operation("item application", self._apply_pending_items(ctx))
         await self._run_watcher_operation("Death Link synchronization", self._sync_death_link(ctx))
+        # Observe life loss before a delivered 1-Up can conceal it.
+        await self._run_watcher_operation("Death Link", self._handle_death_link(ctx))
+        await self._run_watcher_operation("item application", self._apply_pending_items(ctx))
         mailbox_checks: list[tuple[str, int, int]] = []
         await self._run_watcher_operation(
             "Red Coin detection", self._detect_and_send_red_coin_challenge(ctx, mailbox_checks)
@@ -487,7 +491,6 @@ class NSMBDSClient(
             "location detection", self._detect_and_send_locations(ctx, level_data)
         )
         for operation_name, operation in (
-            ("Death Link", self._handle_death_link),
             ("Timer Drain", self._apply_pending_timer_drains),
             ("Starman Buff", self._apply_pending_starman_buffs),
             ("positive filler bonuses", self._apply_pending_filler_bonuses),
@@ -496,6 +499,11 @@ class NSMBDSClient(
             ("emulator feed", self._flush_emulator_feed),
         ):
             await self._run_watcher_operation(operation_name, operation(ctx))
+
+        if self._life_delivery_needs_observation:
+            # Refresh after 1-Ups/Care Packages so the next death is compared
+            # against the delivered life total, including after an ACK retry.
+            await self._run_watcher_operation("life delivery observation", self._handle_death_link(ctx))
 
         if medium_due:
             for operation_name, operation, args in (
@@ -828,7 +836,9 @@ class NSMBDSClient(
         self._death_link_cooldown_until = 0.0
         self._death_link_amnesty_count = 0
         self._suppress_next_local_death = False
+        self._death_link_damage_grace_units = 0
         self._last_lives = None
+        self._life_delivery_needs_observation = False
         self._last_timer = None
         self._in_level_grace_polls = 0
         self._return_to_map_pending = False
