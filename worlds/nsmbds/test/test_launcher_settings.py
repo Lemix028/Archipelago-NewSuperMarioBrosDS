@@ -25,6 +25,35 @@ class FakeSettings:
 
 
 class TestBizHawkLauncherSettings(TestCase):
+    def test_death_counter_visibility_defaults_and_saved_preference(self) -> None:
+        settings = FakeSettings()
+        settings.nsmbds_options = NSMBDSSettings()
+        with mock.patch.object(launcher, "_settings", return_value=settings):
+            self.assertFalse(launcher.show_death_counter())
+            launcher.set_show_death_counter(True)
+            self.assertTrue(launcher.show_death_counter())
+            launcher.set_show_death_counter(False)
+            self.assertFalse(launcher.show_death_counter())
+        self.assertEqual(settings.save_count, 2)
+
+    def test_failed_counter_visibility_save_restores_preference(self) -> None:
+        settings = FakeSettings()
+        settings.nsmbds_options = NSMBDSSettings()
+        with mock.patch.object(launcher, "_settings", return_value=settings), mock.patch.object(
+            settings, "save", side_effect=OSError("disk full")
+        ):
+            with self.assertRaises(OSError):
+                launcher.set_show_death_counter(True)
+            self.assertFalse(launcher.show_death_counter())
+
+    def test_legacy_settings_without_counter_preference_default_to_hidden(self) -> None:
+        settings = FakeSettings()
+        settings.nsmbds_options = types.SimpleNamespace()
+        with mock.patch.object(launcher, "_settings", return_value=settings):
+            self.assertFalse(launcher.show_death_counter())
+            launcher.set_show_death_counter(True)
+            self.assertTrue(launcher.show_death_counter())
+
     def test_reserve_mode_defaults_and_saved_manual_preference(self) -> None:
         settings = FakeSettings()
         settings.nsmbds_options = NSMBDSSettings()

@@ -16,6 +16,7 @@ from worlds._bizhawk.client import BizHawkClient
 from .features.buffs import BuffHandlingMixin
 from .features.emulator_feed import EmulatorFeedMixin
 from .features.death_link import DeathLinkMixin
+from .features.death_counter import DeathCounterMixin
 from .features.goals import (
     BOSS_LOCATION_IDS,
     FINAL_BOSS_LOCATION_ID,
@@ -106,6 +107,7 @@ class NSMBDSClient(
     BuffHandlingMixin,
     TrapHandlingMixin,
     DeathLinkMixin,
+    DeathCounterMixin,
     GoalHandlingMixin,
     OverworldStateReconcilerMixin,
     PopTrackerWorldSyncMixin,
@@ -165,6 +167,7 @@ class NSMBDSClient(
         self._last_not_ready_logged = False
         self._game_data_header_values: tuple[int, ...] | None = None
         self._death_link_enabled: bool | None = None
+        self._initialize_death_counter()
         self._pending_death_link = False
         self._pending_death_link_effect: int | None = None
         self._death_link_rng = random.Random()
@@ -420,6 +423,8 @@ class NSMBDSClient(
             self._last_published_poptracker_view = None
             return
 
+        await self._run_watcher_operation("death counter synchronization", self._sync_death_counter(ctx))
+
         self._watcher_tick += 1
         medium_due = self._watcher_tick == 1 or self._watcher_tick % MEDIUM_POLL_TICKS == 0
         slow_due = self._watcher_tick == 1 or self._watcher_tick % SLOW_POLL_TICKS == 0
@@ -664,13 +669,12 @@ class NSMBDSClient(
                     self._persist_item_cursor()
                     logger.info("Synchronized empty server item history; waiting for new items.")
             self._handle_gate_storage_packet(cmd, args)
+            self._handle_death_counter_packet(ctx, cmd, args)
             return
         if cmd == "Bounced" and "DeathLink" in args.get("tags", ()):
-            source = args.get("data", {}).get("source")
-            my_name = ctx.player_names.get(ctx.slot) if hasattr(ctx, "player_names") and ctx.slot in getattr(ctx, "player_names", {}) else getattr(ctx, "auth", None)
-            if source and my_name and source == my_name: #Ignore own bounced Death Link
-                return
-            self._queue_incoming_death_link(ctx, source)
+            data = args.get("data", {})
+            if self._accept_death_link_packet(ctx, data):
+                self._queue_incoming_death_link(ctx, data["source"])
             return
         if cmd == "ReceivedItems":
             diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
@@ -801,6 +805,7 @@ class NSMBDSClient(
             self._active_location_set_known = False
         self._sent_locations = checked_locations
         self._observed_locations.update(checked_locations)
+        self._configure_death_counter(ctx)
         logger.info(
             "Synchronized AP location state: %d checked, %d active.",
             len(checked_locations),
@@ -831,6 +836,7 @@ class NSMBDSClient(
         self._awaiting_item_history = False
         self._goal_sent = False
         self._death_link_enabled = None
+        self._initialize_death_counter()
         self._pending_death_link = False
         self._pending_death_link_effect = None
         self._death_link_cooldown_until = 0.0
@@ -959,6 +965,12 @@ def main(*args: str) -> None:
     from .transport import NSMBDSBizHawkContext
 
     class NSMBDSCommandProcessor(bizhawk_context.BizHawkClientCommandProcessor):
+        @mark_raw
+        def _cmd_deathcounter(self, argument: str = "") -> bool:
+            """Show your saved death count and other players: /deathcounter"""
+            from .features.death_counter_status import death_counter_command
+            return death_counter_command(self.ctx, self.output, argument)
+
         @mark_raw
         def _cmd_level(self, query: str = "") -> bool:
             """Find an entrance: /level <level or check name|all|world 1-8>"""

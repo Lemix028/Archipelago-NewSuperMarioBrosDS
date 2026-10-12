@@ -217,6 +217,8 @@ def build_diagnostic_snapshot(ctx: Any) -> dict[str, Any]:
         "traps": {"Speed Trap Remaining": round(speed_remaining, 1) if speed_remaining > 0 else None,
                   "Pending Trap Count": sum(pending_traps.values()), "Pending": list(pending_traps.items())[:10]},
         "deathlink": {"Enabled": bool(slot_data.get("death_link", False)),
+                      "Deaths": getattr(handler, "_death_count", 0),
+                      "DeathLink Deaths": getattr(handler, "_death_link_death_count", 0),
                       "Effect": {0: "Death", 1: "Damage", 2: "100-Second Timer Drain", 3: "Lose All Coins", 4: "Random"}.get(slot_data.get("death_link_effect", 0), "Other"),
                       "Grace": f"{slot_data['death_link_grace_percentage']}%" if "death_link_grace_percentage" in slot_data else None,
                       "Cooldown": f"{slot_data['death_link_cooldown_seconds']}s" if "death_link_cooldown_seconds" in slot_data else None,

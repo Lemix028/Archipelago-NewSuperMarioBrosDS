@@ -59,7 +59,9 @@ class TestWatcherConnection(IsolatedAsyncioTestCase):
         self.assertIsNone(ctx.bizhawk_ctx.streams)
         self.assertEqual(ctx.bizhawk_ctx.connection_status, ConnectionStatus.NOT_CONNECTED)
         client._detect_and_send_block_check.assert_not_awaited()
-        client._handle_death_link.assert_not_awaited()
+        # DeathLink observes life loss before item delivery and Red Coin reads.
+        client._handle_death_link.assert_awaited_once_with(ctx)
+        client._apply_pending_timer_drains.assert_not_awaited()
         ctx.send_msgs.assert_not_awaited()
         ctx.observe_bridge.assert_called_once()
         self.assertEqual(len(logs.records), 1)
@@ -82,6 +84,7 @@ class TestWatcherConnection(IsolatedAsyncioTestCase):
             (ram.ADDR_AP_RED_COIN_EVENT_ACK_SEQUENCE, [12], ram.MEMORY_DOMAIN),
         ])
         client._detect_and_send_block_check.assert_awaited_once()
+        self.assertEqual(client._handle_death_link.await_count, 2)
 
     async def test_connection_timeout_is_not_reported_as_gameplay_stall(self):
         client = NSMBDSClient()

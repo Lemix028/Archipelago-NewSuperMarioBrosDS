@@ -46,6 +46,8 @@ from ...launcher import (
     set_emulator_feed_width,
     reserve_mode,
     set_reserve_mode,
+    show_death_counter,
+    set_show_death_counter,
 )
 
 
@@ -224,14 +226,12 @@ class NSMBDSTrackerPanel(MDScrollView):
             self.content.add_widget(_compact_label("Connect to a seed to load progress."))
             return
 
-        death_link = (
-            f"    [color={ORANGE}][b]DeathLink ON[/b][/color]"
-            if snapshot.death_link_enabled else ""
-        )
         self.content.add_widget(_compact_label(
             f"[b]{escape_markup(snapshot.goal_name)}[/b]  "
-            f"{escape_markup(snapshot.goal_progress)}{death_link}"
+            f"{escape_markup(snapshot.goal_progress)}"
         ))
+        if snapshot.show_death_counter:
+            self.content.add_widget(_compact_label(f"[b]Deaths[/b]  {snapshot.death_count}"))
         summary = MDGridLayout(cols=2, adaptive_height=True, spacing=dp(16))
         summary.add_widget(_compact_progress("Goal", snapshot.goal_count))
         summary.add_widget(_compact_progress("All checks", snapshot.total_progress))
@@ -911,6 +911,20 @@ class NSMBDSSettingsPanel(MDScrollView):
         ))
         self.reserve_status = _compact_label("")
         self.content.add_widget(self.reserve_status)
+        counter_control = MDBoxLayout(orientation="horizontal", spacing=dp(8))
+        self.death_counter_checkbox = CheckBox(
+            active=show_death_counter(), size_hint=(None, None), size=(dp(40), dp(40)),
+        )
+        self.death_counter_checkbox.bind(active=self._set_death_counter)
+        counter_control.add_widget(self.death_counter_checkbox)
+        counter_control.add_widget(_label("Enabled"))
+        self.content.add_widget(self._setting_row(
+            "Death Counter",
+            "Show your own death total in Overview.\nStatistics stay saved when hidden.",
+            counter_control,
+        ))
+        self.death_counter_status = _compact_label(f"[color={GREY}]Statistics: /deathcounter in Chat.[/color]")
+        self.content.add_widget(self.death_counter_status)
         self.content.add_widget(_label(
             "[size=19sp][b]Emulator Feed[/b][/size]\n"
             "[color=#B8B8B8]Configure the message overlay shown inside BizHawk. "
@@ -1079,6 +1093,7 @@ class NSMBDSSettingsPanel(MDScrollView):
         config = emulator_feed_config()
         self._updating_controls = True
         self.refresh_reserve()
+        self.death_counter_checkbox.active = show_death_counter()
         self.width_label.text = f"[b]{config.width} px[/b]"
         self.feed_checkbox.active = config.enabled
         self.width_slider.value = config.width
@@ -1106,6 +1121,24 @@ class NSMBDSSettingsPanel(MDScrollView):
         if not self._updating_controls:
             change_reserve_mode(self.ctx, mode)
             self.refresh_reserve()
+
+    def _set_death_counter(self, _checkbox, active: bool) -> None:
+        if self._updating_controls:
+            return
+        try:
+            set_show_death_counter(active)
+            self.death_counter_status.text = f"[color={GREY}]Statistics: /deathcounter in Chat.[/color]"
+        except (OSError, TypeError, ValueError):
+            logger.exception("Could not save Death Counter visibility.")
+            self._updating_controls = True
+            try:
+                self.death_counter_checkbox.active = show_death_counter()
+            finally:
+                self._updating_controls = False
+            self.death_counter_status.text = f"[color={ORANGE}]Could not save the Death Counter setting.[/color]"
+        panel = getattr(getattr(self.ctx, "ui", None), "tracker_panel", None)
+        if panel is not None:
+            panel.refresh(force=True)
 
     def _set_enabled(self, _switch, active: bool) -> None:
         if not self._updating_controls:

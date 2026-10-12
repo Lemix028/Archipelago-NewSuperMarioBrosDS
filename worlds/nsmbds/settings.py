@@ -22,6 +22,7 @@ class NSMBDSSettings(Group):
     auto_launch_game: bool = False
     # Local client preference; does not affect seed generation or item logic.
     reserve_mode: str = "automatic"
+    show_death_counter: bool = False
     blocksanity_global_check_percentage_cap: int = 30
     trap_percentage_cap: int = 50
     allow_unsafe_nsmbds_options: bool = False

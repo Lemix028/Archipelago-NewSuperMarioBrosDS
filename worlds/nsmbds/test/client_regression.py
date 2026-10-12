@@ -160,6 +160,7 @@ launcher_module = sys.modules["nsmbds.client.launcher"]
 # Isolated clients must never read or change the maintainer's preferences.
 launcher_module.reserve_mode = lambda: "automatic"
 launcher_module.set_reserve_mode = lambda mode: None
+launcher_module.show_death_counter = lambda: False
 
 
 class FakeContext:
@@ -659,9 +660,9 @@ def test_spoiler_free_tracker() -> None:
         and snapshot.death_link_amnesty == 5
         and snapshot.death_link_grace_percentage == 25
         and snapshot.death_link_cooldown_seconds == 12
-        and "Death Link Rules: Random | 1 in 5 local deaths | 25% grace | 12s cooldown" in markup
-        and "Death Link Random Pool: Damage, 100-Second Timer Drain" in markup,
-        "Overview exposes the active Death Link rules and configured random pool",
+        and "Death Link Rules:" not in markup
+        and "Death Link Random Pool:" not in markup,
+        "Overview keeps DeathLink rules out of the display",
     )
     check(
         sum(entry.received for entry in snapshot.pending_powerups) == 3
@@ -1186,7 +1187,7 @@ def test_death_link_state() -> None:
     )
     client = client_module.NSMBDSClient()
     context = FakeContext(death_link=True)
-    client.on_package(context, "Bounced", {"tags": ["DeathLink"]})
+    client.on_package(context, "Bounced", {"tags": ["DeathLink"], "data": {"source": "Luigi", "time": 1.0}})
     check(client._pending_death_link, "Incoming Death Link is queued")
 
 
@@ -1231,7 +1232,7 @@ def test_death_link_receive_rules() -> None:
     context.slot_data["death_link_grace_percentage"] = 75
     spared = client_module.NSMBDSClient()
     spared._death_link_rng = FixedRng(0)
-    spared.on_package(context, "Bounced", {"tags": ["DeathLink"], "data": {"source": "Luigi"}})
+    spared.on_package(context, "Bounced", {"tags": ["DeathLink"], "data": {"source": "Luigi", "time": 1.0}})
     check(not spared._pending_death_link, "75% Death Link grace spares Mario on a successful roll")
     check(
         spared._pending_ap_notifications
@@ -1244,7 +1245,7 @@ def test_death_link_receive_rules() -> None:
     context.slot_data["death_link_random_effects"] = ["timer_drain"]
     accepted = client_module.NSMBDSClient()
     accepted._death_link_rng = FixedRng(99, death_link_module.DEATH_LINK_EFFECT_TIMER_DRAIN)
-    accepted.on_package(context, "Bounced", {"tags": ["DeathLink"], "data": {"source": "Luigi"}})
+    accepted.on_package(context, "Bounced", {"tags": ["DeathLink"], "data": {"source": "Luigi", "time": 1.0}})
     check(
         accepted._pending_death_link
         and accepted._pending_death_link_effect == death_link_module.DEATH_LINK_EFFECT_TIMER_DRAIN,
@@ -1257,7 +1258,7 @@ def test_death_link_receive_rules() -> None:
 
     cooling_down = client_module.NSMBDSClient()
     cooling_down._death_link_cooldown_until = death_link_module.time.monotonic() + 30
-    cooling_down.on_package(context, "Bounced", {"tags": ["DeathLink"], "data": {"source": "Luigi"}})
+    cooling_down.on_package(context, "Bounced", {"tags": ["DeathLink"], "data": {"source": "Luigi", "time": 1.0}})
     check(
         not cooling_down._pending_death_link and not cooling_down._pending_ap_notifications,
         "Death Links received during cooldown are discarded without an in-game notification",
@@ -4512,6 +4513,81 @@ async def test_gate_gap_thresholds_mailbox_and_purchase_accounting() -> None:
               "Reopening purchased signs after a savestate does not charge twice")
         check(all(message["cmd"] == "Set" for message in messages),
               "Gate purchases remain invisible to location checks")
+
+
+def test_overview_widgets_show_only_own_counter_and_respect_visibility() -> None:
+    from unittest.mock import patch
+
+    class Widget:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+            self.children = []
+
+        def add_widget(self, child):
+            self.children.append(child)
+
+        def clear_widgets(self):
+            self.children.clear()
+
+        def bind(self, **_kwargs):
+            pass
+
+    ctx = FakeContext(death_link=True)
+    client = client_module.NSMBDSClient()
+    ctx.client_handler = client
+    client._death_count = 7
+    client._missing_powerup_license = lambda _ctx, _item: None
+    client._death_link_death_count = 2
+    client._pending_death_link = True
+    client._other_death_counts[2] = {"total": 99, "deathlink": 20}
+    ctx.player_names = {1: "Mario", 2: "Luigi"}
+    panel = types.SimpleNamespace(ctx=ctx, content=Widget(), _locked_buttons=[])
+
+    def texts(widget):
+        return [getattr(widget, "text", "")] + [text for child in widget.children for text in texts(child)]
+
+    with patch.object(launcher_module, "show_death_counter", return_value=True), \
+            patch.multiple(tracker_view_module, MDBoxLayout=Widget, MDGridLayout=Widget, Button=Widget), \
+            patch.object(tracker_view_module, "_compact_label", side_effect=lambda text, **_kw: Widget(text=text)), \
+            patch.object(tracker_view_module, "_compact_progress", side_effect=lambda *_a, **_kw: Widget()), \
+            patch.object(tracker_view_module, "_compact_heading", side_effect=lambda *_a, **_kw: Widget()), \
+            patch.object(tracker_view_module, "_compact_inventory", side_effect=lambda *_a, **_kw: Widget()):
+        tracker_view_module.NSMBDSTrackerPanel._render(panel, tracker_module.build_tracker_snapshot(ctx))
+        visible = "\n".join(texts(panel.content))
+        check("[b]Deaths[/b]  7" in visible and "Luigi" not in visible
+              and "from DeathLink" not in visible and "DeathLink ON" not in visible
+              and "waiting for gameplay" not in visible,
+              "Overview widgets show only the player's own total, without DeathLink details")
+        with patch.object(launcher_module, "show_death_counter", return_value=False):
+            tracker_view_module.NSMBDSTrackerPanel._render(panel, tracker_module.build_tracker_snapshot(ctx))
+        check("[b]Deaths[/b]" not in "\n".join(texts(panel.content)) and client._death_count == 7,
+              "Hiding the Overview counter removes its widget and preserves seed counts")
+
+
+def test_settings_counter_checkbox_refreshes_overview_and_recovers_save_failure() -> None:
+    from unittest.mock import Mock, patch
+
+    saved = {"visible": True}
+    refresh = Mock()
+    panel = types.SimpleNamespace(
+        _updating_controls=False,
+        ctx=types.SimpleNamespace(ui=types.SimpleNamespace(tracker_panel=types.SimpleNamespace(refresh=refresh))),
+        death_counter_checkbox=types.SimpleNamespace(active=True),
+        death_counter_status=types.SimpleNamespace(text=""),
+    )
+    with patch.object(tracker_view_module, "show_death_counter", side_effect=lambda: saved["visible"]), \
+            patch.object(tracker_view_module, "set_show_death_counter", side_effect=lambda active: saved.update(visible=active)):
+        tracker_view_module.NSMBDSSettingsPanel._set_death_counter(panel, panel.death_counter_checkbox, False)
+    check(not saved["visible"] and refresh.call_args.kwargs == {"force": True},
+          "Settings saves counter visibility and refreshes Overview immediately")
+    saved["visible"] = True
+    panel.death_counter_checkbox.active = False
+    with patch.object(tracker_view_module, "show_death_counter", return_value=True), \
+            patch.object(tracker_view_module, "set_show_death_counter", side_effect=OSError("disk full")):
+        tracker_view_module.NSMBDSSettingsPanel._set_death_counter(panel, panel.death_counter_checkbox, False)
+    check(panel.death_counter_checkbox.active and "Could not save" in panel.death_counter_status.text
+          and not panel._updating_controls,
+          "A failed Settings save restores the checkbox and explains the failure")
 
 
 def main() -> None:

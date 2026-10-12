@@ -345,6 +345,8 @@ class DeathLinkMixin:
             self._death_link_damage_grace_units = 0
             logger.debug("Ignored life loss outside a recently active level timer.")
             return
+        death_link_death = self._suppress_next_local_death
+        self._record_death(death_link=death_link_death)
         if self._suppress_next_local_death:
             self._suppress_next_local_death = False
             self._death_link_damage_grace_units = 0
@@ -366,6 +368,7 @@ class DeathLinkMixin:
 
         self._death_link_amnesty_count = 0
         await ctx.send_death("Mario died.")
+        self._last_sent_death_link_time = getattr(ctx, "last_death_link", None)
         diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
         if diagnostics is not None:
             diagnostics.last_deathlink_sent = datetime.now()

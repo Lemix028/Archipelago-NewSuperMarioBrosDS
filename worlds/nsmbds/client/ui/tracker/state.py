@@ -158,6 +158,8 @@ class TrackerSnapshot:
     reserve_delivery_pending: bool = False
     reserve_action_error: str = ""
     star_coin_gate_gap: int = 5
+    death_count: int = 0
+    show_death_counter: bool = False
 
 
 def _is_server_connected(ctx: Any) -> bool:
@@ -277,7 +279,7 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
         )
 
     rom_handler = getattr(ctx, "client_handler", None)
-    from ...launcher import reserve_mode
+    from ...launcher import reserve_mode, show_death_counter
     pending_powerup_counts = Counter(
         item_id_to_name[item_id]
         for item_id in getattr(rom_handler, "_deferred_item_ids", ())
@@ -342,6 +344,8 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
         death_link_amnesty=int(slot_data.get("death_link_amnesty", 1)),
         death_link_grace_percentage=int(slot_data.get("death_link_grace_percentage", 0)),
         death_link_cooldown_seconds=int(slot_data.get("death_link_cooldown_seconds", 0)),
+        death_count=int(getattr(rom_handler, "_death_count", 0)),
+        show_death_counter=show_death_counter(),
         trap_shields=int(getattr(rom_handler, "_pending_trap_shields", 0)),
         life_insurance=int(getattr(rom_handler, "_pending_life_insurance", 0)),
         star_coin_lifetime=received_star_coins,
@@ -368,11 +372,6 @@ def build_tracker_snapshot(ctx: Any) -> TrackerSnapshot:
 
 def render_tracker_markup(snapshot: TrackerSnapshot) -> str:
     """Render a compact Kivy-markup view of a spoiler-free snapshot."""
-    death_link_amnesty = (
-        "every local death"
-        if snapshot.death_link_amnesty == 1
-        else f"1 in {snapshot.death_link_amnesty} local deaths"
-    )
     lines = [
         "[size=24sp][b]NSMBDS Overview[/b][/size]",
         "[color=9E9E9E]No item placements are shown. Use the Hints tab for hinted information.[/color]",
@@ -423,16 +422,9 @@ def render_tracker_markup(snapshot: TrackerSnapshot) -> str:
     lines.extend((
         "",
         "[size=19sp][b]Session Info[/b][/size]",
-        f"Death Link: {'On' if snapshot.death_link_enabled else 'Off'}",
-        (
-            f"Death Link Rules: {snapshot.death_link_effect} | "
-            f"{death_link_amnesty} | "
-            f"{snapshot.death_link_grace_percentage}% grace | "
-            f"{snapshot.death_link_cooldown_seconds}s cooldown"
-        ),
     ))
-    if snapshot.death_link_effect == "Random":
-        lines.append(f"Death Link Random Pool: {', '.join(snapshot.death_link_random_effects)}")
+    if snapshot.show_death_counter:
+        lines.append(f"Deaths: {snapshot.death_count}")
     lines.extend((
         f"Trap Shields: {snapshot.trap_shields}",
         f"Life Insurance: {snapshot.life_insurance}",

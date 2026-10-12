@@ -337,6 +337,23 @@ def set_reserve_mode(mode: str) -> None:
         raise
 
 
+def show_death_counter() -> bool:
+    """Show the player's own total in Overview; seed tracking remains active."""
+    return bool(_nsmbds_value("show_death_counter", False))
+
+
+def set_show_death_counter(enabled: bool) -> None:
+    settings = _settings()
+    options = settings.nsmbds_options
+    previous = getattr(options, "show_death_counter", False)
+    options.show_death_counter = bool(enabled)
+    try:
+        settings.save()
+    except Exception:
+        options.show_death_counter = previous
+        raise
+
+
 def emulator_feed_config() -> EmulatorFeedConfig:
     """Return validated feed settings suitable for both the client UI and Lua."""
     position = str(_nsmbds_value("emulator_feed_position", "bottom_left"))
