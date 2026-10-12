@@ -11,7 +11,7 @@ For installation, patching the game, and connecting to a room, see the
 > **Unstable release:** This version is still being tested. Gameplay, item
 > delivery, and tracking may have bugs.
 
-## Features at a glance
+## Features
 
 - Four goals; World Passes, Keys, Star Coin gates, and Power-Up Permits.
 - Level, Star Coin, boss, Toad House, red-coin, secret-exit, and block checks.
