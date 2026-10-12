@@ -107,7 +107,8 @@ POWERUP_ABILITY_REQUIREMENTS: tuple[PowerUpAbilityRequirement, ...] = (
     ),
     PowerUpAbilityRequirement(
         MEGA_MUSHROOM_LICENSE,
-        locations=(),
+        # Mini Mario enters the bonus room; Mega Mario moves the blocking pipe.
+        locations=("World 7-5 Star Coin 2",),
     ),
     PowerUpAbilityRequirement(TOUCHSCREEN_RESERVE_LICENSE),
 )

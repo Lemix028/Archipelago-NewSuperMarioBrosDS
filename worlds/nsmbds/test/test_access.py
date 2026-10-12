@@ -186,14 +186,21 @@ class TestStarCoinPowerupAccessRules(NSMBDSTestBase):
             "Missing Mini Mushroom Permit",
         )
 
-    def test_world_7_5_requires_mini(self) -> None:
+    def test_world_7_5_star_coin_2_requires_mini_and_mega(self) -> None:
         self.collect_by_name([
             "Desert Pass",
             "Jungle Pass",
             "Cloud Pass",
-            "Mini Mushroom Permit",
         ])
+        self.assertFalse(self.can_reach_location("World 7-5 Star Coin 2"))
+        self.assertTrue(self.can_reach_location("World 7-5 Star Coin 1"))
+        self.assertTrue(self.can_reach_location("World 7-5 Star Coin 3"))
+        self.collect_by_name("Mini Mushroom Permit")
+        self.assertFalse(self.can_reach_location("World 7-5 Star Coin 2"))
+        self.collect_by_name("Mega Mushroom Permit")
         self.assertTrue(self.can_reach_location("World 7-5 Star Coin 2"))
+        self.remove_by_name("Mini Mushroom Permit")
+        self.assertFalse(self.can_reach_location("World 7-5 Star Coin 2"))
 
 
 class TestOptionalRouteLogic(NSMBDSTestBase):
