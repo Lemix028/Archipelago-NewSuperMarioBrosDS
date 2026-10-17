@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
 
 
-logger = logging.getLogger("NSMBDS")
+logger = logging.getLogger("NSMBDS.Bridge")
 LOCATION_ID_TO_NAME = {location_id: name for name, location_id in LOCATION_TABLE.items()}
 FEED_HISTORY_BATCH_SIZE = 40
 

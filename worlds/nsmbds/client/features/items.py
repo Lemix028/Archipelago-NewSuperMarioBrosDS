@@ -39,7 +39,8 @@ if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
 
 
-logger = logging.getLogger("NSMBDS.Sync")
+logger = logging.getLogger("NSMBDS.Items")
+reserve_logger = logging.getLogger("NSMBDS.Reserve")
 
 LIFE_ITEMS = {
     "1-Up Mushroom": 1,
@@ -103,7 +104,7 @@ class ItemHandlingMixin(ReserveHandlingMixin, ItemTransactionMixin):
                 if diagnostics is not None:
                     diagnostics.last_queued_index = item_index
                     diagnostics.event("ITEM", "queued", f"index={item_index}")
-                logger.debug("Item queued index=%d", item_index)
+                reserve_logger.debug("Item queued index=%d", item_index)
                 self._queue_item_receipt(network_item.item)
                 self._items_received_index += 1
                 continue
@@ -112,7 +113,7 @@ class ItemHandlingMixin(ReserveHandlingMixin, ItemTransactionMixin):
                 if diagnostics is not None:
                     diagnostics.last_queued_index = item_index
                     diagnostics.event("ITEM", "queued", f"index={item_index}")
-                logger.debug("Item queued index=%d", item_index)
+                reserve_logger.debug("Item queued index=%d", item_index)
                 self._log_held_powerup(network_item.item, missing_license)
                 self._queue_item_receipt(network_item.item)
                 self._items_received_index += 1
@@ -355,7 +356,7 @@ class ItemHandlingMixin(ReserveHandlingMixin, ItemTransactionMixin):
         item_name = item_id_to_name[item_id]
         diagnostic = (item_name, required_license)
         if self._held_powerup_log_key != diagnostic:
-            logger.info("Holding %s until %s is received.", item_name, required_license)
+            reserve_logger.info("Holding %s until %s is received.", item_name, required_license)
             self._held_powerup_log_key = diagnostic
 
     async def _apply_item(self, ctx: "BizHawkClientContext", item_id: int) -> bool:
@@ -400,7 +401,7 @@ class ItemHandlingMixin(ReserveHandlingMixin, ItemTransactionMixin):
             if current_inventory != 0:
                 diagnostic = (item_name, "occupied reserve slot")
                 if self._held_powerup_log_key != diagnostic:
-                    logger.info(
+                    reserve_logger.info(
                         "Holding %s until the current reserve Power-Up is used.",
                         item_name,
                     )

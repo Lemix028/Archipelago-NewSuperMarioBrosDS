@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
 
 
-logger = logging.getLogger("NSMBDS.Sync")
+logger = logging.getLogger("NSMBDS.Locations")
 
 STAR_COIN_LOCATION_IDS = frozenset(
     location_id for name, location_id in LOCATION_TABLE.items() if "Star Coin" in name

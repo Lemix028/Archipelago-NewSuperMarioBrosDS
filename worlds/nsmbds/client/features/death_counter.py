@@ -6,7 +6,7 @@ import hashlib
 import logging
 import math
 
-logger = logging.getLogger("NSMBDS")
+logger = logging.getLogger("NSMBDS.DeathCounter")
 GAME = "New Super Mario Bros. DS"
 
 

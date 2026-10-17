@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
 
 
-logger = logging.getLogger("NSMBDS")
+logger = logging.getLogger("NSMBDS.DeathLink")
 
 DEATH_LINK_EFFECT_DEATH = 0
 DEATH_LINK_EFFECT_DAMAGE = 1

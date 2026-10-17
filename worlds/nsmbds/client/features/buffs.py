@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
 
 
-logger = logging.getLogger("NSMBDS")
+logger = logging.getLogger("NSMBDS.Buffs")
 
 TIME_CAPSULE_SECONDS = 30
 CARE_PACKAGE_SECONDS = 15

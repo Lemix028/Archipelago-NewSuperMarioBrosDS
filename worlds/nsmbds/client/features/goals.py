@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
 
 
-logger = logging.getLogger("NSMBDS")
+logger = logging.getLogger("NSMBDS.Goal")
 
 BOSS_LOCATION_IDS = frozenset(LOCATION_TABLE[name] for name in BOSS_LOCATION_NAMES)
 FINAL_BOSS_LOCATION_ID = LOCATION_TABLE[BOSS_LOCATION_NAMES[-1]]

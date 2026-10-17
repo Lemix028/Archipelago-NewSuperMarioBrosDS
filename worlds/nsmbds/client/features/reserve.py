@@ -7,7 +7,7 @@ import logging
 from ...items import INVENTORY_RAM_VALUES, ITEM_TABLE, item_id_to_name
 from .. import launcher
 
-logger = logging.getLogger("NSMBDS.Sync")
+logger = logging.getLogger("NSMBDS.Reserve")
 
 
 class ReserveHandlingMixin:

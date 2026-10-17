@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
 
 
-logger = logging.getLogger("NSMBDS")
+logger = logging.getLogger("NSMBDS.Overworld")
 
 WORLD_ACCESS_ITEMS = (
     "Desert Pass",
