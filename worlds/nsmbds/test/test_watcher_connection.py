@@ -46,6 +46,14 @@ class TestWatcherConnection(IsolatedAsyncioTestCase):
         client._active_locations = {LOCATION_TABLE["World 1-1 Red Coin Challenge"]}
         return client, ctx
 
+    async def test_goal_detection_uses_the_current_validated_snapshot(self):
+        client, ctx = self.watcher_fixture()
+        client._detect_and_send_red_coin_challenge = AsyncMock()
+        await client.game_watcher(ctx)
+        client._send_goal_if_complete.assert_awaited_once_with(
+            ctx, client._read_level_data.return_value
+        )
+
     async def test_windows_socket_reset_stops_pass_and_red_coin_retries(self):
         client, ctx = self.watcher_fixture()
         reader = SimpleNamespace(readline=AsyncMock(side_effect=ConnectionResetError(64, "Connection lost")))

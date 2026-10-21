@@ -8,7 +8,13 @@ from typing import TYPE_CHECKING
 from ...data.level_randomization import mapping_from_slot_data
 from ...data.ram_addresses import AP_NOTIFICATION_GOAL_COMPLETE
 from ...items import FINAL_CASTLE_KEY_NAME, ITEM_TABLE
-from ...locations import BOSS_LOCATION_NAMES, LOCATION_TABLE
+from ...locations import (
+    BOSS_LOCATION_NAMES,
+    LOCATION_TABLE,
+    build_boss_location_completion_sources,
+    build_mapped_location_ram_map,
+    build_secret_exit_ram_requirements,
+)
 
 if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
@@ -51,9 +57,11 @@ class GoalHandlingMixin:
         logger.error("Received unsupported NSMBDS goal value %s for the final castle gate.", goal)
         return None
 
-    async def _send_goal_if_complete(self, ctx: "BizHawkClientContext") -> None:
+    async def _send_goal_if_complete(
+        self, ctx: "BizHawkClientContext", level_data: bytes
+    ) -> None:
         """Send CLIENT_GOAL at most once after the local goal condition is done."""
-        if self._goal_sent or ctx.finished_game or not self._check_goal(ctx):
+        if self._goal_sent or ctx.finished_game or not self._check_goal(ctx, level_data):
             return
         try:
             await ctx.send_msgs([{"cmd": "StatusUpdate", "status": 30}])
@@ -62,23 +70,34 @@ class GoalHandlingMixin:
             return
         ctx.finished_game = True
         self._goal_sent = True
+        logger.info("Submitted goal completion (goal=%s).", (ctx.slot_data or {}).get("goal", 0))
         self._queue_ap_notification(AP_NOTIFICATION_GOAL_COMPLETE)
 
-    def _check_goal(self, ctx: "BizHawkClientContext") -> bool:
-        """Evaluate the selected local goal from observed RAM-backed locations."""
+    def _check_goal(self, ctx: "BizHawkClientContext", level_data: bytes) -> bool:
+        """Evaluate boss victories from the current save and coins from AP items."""
         goal = ctx.slot_data.get("goal", 0) if ctx.slot_data else 0
-        if goal == 0:
-            return FINAL_BOSS_LOCATION_ID in self._observed_locations
         if goal == 1:
             required = ctx.slot_data.get("required_star_coins", 80)
             return self._received_star_coin_count(ctx) >= required
-        if goal == 2:
-            return BOSS_LOCATION_IDS <= self._observed_locations
-        if goal == 3:
-            required = ctx.slot_data.get("required_star_coins", 80)
-            return (
-                BOSS_LOCATION_IDS <= self._observed_locations
-                and self._received_star_coin_count(ctx) >= required
+        if goal not in (0, 2, 3):
+            logger.error("Received unsupported NSMBDS goal value %s.", goal)
+            return False
+
+        # Another player's !collect can check a boss's randomized item while
+        # this slot is offline. Imported AP checks are not proof of a victory
+        # in this save, so never use _observed_locations for boss goals.
+        level_mapping = mapping_from_slot_data(ctx.slot_data)
+        boss_sources = build_boss_location_completion_sources(level_mapping)
+        secret_requirements = build_secret_exit_ram_requirements(level_mapping)
+        location_ram_map = build_mapped_location_ram_map(level_mapping)
+        required_bosses = BOSS_LOCATION_NAMES[-1:] if goal == 0 else BOSS_LOCATION_NAMES
+        if not all(
+            self._is_location_completed(
+                name, level_data, boss_sources, secret_requirements, location_ram_map
             )
-        logger.error("Received unsupported NSMBDS goal value %s.", goal)
-        return False
+            for name in required_bosses
+        ):
+            return False
+        return goal != 3 or self._received_star_coin_count(ctx) >= ctx.slot_data.get(
+            "required_star_coins", 80
+        )
