@@ -1824,6 +1824,17 @@ async def test_item_receipt_notifications_and_realtime_core_feed() -> None:
     launcher_module._settings = original_settings
 
 
+def boss_victory_snapshot(*boss_names: str) -> bytes:
+    data = bytearray(ram_addresses.LOCATION_DATA_SNAPSHOT_SIZE)
+    for offset in ram_addresses.LEVEL_DATA_WORLD_HEADER_OFFSETS:
+        data[offset] = ram_addresses.LEVEL_DATA_WORLD_HEADER_VALUE
+    for name in boss_names:
+        source = locations.BOSS_LOCATION_COMPLETION_SOURCES[name][0]
+        offset, mask = locations.LOCATION_RAM_MAP[source]
+        data[offset] |= 0x80 | mask
+    return bytes(data)
+
+
 def test_goals() -> None:
     client = client_module.NSMBDSClient()
     bowser_id = client_module.FINAL_BOSS_LOCATION_ID
@@ -1837,43 +1848,47 @@ def test_goals() -> None:
         return context
 
     client._observed_locations = {bowser_id}
-    check(client._check_goal(FakeContext(goal=0)), "Bowser goal completes at World 8 Castle")
+    bowser_data = boss_victory_snapshot(locations.BOSS_LOCATION_NAMES[-1])
+    empty_data = boss_victory_snapshot()
+    all_boss_data = boss_victory_snapshot(*locations.BOSS_LOCATION_NAMES)
+    without_bowser_data = boss_victory_snapshot(*locations.BOSS_LOCATION_NAMES[:-1])
+    check(client._check_goal(FakeContext(goal=0), bowser_data), "Bowser goal completes at the final castle")
 
     client._observed_locations = set(client_module.STAR_COIN_LOCATION_IDS)
     check(
-        not client._check_goal(coin_context(79, 1)),
+        not client._check_goal(coin_context(79, 1), empty_data),
         "Star Coin goal ignores local checks and rejects 79 received items",
     )
     check(
-        client._check_goal(coin_context(80, 1)),
+        client._check_goal(coin_context(80, 1), empty_data),
         "Star Coin goal accepts 80 received Star Coin items",
     )
 
     client._observed_locations = set(client_module.BOSS_LOCATION_IDS)
-    check(client._check_goal(FakeContext(goal=2)), "World Tour requires all nine Castle bosses")
+    check(client._check_goal(FakeContext(goal=2), all_boss_data), "World Tour requires all nine Castle bosses")
 
     client._observed_locations.remove(bowser_id)
     check(
-        not client._check_goal(FakeContext(goal=2)),
+        not client._check_goal(FakeContext(goal=2), without_bowser_data),
         "World Tour does not finish before the final Bowser boss check",
     )
 
     client._observed_locations = set(client_module.BOSS_LOCATION_IDS)
-    check(client._check_goal(coin_context(80, 3)), "Completionist requires all bosses and received Star Coin items")
+    check(client._check_goal(coin_context(80, 3), all_boss_data), "Completionist requires all bosses and received Star Coin items")
 
     check(
-        not client._check_goal(coin_context(79, 3)),
+        not client._check_goal(coin_context(79, 3), all_boss_data),
         "Completionist does not finish with all bosses but too few Star Coins",
     )
     client._observed_locations = set()
     check(
-        not client._check_goal(coin_context(80, 3)),
+        not client._check_goal(coin_context(80, 3), empty_data),
         "Completionist does not finish with enough Star Coins but without all bosses",
     )
 
     tower_two_id = locations.LOCATION_TABLE["World 8-Tower 2 Goal"]
     check(
-        client._check_goal(coin_context(240, 1, 240)),
+        client._check_goal(coin_context(240, 1, 240), empty_data),
         "Star Coin Hunt still completes at 240 received items independently of the final path",
     )
 
@@ -1925,13 +1940,14 @@ async def test_goal_status_submission() -> None:
     context = FakeContext(goal=0)
     bowser_id = client_module.FINAL_BOSS_LOCATION_ID
     client._observed_locations = {bowser_id}
+    level_data = boss_victory_snapshot(locations.BOSS_LOCATION_NAMES[-1])
     sent_messages = []
 
     async def send_msgs(messages):
         sent_messages.append(messages)
 
     context.send_msgs = send_msgs
-    await client._send_goal_if_complete(context)
+    await client._send_goal_if_complete(context, level_data)
     check(
         sent_messages == [[{"cmd": "StatusUpdate", "status": 30}]],
         "Completed goal sends CLIENT_GOAL status to Archipelago",
@@ -1943,7 +1959,7 @@ async def test_goal_status_submission() -> None:
         "Successful goal submission queues the in-game victory notification",
     )
 
-    await client._send_goal_if_complete(context)
+    await client._send_goal_if_complete(context, level_data)
     check(len(sent_messages) == 1, "Completed goal status is sent only once")
 
     retry_client = client_module.NSMBDSClient()
@@ -1962,7 +1978,7 @@ async def test_goal_status_submission() -> None:
     previous_log_disable = logging.root.manager.disable
     logging.disable(logging.CRITICAL)
     try:
-        await retry_client._send_goal_if_complete(retry_context)
+        await retry_client._send_goal_if_complete(retry_context, level_data)
     finally:
         logging.disable(previous_log_disable)
     check(
@@ -1971,7 +1987,7 @@ async def test_goal_status_submission() -> None:
         and not retry_client._pending_ap_notifications,
         "Failed goal submission remains eligible for retry",
     )
-    await retry_client._send_goal_if_complete(retry_context)
+    await retry_client._send_goal_if_complete(retry_context, level_data)
     check(
         retry_context.finished_game
         and retry_client._goal_sent
@@ -1979,6 +1995,98 @@ async def test_goal_status_submission() -> None:
         and retry_client._pending_ap_notifications
         == [(ram_addresses.AP_NOTIFICATION_GOAL_COMPLETE, 0)],
         "Goal submission succeeds on the next watcher retry",
+    )
+
+
+async def test_collected_boss_checks_do_not_goal_on_reconnect() -> None:
+    """Another player's !collect may check boss items while this slot is offline."""
+    for goal in (0, 2, 3):
+        client = client_module.NSMBDSClient()
+        context = FakeContext(goal=goal)
+        context.items_received = [
+            types.SimpleNamespace(item=client_module.ITEM_TABLE["Star Coin"][0])
+            for _ in range(80)
+        ]
+        client._item_cursor_loaded = True
+        client._configure_death_counter = lambda _ctx: None
+        checked = set(client_module.BOSS_LOCATION_IDS)
+        context.checked_locations = checked
+        context.missing_locations -= checked
+        sent_messages = []
+
+        async def send_msgs(messages):
+            sent_messages.extend(messages)
+
+        context.send_msgs = send_msgs
+        packet = {"checked_locations": list(checked)}
+        empty_data = boss_victory_snapshot()
+        for _ in range(2):
+            client.on_package(context, "Connected", packet)
+            await client._detect_and_send_locations(context, empty_data)
+            await client._send_goal_if_complete(context, empty_data)
+        check(
+            checked <= client._observed_locations
+            and not sent_messages and not context.finished_game
+            and not client._goal_sent and not client._pending_ap_notifications,
+            f"Goal {goal} ignores collected boss checks across reconnects when local bosses are uncleared",
+        )
+
+        without_bowser = boss_victory_snapshot(*locations.BOSS_LOCATION_NAMES[:-1])
+        await client._detect_and_send_locations(context, without_bowser)
+        await client._send_goal_if_complete(context, without_bowser)
+        check(
+            not context.finished_game,
+            f"Goal {goal} still waits for the local final boss despite its collected server check",
+        )
+
+        all_bosses = boss_victory_snapshot(*locations.BOSS_LOCATION_NAMES)
+        await client._detect_and_send_locations(context, all_bosses)
+        await client._send_goal_if_complete(context, all_bosses)
+        check(
+            context.finished_game
+            and [message for message in sent_messages if message["cmd"] == "StatusUpdate"]
+            == [{"cmd": "StatusUpdate", "status": 30}],
+            f"Goal {goal} completes from local boss flags even when the boss item was already collected",
+        )
+
+        # The latest save remains authoritative after a new client starts or
+        # switches seeds; old local observations must not replace its flags.
+        fresh = client_module.NSMBDSClient()
+        fresh._observed_locations.update(checked)
+        check(
+            fresh._check_goal(context, all_bosses)
+            and not fresh._check_goal(context, empty_data),
+            f"Goal {goal} accepts a resumed completed save and rejects stale observations with an uncleared save",
+        )
+
+
+def test_boss_goals_accept_local_mini_castle_exits_with_level_shuffle() -> None:
+    from nsmbds.data.level_randomization import IDENTITY_LEVEL_MAPPING, LEVEL_RANDOMIZATION_VERSION
+
+    mapping = dict(IDENTITY_LEVEL_MAPPING)
+    mapping["World 1-Castle"], mapping["World 2-Castle"] = "World 2-Castle", "World 1-Castle"
+    context = FakeContext(goal=2)
+    context.slot_data.update({
+        "level_randomization": 1,
+        "level_randomization_version": LEVEL_RANDOMIZATION_VERSION,
+        "level_mapping": mapping,
+    })
+    client = client_module.NSMBDSClient()
+    client._observed_locations.update(client_module.BOSS_LOCATION_IDS)
+    data = bytearray(boss_victory_snapshot(*locations.BOSS_LOCATION_NAMES))
+    # Mini exits retain the clear bit plus a native completion flag, even
+    # when the normal node-active bit is absent in the loaded save.
+    data[35] = 0x10
+    data[111] = 0x10
+    data[ram_addresses.MINI_CASTLE_FLAGS_GAME_DATA_OFFSET] = 0x03
+    check(
+        client._check_goal(context, bytes(data)),
+        "World Tour accepts local Mini-Castle victories when their boss content is shuffled",
+    )
+    data[ram_addresses.MINI_CASTLE_FLAGS_GAME_DATA_OFFSET] = 0
+    check(
+        not client._check_goal(context, bytes(data)),
+        "Collected shuffled boss checks cannot replace missing local Mini-Castle victories",
     )
 
 
@@ -4679,20 +4787,28 @@ def test_settings_counter_checkbox_refreshes_overview_and_recovers_save_failure(
 
 
 def main() -> None:
-    tests = [
-        test
-        for name, test in tuple(globals().items())
-        if name.startswith("test_") and callable(test)
-    ]
-    for test in tests:
-        original_send_requests = fake_bizhawk.send_requests
-        try:
-            result = test()
-            if inspect.isawaitable(result):
-                asyncio.run(result)
-        finally:
-            fake_bizhawk.send_requests = original_send_requests
-    print(f"All {len(tests)} client logic test groups passed.")
+    import Utils
+    from unittest.mock import patch
+
+    # Reconnect fixtures must neither restore the maintainer's stored test
+    # cursors nor overwrite their actual client progress and preferences.
+    with tempfile.TemporaryDirectory(prefix="nsmbds-client-regression-") as directory, \
+            patch.object(Utils.user_path, "cached_path", directory, create=True), \
+            patch.object(Utils.persistent_load, "storage", {}, create=True):
+        tests = [
+            test
+            for name, test in tuple(globals().items())
+            if name.startswith("test_") and callable(test)
+        ]
+        for test in tests:
+            original_send_requests = fake_bizhawk.send_requests
+            try:
+                result = test()
+                if inspect.isawaitable(result):
+                    asyncio.run(result)
+            finally:
+                fake_bizhawk.send_requests = original_send_requests
+        print(f"All {len(tests)} client logic test groups passed.")
 
 
 if __name__ == "__main__":

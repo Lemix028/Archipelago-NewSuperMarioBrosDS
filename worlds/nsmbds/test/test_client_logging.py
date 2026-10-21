@@ -7,9 +7,11 @@ from contextlib import closing
 import io
 import logging
 from pathlib import Path
+import sys
 import tempfile
+import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 spec = importlib.util.spec_from_file_location(
@@ -20,6 +22,35 @@ spec.loader.exec_module(logging_config)
 
 
 class TestClientLogging(unittest.TestCase):
+    def test_dedicated_launch_uses_own_log_name_and_restores_core(self):
+        original = Mock()
+        utils = types.SimpleNamespace(init_logging=original)
+
+        def launch(*args):
+            self.assertEqual(args, ("seed.apnds",))
+            utils.init_logging("BizHawkClient", exception_logger="Client")
+            utils.init_logging("OtherClient", "debug")
+
+        with patch.dict(sys.modules, {"Utils": utils}):
+            logging_config.launch_with_client_logging(launch, "seed.apnds")
+        self.assertIs(utils.init_logging, original)
+        self.assertEqual(original.call_args_list[0].args, ("NsmbdsClient",))
+        self.assertEqual(original.call_args_list[0].kwargs, {"exception_logger": "Client"})
+        self.assertEqual(original.call_args_list[1].args, ("OtherClient", "debug"))
+
+    def test_failed_launch_restores_core_logging(self):
+        original = Mock()
+        utils = types.SimpleNamespace(init_logging=original)
+
+        def launch():
+            utils.init_logging("BizHawkClient", exception_logger="Client")
+            raise RuntimeError("Startup failed")
+
+        with patch.dict(sys.modules, {"Utils": utils}):
+            with self.assertRaisesRegex(RuntimeError, "Startup failed"):
+                logging_config.launch_with_client_logging(launch)
+        self.assertIs(utils.init_logging, original)
+
     def test_file_severity_preserves_other_records_and_stream_format(self):
         with tempfile.TemporaryDirectory() as directory:
             with closing(logging.FileHandler(Path(directory) / "client.log", encoding="utf-8")) as handler:

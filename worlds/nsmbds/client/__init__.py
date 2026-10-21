@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Sequence
 
 from worlds._bizhawk.client import BizHawkClient
 
+from .logging_config import configure_file_logging, launch_with_client_logging
 from .features.buffs import BuffHandlingMixin
 from .features.emulator_feed import EmulatorFeedMixin
 from .features.death_link import DeathLinkMixin
@@ -64,15 +65,20 @@ if TYPE_CHECKING:
     from worlds._bizhawk.context import BizHawkClientContext
 
 
-logger = logging.getLogger("NSMBDS")
-network_logger = logger.getChild("Network")
-bridge_logger = logger.getChild("Bridge")
-sync_logger = logger.getChild("Sync")
+root_logger = logging.getLogger("NSMBDS")
+logger = root_logger.getChild("Client")
+network_logger = root_logger.getChild("Network")
+bridge_logger = root_logger.getChild("Bridge")
+items_logger = root_logger.getChild("Items")
+locations_logger = root_logger.getChild("Locations")
+overworld_logger = root_logger.getChild("Overworld")
+performance_logger = root_logger.getChild("Performance")
+diag_logger = root_logger.getChild("Diag")
 _dedicated_client_mode = False
 # The bridge answers on emulator frames. Several sequential requests routinely
 # put a complete watcher pass near 150 ms without any individual stall.
-WATCHER_OPERATION_SLOW_SECONDS = 0.200
-WATCHER_TOTAL_SLOW_SECONDS = 0.300
+WATCHER_OPERATION_SLOW_SECONDS = 0.500
+WATCHER_TOTAL_SLOW_SECONDS = 1.000
 MEDIUM_POLL_TICKS = 3
 SLOW_POLL_TICKS = 10
 WATCHER_SLOW_LOG_COOLDOWN_SECONDS = 5.0
@@ -244,6 +250,7 @@ class NSMBDSClient(
         """Accept only the verified NSMBDS USA ROM header code."""
         from worlds._bizhawk import read
 
+        configure_file_logging()
         matched_location: tuple[int, str] | None = None
         observations: list[str] = []
         for address, domain in ROM_GAME_CODE_LOCATIONS:
@@ -266,7 +273,7 @@ class NSMBDSClient(
             and _selected_seed_rom_matches_hash(ctx)
         )
         if matched_location is None and not verified_by_selected_rom:
-            logger.warning(
+            bridge_logger.warning(
                 "NSMBDS handler rejected the loaded ROM: expected game code %r; "
                 "BizHawk reads: %s (hash: %s). Another game handler may be tried next.",
                 ROM_GAME_CODE,
@@ -282,7 +289,7 @@ class NSMBDSClient(
         self._install_death_link_log_filter(ctx)
         if matched_location is not None:
             address, domain = matched_location
-            logger.info(
+            bridge_logger.info(
                 "Verified NSMB DS USA ROM (code: %s, domain: %s@0x%X, hash: %s).",
                 ROM_GAME_CODE.decode("ascii"),
                 domain,
@@ -290,7 +297,7 @@ class NSMBDSClient(
                 getattr(ctx, "rom_hash", None),
             )
         else:
-            logger.warning(
+            bridge_logger.warning(
                 "Verified NSMBDS through the exact selected seed-ROM SHA-1 because this "
                 "BizHawk installation did not expose a matching ROM-header domain (hash: %s).",
                 getattr(ctx, "rom_hash", None),
@@ -331,10 +338,10 @@ class NSMBDSClient(
             return
         self._watcher_slow_log_times[operation_name] = now
         if operation_name == "total":
-            logger.warning("Slow NSMBDS game_watcher: %.1f ms.", elapsed * 1000)
+            performance_logger.warning("Slow game_watcher: %.1f ms.", elapsed * 1000)
         else:
-            logger.warning(
-                "Slow NSMBDS watcher operation %s: %.1f ms.",
+            performance_logger.warning(
+                "Slow watcher operation %s: %.1f ms.",
                 operation_name,
                 elapsed * 1000,
             )
@@ -514,7 +521,7 @@ class NSMBDSClient(
             for operation_name, operation, args in (
                 ("Star Coin gate detection", self._detect_and_store_gate_purchases, (ctx, level_data)),
                 ("overworld state reconciliation", self._reconcile_overworld_state, (ctx, level_data)),
-                ("goal detection", self._send_goal_if_complete, (ctx,)),
+                ("goal detection", self._send_goal_if_complete, (ctx, level_data)),
             ):
                 await self._run_watcher_operation(operation_name, operation(*args))
 
@@ -550,7 +557,7 @@ class NSMBDSClient(
             raise
         except Exception as exc:
             if self._should_log_watcher_issue(f"level-read:{type(exc).__name__}"):
-                logger.exception("Failed to read the NSMBDS level-data block.")
+                bridge_logger.exception("Failed to read the NSMBDS level-data block.")
                 diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
                 if diagnostics is not None:
                     diagnostics.error("game data", exc)
@@ -563,7 +570,7 @@ class NSMBDSClient(
             or len(result[1]) != 4
         ):
             if self._should_log_watcher_issue("invalid-level-snapshot"):
-                logger.warning("Received an invalid NSMBDS location-data snapshot from BizHawk.")
+                bridge_logger.warning("Received an invalid NSMBDS location-data snapshot from BizHawk.")
                 diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
                 if diagnostics is not None:
                     diagnostics.error("game data", "invalid snapshot")
@@ -573,14 +580,14 @@ class NSMBDSClient(
         if trace != getattr(self, "_mini_castle_trace", None):
             self._mini_castle_trace = trace
             if sequence or flags:
-                logger.info(
+                overworld_logger.info(
                     "Native castle route: W%d -> W%d; secret flags=0x%02X; event=%d",
                     source + 1, destination + 1, flags, sequence,
                 )
         location_data = result[0] + result[1][:1]
         if len(location_data) != LOCATION_DATA_SNAPSHOT_SIZE:
             if self._should_log_watcher_issue("incomplete-level-snapshot"):
-                logger.warning("Received an incomplete NSMBDS location-data snapshot from BizHawk.")
+                bridge_logger.warning("Received an incomplete NSMBDS location-data snapshot from BizHawk.")
                 diagnostics = getattr(ctx, "nsmbds_diagnostics", None)
                 if diagnostics is not None:
                     diagnostics.error("game data", "incomplete snapshot")
@@ -667,7 +674,7 @@ class NSMBDSClient(
                     self._item_cursor_loaded = True
                     self._item_cursor_needs_initial_sync = False
                     self._persist_item_cursor()
-                    logger.info("Synchronized empty server item history; waiting for new items.")
+                    items_logger.info("Synchronized empty server item history; waiting for new items.")
             self._handle_gate_storage_packet(cmd, args)
             self._handle_death_counter_packet(ctx, cmd, args)
             return
@@ -686,9 +693,9 @@ class NSMBDSClient(
                         diagnostics.last_received_index = index
                         diagnostics.counters["items_received"] += 1
                         diagnostics.event("ITEM", "received", f"index={index}")
-                        sync_logger.debug("Item received index=%d item=%s", index, item.item)
+                        items_logger.debug("Item received index=%d item=%s", index, item.item)
                     else:
-                        sync_logger.debug("Ignoring already observed item index=%d", index)
+                        items_logger.debug("Ignoring already observed item index=%d", index)
             self._awaiting_item_history = False
             if self._item_cursor_needs_initial_sync:
                 # CommonClient has already appended this packet before calling
@@ -699,7 +706,7 @@ class NSMBDSClient(
                 self._item_cursor_needs_initial_sync = False
                 self._item_cursor_loaded = True
                 self._persist_item_cursor()
-                logger.info(
+                items_logger.info(
                     "Initialized the NSMBDS item cursor at %d received item(s); "
                     "historical filler and traps will not replay.",
                     self._items_received_index,
@@ -732,7 +739,7 @@ class NSMBDSClient(
                     self._next_powerup_mode = None
                     self._reserve_selection_revision += 1
                     self._persist_item_cursor()
-                    logger.info(
+                    items_logger.info(
                         "Rebased the NSMBDS item cursor to %d and discarded %d "
                         "stale deferred Power-Up(s) after a server-history rollback.",
                         packet_end,
@@ -782,7 +789,7 @@ class NSMBDSClient(
                 # Rewrite the record after loading so any sanitized legacy
                 # deferred queue is also removed from persistent storage.
                 self._persist_item_cursor()
-                logger.info("Restored the NSMBDS item cursor at %d.", restored_cursor)
+                items_logger.info("Restored the NSMBDS item cursor at %d.", restored_cursor)
             elif ctx.items_received:
                 self._items_received_index = len(ctx.items_received)
                 self._item_cursor_loaded = True
@@ -806,7 +813,7 @@ class NSMBDSClient(
         self._sent_locations = checked_locations
         self._observed_locations.update(checked_locations)
         self._configure_death_counter(ctx)
-        logger.info(
+        locations_logger.info(
             "Synchronized AP location state: %d checked, %d active.",
             len(checked_locations),
             len(self._active_locations) if self._active_location_set_known else -1,
@@ -997,11 +1004,11 @@ def main(*args: str) -> None:
                 self.output("Usage: /nsmbds_debug [on|off]")
                 return False
             if mode:
-                logger.setLevel(logging.DEBUG if mode == "on" else logging.INFO)
+                root_logger.setLevel(logging.DEBUG if mode == "on" else logging.INFO)
                 if mode == "on" and isinstance(self.ctx.client_handler, NSMBDSClient):
                     self.ctx.client_handler._logged_unmatched_block_events = set()
                 logger.info("NSMBDS debug logging %s.", "enabled" if mode == "on" else "disabled")
-            self.output("NSMBDS debug logging: " + ("on" if logger.isEnabledFor(logging.DEBUG) else "off"))
+            self.output("NSMBDS debug logging: " + ("on" if root_logger.isEnabledFor(logging.DEBUG) else "off"))
             return True
 
         @mark_raw
@@ -1012,7 +1019,7 @@ def main(*args: str) -> None:
                 self.output("Usage: /nsmbds_diag [short|full]")
                 return False
             snapshot = build_diagnostic_snapshot(self.ctx)
-            logger.getChild("Diag").debug("Generated %s diagnostic snapshot", mode)
+            diag_logger.debug("Generated %s diagnostic snapshot", mode)
             self.output(format_full(snapshot) if mode == "full" else format_short(snapshot))
             return True
 
@@ -1020,6 +1027,7 @@ def main(*args: str) -> None:
         command_processor = NSMBDSCommandProcessor
 
         def __init__(self, server_address, password):
+            configure_file_logging()
             super().__init__(server_address, password)
             self.bizhawk_ctx = NSMBDSBizHawkContext()
             self.nsmbds_diagnostics = DiagnosticState()
@@ -1031,7 +1039,7 @@ def main(*args: str) -> None:
             self.password_requested = password_requested
 
             if self.bizhawk_ctx.connection_status != ConnectionStatus.CONNECTED:
-                logger.info("Awaiting connection to BizHawk before authenticating")
+                network_logger.info("Awaiting connection to BizHawk before authenticating")
                 return
 
             if self.client_handler is None:
@@ -1138,7 +1146,7 @@ def main(*args: str) -> None:
         return None
 
     bizhawk_context._run_game = defer_game_launch_to_nsmbds_panel
-    bizhawk_context.launch(*args)
+    launch_with_client_logging(bizhawk_context.launch, *args)
 
 
 if __name__ == "__main__":
