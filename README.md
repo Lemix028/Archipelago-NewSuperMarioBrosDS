@@ -3,6 +3,8 @@
 [Download](https://github.com/Lemix028/Archipelago-NewSuperMarioBrosDS/releases/latest)
 [Setup](https://github.com/Lemix028/Archipelago-NewSuperMarioBrosDS/blob/nsmbds/worlds/nsmbds/docs/setup_en.md)
 [Info](https://github.com/Lemix028/Archipelago-NewSuperMarioBrosDS/blob/nsmbds/worlds/nsmbds/docs/en_New%20Super%20Mario%20Bros.%20DS.md)
+[Checks & Logic](worlds/nsmbds/docs/checks_logic.md)
+[All Checks](worlds/nsmbds/docs/check_catalog.md)
 [Roadmap](https://github.com/Lemix028/Archipelago-NewSuperMarioBrosDS/blob/nsmbds/worlds/nsmbds/docs/Roadmap.md)
 [Poptracker](https://github.com/Lemix028/NewSuperMarioBrosDS-poptracker)
 
