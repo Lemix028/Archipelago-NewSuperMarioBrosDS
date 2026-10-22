@@ -6,7 +6,7 @@ A **check** is a task that gives one randomized Archipelago item. The reward may
 
 [Setup Guide](setup_en.md) · [Game Info](en_New%20Super%20Mario%20Bros.%20DS.md) · [Complete Check List](check_catalog.md)
 
-*For version 0.5.2/0.5.3-unstable.*
+*For version 0.5.3-unstable.*
 
 ## Find what you need
 

@@ -1,6 +1,6 @@
 """Central version metadata for the NSMBDS APWorld release."""
 
-APWORLD_VERSION = "0.5.2"
+APWORLD_VERSION = "0.5.3"
 RELEASE_CHANNEL = "unstable"
 
 
