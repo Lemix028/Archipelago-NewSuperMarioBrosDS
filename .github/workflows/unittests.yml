@@ -60,7 +60,9 @@ jobs:
         python-version: ${{ matrix.python.version }}
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
+        # Older setuptools misidentifies normalized Kivy dependency names.
+        # Keep pkg_resources available for ModuleUpdate's dependency checks.
+        python -m pip install --upgrade pip "setuptools>=75,<81"
         pip install -r ci-requirements.txt
         python ModuleUpdate.py --yes --force --append "WebHostLib/requirements.txt"
         python Launcher.py --update_settings  # make sure host.yaml exists for tests
@@ -89,7 +91,7 @@ jobs:
       run: |
         python -m venv venv
         source venv/bin/activate
-        python -m pip install --upgrade pip
+        python -m pip install --upgrade pip "setuptools>=75,<81"
         python ModuleUpdate.py --yes --force --append "WebHostLib/requirements.txt"
     - name: Test hosting
       run: |
