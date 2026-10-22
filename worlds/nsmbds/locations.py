@@ -343,15 +343,27 @@ def _static_blocksanity_definition(spec: tuple) -> BlocksanityDefinition:
     )
 
 
-STATIC_BLOCKSANITY_DEFINITIONS = tuple(
+# The two bottom inner bricks in W2-5's first Star Coin stack cannot be
+# activated: hitting the surrounding coin bricks leaves solid used blocks.
+# Keep their source records and reserved IDs in the generated catalog so
+# excluding them does not renumber the other checks or moving-block IDs.
+_UNREACHABLE_STATIC_BLOCK_KEYS = frozenset({
+    "course/B05_1_bgdat.bin@bgdat+0x0014:cell:3",
+    "course/B05_1_bgdat.bin@bgdat+0x0014:cell:4",
+})
+_static_blocksanity_catalog = tuple(
     _static_blocksanity_definition(spec) for spec in BLOCKSANITY_SPECS
 )
-if len(STATIC_BLOCKSANITY_DEFINITIONS) != BLOCKSANITY_STATIC_COUNT:
+if len(_static_blocksanity_catalog) != BLOCKSANITY_STATIC_COUNT:
     raise ValueError("The generated A2DE Blocksanity count does not match its catalog.")
-if len({definition.name for definition in STATIC_BLOCKSANITY_DEFINITIONS}) != len(STATIC_BLOCKSANITY_DEFINITIONS):
+if len({definition.name for definition in _static_blocksanity_catalog}) != len(_static_blocksanity_catalog):
     raise ValueError("The A2DE Blocksanity catalog contains duplicate location names.")
-if len({definition.stable_uid for definition in STATIC_BLOCKSANITY_DEFINITIONS}) != len(STATIC_BLOCKSANITY_DEFINITIONS):
+if len({definition.stable_uid for definition in _static_blocksanity_catalog}) != len(_static_blocksanity_catalog):
     raise ValueError("The A2DE Blocksanity catalog contains duplicate stable UIDs.")
+STATIC_BLOCKSANITY_DEFINITIONS = tuple(
+    definition for definition in _static_blocksanity_catalog
+    if definition.stable_key not in _UNREACHABLE_STATIC_BLOCK_KEYS
+)
 
 _moving_blocksanity_counts: dict[str, int] = defaultdict(int)
 _moving_one_up_counts: dict[str, int] = defaultdict(int)

@@ -37,9 +37,9 @@ A **check** is a task that gives one randomized Archipelago item. The reward may
 | Red Coin Challenge | Collect all eight red coins before the ring's timer runs out. | 30 | Yes |
 | Secret Exit | Finish the level through its secret route. | 18 | No |
 | 1-Up Block | Open the listed hidden or flying 1-Up Block. | 43, plus 8 in the World 6-2 bonus room | No |
-| Blocksanity | Open a listed Coin or Power-Up Block. | 1,038, plus 120 in the World 6-2 bonus room | No |
+| Blocksanity | Open a listed Coin or Power-Up Block. | 1,036, plus 120 in the World 6-2 bonus room | No |
 
-There are **393 checks with the default settings**, or **1,620 with every check category and the bonus room enabled**. Star Coin signs and Warp Cannons open routes; they do not award separate checks.
+There are **393 checks with the default settings**, or **1,618 with every check category and the bonus room enabled**. Star Coin signs and Warp Cannons open routes; they do not award separate checks.
 
 Check names match the client and tracker. For example, `World 1-1 Goal` means finishing that level, and `World 1-1 Star Coin 3` means collecting its third Star Coin. A Toad House check also ends in `Goal`.
 
@@ -526,10 +526,10 @@ Some checks need a particular form. The complete list below shows those extra re
 | `World 2-5 Blocksanity Block 4` | Large Mario |
 | `World 2-5 Blocksanity Block 5` | Large Mario |
 | `World 2-5 Blocksanity Block 7` | Large Mario |
-| `World 2-5 Blocksanity Block 15` | Large Mario |
-| `World 2-5 Blocksanity Block 16` | Large Mario |
-| `World 2-5 Blocksanity Block 18` | Large Mario |
-| `World 2-5 Blocksanity Block 19` | Large Mario |
+| `World 2-5 Blocksanity Block 15` | Shell Mario (Blue Shell) |
+| `World 2-5 Blocksanity Block 16` | Currently unreachable; not generated |
+| `World 2-5 Blocksanity Block 18` | Shell Mario (Blue Shell) |
+| `World 2-5 Blocksanity Block 19` | Currently unreachable; not generated |
 | `World 2-Castle Blocksanity Block 13` | Mini Mario |
 | `World 2-Castle Blocksanity Block 14` | Mini Mario |
 

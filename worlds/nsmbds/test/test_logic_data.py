@@ -20,11 +20,26 @@ from ..locations import (
     BOSS_LOCATION_NAMES,
     LOCATION_TABLE,
     LocationKind,
+    RUNTIME_BLOCK_TO_BLOCKSANITY_LOCATION_NAME,
+    STATIC_BLOCKSANITY_DEFINITIONS,
 )
+from ..data.blocksanity_data import BLOCKSANITY_SPECS
 from ..regions import REGION_LIST, REGION_LOCATIONS
 
 
 class TestLogicCatalog(unittest.TestCase):
+    def test_world_two_five_inaccessible_bricks_keep_other_ids_stable(self) -> None:
+        excluded = {"World 2-5 Blocksanity Block 16", "World 2-5 Blocksanity Block 19"}
+        self.assertTrue(excluded.isdisjoint(LOCATION_TABLE))
+        self.assertNotIn((1, 5, 30, 60, -29), RUNTIME_BLOCK_TO_BLOCKSANITY_LOCATION_NAME)
+        self.assertNotIn((1, 5, 30, 61, -29), RUNTIME_BLOCK_TO_BLOCKSANITY_LOCATION_NAME)
+        catalog_ids = {spec[1]: spec[4] for spec in BLOCKSANITY_SPECS}
+        for definition in STATIC_BLOCKSANITY_DEFINITIONS:
+            self.assertEqual(definition.location_id_offset, catalog_ids[definition.stable_key])
+        self.assertEqual(sum(
+            definition.stage_name == "World 2-5" for definition in STATIC_BLOCKSANITY_DEFINITIONS
+        ), 22)
+
     def test_every_stage_and_toad_house_has_an_entry_rule(self) -> None:
         self.assertEqual(
             set(STAGE_ENTRY_REQUIREMENTS),

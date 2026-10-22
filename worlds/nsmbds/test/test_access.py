@@ -203,6 +203,33 @@ class TestStarCoinPowerupAccessRules(NSMBDSTestBase):
         self.assertFalse(self.can_reach_location("World 7-5 Star Coin 2"))
 
 
+class TestWorldTwoFiveBlocks(NSMBDSTestBase):
+    options = {
+        "blocksanity": True,
+        "tower_castle_keys": False,
+        "license_mushroom": True,
+        "license_fire_flower": True,
+        "license_blue_shell": True,
+        "license_mega_mushroom": True,
+    }
+
+    def test_middle_bricks_require_blue_shell(self) -> None:
+        self.collect_by_name([
+            "Desert Pass", "Mushroom Permit", "Fire Flower Permit", "Mega Mushroom Permit",
+        ])
+        self.assertTrue(self.can_reach_location("World 2-5 Goal"))
+        for number in (15, 18):
+            self.assertFalse(self.can_reach_location(f"World 2-5 Blocksanity Block {number}"))
+        self.collect_by_name("Blue Shell Permit")
+        for number in (15, 18):
+            self.assertTrue(self.can_reach_location(f"World 2-5 Blocksanity Block {number}"))
+
+    def test_bottom_inner_bricks_are_not_generated(self) -> None:
+        names = {location.name for location in self.multiworld.get_locations(self.player)}
+        for number in (16, 19):
+            self.assertNotIn(f"World 2-5 Blocksanity Block {number}", names)
+
+
 class TestOptionalRouteLogic(NSMBDSTestBase):
     options = {
         "tower_castle_keys": False,

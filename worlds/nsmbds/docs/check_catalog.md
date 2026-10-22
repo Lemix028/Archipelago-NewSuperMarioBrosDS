@@ -2,7 +2,7 @@
 
 Every check is listed here with the exact name used by the client and tracker. Use the [Checks & Logic Guide](checks_logic.md) to find its level entrance, map route, signs, and Keys.
 
-There are **1,620 possible checks** with every category and the World 6-2 bonus room enabled. Your game may use fewer: Toad Houses and Red Coin Challenges are on by default; Secret Exits, 1-Up Blocks, Blocksanity, and the bonus room are optional.
+There are **1,618 possible checks** with every category and the World 6-2 bonus room enabled. Your game may use fewer: Toad Houses and Red Coin Challenges are on by default; Secret Exits, 1-Up Blocks, Blocksanity, and the bonus room are optional.
 
 ## How to use this list
 
@@ -25,7 +25,7 @@ For how each check is completed, see [Check types](checks_logic.md#check-types).
 | Boss | 9 |
 | Toad House | 34 |
 | 1-Up Block | 51 |
-| Blocksanity | 1158 |
+| Blocksanity | 1156 |
 
 ## World 1
 
@@ -230,7 +230,7 @@ For how each check is completed, see [Check types](checks_logic.md#check-types).
 ## World 2
 
 <details>
-<summary>Show all 196 possible checks in World 2</summary>
+<summary>Show all 194 possible checks in World 2</summary>
 
 | Check name | Type | Extra form | Advanced? |
 |---|---|---|---|
@@ -366,11 +366,11 @@ For how each check is completed, see [Check types](checks_logic.md#check-types).
 | `World 2-5 Blocksanity Block 12` | Blocksanity | No extra form | - |
 | `World 2-5 Blocksanity Block 13` | Blocksanity | No extra form | - |
 | `World 2-5 Blocksanity Block 14` | Blocksanity | No extra form | - |
-| `World 2-5 Blocksanity Block 15` | Blocksanity | Large Mario | - |
-| `World 2-5 Blocksanity Block 16` | Blocksanity | Large Mario | - |
+| `World 2-5 Blocksanity Block 15` | Blocksanity | Shell Mario (Blue Shell) | - |
+| `World 2-5 Blocksanity Block 16` | Blocksanity (excluded) | Currently unreachable; not generated | - |
 | `World 2-5 Blocksanity Block 17` | Blocksanity | No extra form | - |
-| `World 2-5 Blocksanity Block 18` | Blocksanity | Large Mario | - |
-| `World 2-5 Blocksanity Block 19` | Blocksanity | Large Mario | - |
+| `World 2-5 Blocksanity Block 18` | Blocksanity | Shell Mario (Blue Shell) | - |
+| `World 2-5 Blocksanity Block 19` | Blocksanity (excluded) | Currently unreachable; not generated | - |
 | `World 2-5 Blocksanity Block 20` | Blocksanity | No extra form | - |
 | `World 2-5 Blocksanity Block 21` | Blocksanity | No extra form | - |
 | `World 2-5 Blocksanity Block 22` | Blocksanity | No extra form | - |
@@ -2066,10 +2066,10 @@ These details are optional and are intended for tracker maintenance, mapping, an
 | `World 2-5 Blocksanity Block 13` | `0xE540D5` | Area 30; X 59, Y 28 |
 | `World 2-5 Blocksanity Block 14` | `0xE540DC` | Area 30; X 60, Y 26 |
 | `World 2-5 Blocksanity Block 15` | `0xE540DE` | Area 30; X 60, Y 27 |
-| `World 2-5 Blocksanity Block 16` | `0xE540D6` | Area 30; X 60, Y 28 |
+| `World 2-5 Blocksanity Block 16` | Reserved: `0xE540D6` | Currently unreachable; not generated |
 | `World 2-5 Blocksanity Block 17` | `0xE540DD` | Area 30; X 61, Y 26 |
 | `World 2-5 Blocksanity Block 18` | `0xE540DF` | Area 30; X 61, Y 27 |
-| `World 2-5 Blocksanity Block 19` | `0xE540D7` | Area 30; X 61, Y 28 |
+| `World 2-5 Blocksanity Block 19` | Reserved: `0xE540D7` | Currently unreachable; not generated |
 | `World 2-5 Blocksanity Block 20` | `0xE540D8` | Area 30; X 62, Y 28 |
 | `World 2-5 Blocksanity Block 21` | `0xE540D9` | Area 30; X 63, Y 28 |
 | `World 2-5 Blocksanity Block 22` | `0xE540EA` | Area 30; X 140, Y 22 |
