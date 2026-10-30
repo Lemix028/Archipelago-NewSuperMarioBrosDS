@@ -74,6 +74,7 @@ fake_bizhawk.send_requests = fake_send_requests
 fake_bizhawk.disconnect = lambda *args, **kwargs: None
 fake_bizhawk.NotConnectedError = type("NotConnectedError", (Exception,), {})
 fake_bizhawk.RequestFailedError = type("RequestFailedError", (Exception,), {})
+fake_bizhawk.ConnectorError = type("ConnectorError", (Exception,), {})
 fake_bizhawk_client.BizHawkClient = FakeBizHawkClient
 fake_bizhawk_client.AutoBizHawkClientRegister = FakeAutoBizHawkClientRegister
 fake_worlds._bizhawk = fake_bizhawk

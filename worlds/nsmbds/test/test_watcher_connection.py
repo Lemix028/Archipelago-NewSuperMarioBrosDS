@@ -1,11 +1,13 @@
 """Bridge failures end a watcher pass without losing pending gameplay work."""
 
+import json
 import struct
+import sys
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, Mock, patch
 
-from worlds._bizhawk import ConnectionStatus, NotConnectedError, RequestFailedError
+from worlds._bizhawk import ConnectionStatus, ConnectorError, NotConnectedError, RequestFailedError
 from worlds.nsmbds.client import NSMBDSClient
 from worlds.nsmbds.client.transport import NSMBDSBizHawkContext
 from worlds.nsmbds.data import ram_addresses as ram
@@ -110,6 +112,68 @@ class TestWatcherConnection(IsolatedAsyncioTestCase):
         self.assertEqual(len(logs.records), 1)
         self.assertIn("Connection timed out", logs.output[0])
         self.assertFalse(client._watcher_slow_log_times)
+
+    async def test_generic_connector_reports_required_lua_script_and_can_recover(self):
+        client, ctx = self.watcher_fixture()
+        # Exercise the real feed request, transport and Core error grouping.
+        del client._sync_emulator_feed
+        client._detect_and_send_red_coin_challenge = AsyncMock()
+        reader = SimpleNamespace(readline=AsyncMock(return_value=json.dumps([
+            {"type": "ERROR", "err": "Unknown command: NSMBDS_FEED_CONFIG"},
+        ]).encode() + b"\n"))
+        writer = SimpleNamespace(write=Mock(), drain=AsyncMock(), close=Mock())
+        ctx.bizhawk_ctx.streams = (reader, writer)
+        ctx.bizhawk_ctx.connection_status = ConnectionStatus.CONNECTED
+
+        with patch("worlds.nsmbds.client.features.emulator_feed.emulator_feed_config",
+                   return_value=SimpleNamespace(enabled=True, width=300, position="bottom_left", fade_seconds=5)), \
+                self.assertLogs("NSMBDS", level="ERROR") as logs:
+            await client.game_watcher(ctx)
+            await client.game_watcher(ctx)
+        self.assertEqual(len(logs.records), 1)
+        self.assertIsNone(logs.records[0].exc_info)
+        for text in ("Wrong or outdated", "NSMBDS_FEED_CONFIG", "nsmbds_bizhawk_bootstrap.lua", "Launch Game"):
+            self.assertIn(text, logs.output[0])
+        ctx.observe_bridge.assert_called_with("ERROR", "NSMBDS_FEED_CONFIG", "_IncompatibleLuaScriptError")
+        client._poll_minigames.assert_not_awaited()
+        client._apply_pending_items.assert_not_awaited()
+        self.assertIsNone(client._emulator_feed_config_sent)
+
+        # The next watcher pass resumes after the user replaces the Lua script.
+        client._sync_emulator_feed = AsyncMock()
+        await client.game_watcher(ctx)
+        client._poll_minigames.assert_awaited_once()
+        client._apply_pending_items.assert_awaited_once()
+
+    async def test_other_unsupported_nsmbds_commands_stop_the_watcher(self):
+        errors = [ConnectorError("Unknown command: NSMBDS_STAR_COIN_TRACKING")]
+        if sys.version_info >= (3, 11):
+            errors.append(ExceptionGroup("Connector errors", [
+                ExceptionGroup("Nested errors", [ConnectorError("Unknown command: NSMBDS_ITEM_WRITE")]),
+            ]))
+        for error in errors:
+            with self.subTest(error=error):
+                client, ctx = self.watcher_fixture()
+                client._sync_emulator_feed.side_effect = error
+                with self.assertLogs("NSMBDS", level="ERROR") as logs:
+                    await client.game_watcher(ctx)
+                self.assertIn("nsmbds_bizhawk_bootstrap.lua", logs.output[0])
+                self.assertIsNone(logs.records[0].exc_info)
+                client._poll_minigames.assert_not_awaited()
+
+    async def test_other_connector_errors_keep_their_tracebacks(self):
+        errors = [ConnectorError("Unknown command: READ"), ConnectorError("Lua runtime failed")]
+        if sys.version_info >= (3, 11):
+            errors.append(ExceptionGroup("Connector errors", [
+                ConnectorError("Unknown command: NSMBDS_ITEM_WRITE"), ConnectorError("Lua runtime failed"),
+            ]))
+        for error in errors:
+            with self.subTest(error=error):
+                client = NSMBDSClient()
+                with self.assertLogs("NSMBDS", level="ERROR") as logs:
+                    await client._run_watcher_operation("item application", AsyncMock(side_effect=error)())
+                self.assertIn("item application failed", logs.output[0])
+                self.assertIsNotNone(logs.records[0].exc_info)
 
     async def test_read_helpers_propagate_connection_failures(self):
         client = NSMBDSClient()

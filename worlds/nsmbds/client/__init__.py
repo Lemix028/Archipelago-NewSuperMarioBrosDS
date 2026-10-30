@@ -85,6 +85,23 @@ WATCHER_SLOW_LOG_COOLDOWN_SECONDS = 5.0
 WATCHER_ISSUE_LOG_COOLDOWN_SECONDS = 30.0
 
 
+class _IncompatibleLuaScriptError(Exception):
+    """The loaded connector lacks a required NSMBDS command."""
+
+
+def _unsupported_nsmbds_command(error: Exception) -> str | None:
+    """Recognize unsupported commands, including Core's grouped connector errors."""
+    from worlds._bizhawk import ConnectorError
+
+    prefix = "Unknown command: "
+    if isinstance(error, ConnectorError) and str(error).startswith(prefix + "NSMBDS_"):
+        return str(error)[len(prefix):]
+    # Core wraps connector errors in ExceptionGroup on Python 3.11 and later.
+    # Keep mixed groups on the normal error path so other failures stay visible.
+    commands = [_unsupported_nsmbds_command(child) for child in getattr(error, "exceptions", ())]
+    return commands[0] if commands and all(commands) else None
+
+
 def _selected_seed_rom_matches_hash(ctx: "BizHawkClientContext") -> bool:
     """Verify the running ROM against the exact seed ROM selected by this client."""
     from .launcher import configured_rom_path, validate_seed_rom
@@ -317,6 +334,18 @@ class NSMBDSClient(
         connection_failed = False
         try:
             await self._run_game_watcher(ctx)
+        except _IncompatibleLuaScriptError as exc:
+            connection_failed = True
+            observe_bridge = getattr(ctx, "observe_bridge", None)
+            if observe_bridge is not None:
+                observe_bridge("ERROR", str(exc), type(exc).__name__)
+            if self._should_log_watcher_issue("bridge:lua-script"):
+                bridge_logger.error(
+                    "Wrong or outdated BizHawk Lua script: command %s is not supported. "
+                    "Stop the current script in BizHawk's Lua Console and open "
+                    "nsmbds_bizhawk_bootstrap.lua instead of connector_bizhawk_generic.lua. ",
+                    exc,
+                )
         except (RequestFailedError, NotConnectedError) as exc:
             connection_failed = True
             observe_bridge = getattr(ctx, "observe_bridge", None)
@@ -368,6 +397,10 @@ class NSMBDSClient(
             connection_failed = True
             raise
         except Exception as exc:
+            command = _unsupported_nsmbds_command(exc)
+            if command is not None:
+                connection_failed = True
+                raise _IncompatibleLuaScriptError(command) from exc
             if self._should_log_watcher_issue(f"operation:{operation_name}:{type(exc).__name__}"):
                 logger.exception("NSMBDS %s failed; the watcher will retry next tick.", operation_name)
                 if self._watcher_diagnostics is not None:
